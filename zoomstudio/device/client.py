@@ -7,6 +7,7 @@ are invoked on whichever thread is currently reading from the transport.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from collections.abc import Callable
@@ -17,6 +18,8 @@ from .errors import PedalError, PedalFileNotFound, PedalProtocolError, PedalTime
 from .messages import ControlChange, Message, ProgramChange, SysexMessage, TunerReading
 from .sysex import DiskUsage, Identity, PatchInfo
 from .transport import Transport
+
+log = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 3.0
 MAX_FILE_BLOCKS = 4096
@@ -76,7 +79,10 @@ class PedalClient:
                 self._tuner_offset = msg.value - 8
                 event = TunerReading(self._tuner_note, self._tuner_offset)
         for callback in list(self._subscribers):
-            callback(event)
+            try:
+                callback(event)
+            except Exception:  # a faulty listener must never break pedal requests
+                log.exception("Pedal event subscriber %r failed", callback)
 
     def poll(self, timeout: float = 0) -> int:
         """Dispatch pending unsolicited messages; returns how many were handled."""
