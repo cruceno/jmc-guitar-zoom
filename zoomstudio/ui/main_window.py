@@ -11,7 +11,7 @@ from PySide6.QtGui import (
     QAction, QBrush, QColor, QKeySequence, QRegularExpressionValidator, QUndoCommand, QUndoGroup, QUndoStack,
 )
 from PySide6.QtWidgets import (
-    QCheckBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
+    QCheckBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidgetItem, QMainWindow,
     QMessageBox, QProgressBar, QPushButton, QSpinBox, QSplitter, QToolButton, QVBoxLayout, QWidget,
 )
 
@@ -20,7 +20,8 @@ from zoomstudio.patches import edit
 from zoomstudio.patches.model import NAME_MAX_LEN, VOLUME_MAX, Patch
 from zoomstudio.patches.zptc import build_zptc, parse_zptc
 
-from .widgets import CatalogPanel, ChainView, EffectTile, ParamPanel, ParamRow
+from .library import LibraryMixin
+from .widgets import CatalogPanel, ChainView, EffectTile, ParamPanel, ParamRow, PatchList
 from .worker import PedalWorker, TransportFactory
 
 DEFAULT_PATCH_COUNT = 50
@@ -82,23 +83,30 @@ class PatchEdit(QUndoCommand):
         self._window._store(self.location, self.before, self.sel_before)
 
 
-class MainWindow(QMainWindow):
+class MainWindow(LibraryMixin, QMainWindow):
     patches_loaded = Signal()  # a full read (pedal) or folder load finished
     error_shown = Signal(str)
     save_finished = Signal(bool)  # a SAVE to the pedal ended (True: verified by read-back)
     _save_requested = Signal(int, object, object)
     _param_requested = Signal(int, int, int)
     _select_requested = Signal(int)
+    backup_finished = Signal(str, bool)  # backup-all ended: patches folder ("" if none), success
+    queue_finished = Signal(object, int)  # a multi-slot write ended: locations written, failed location
+    _backup_requested = Signal(object, bool, object)
+    _queue_requested = Signal(object, object)
 
     def __init__(self, catalog: dict[int, EffectInfo], a1_ids: set[int] | None = None,
                  transport_factory: TransportFactory | None = None, installed_label: str = "pedal",
-                 pedal_timeout: float = 3.0, backup_dir: Path | None = None) -> None:
+                 pedal_timeout: float = 3.0, backup_dir: Path | None = None,
+                 library_dir: Path | None = None) -> None:
         super().__init__()
         self.setWindowTitle("Zoom Studio")
         self.resize(1400, 780)
         self.catalog = catalog
         self.allowed_ids = a1_ids  # effects that run on the A1 FOUR (None: no restriction)
         self.backup_dir = Path(backup_dir) if backup_dir is not None else None
+        self.library_dir = Path(library_dir) if library_dir is not None else None  # parent of backup-* folders
+        self._init_library()
         self._patches: dict[int, Patch] = {}
         self._stacks: dict[int, QUndoStack] = {}
         self.undo_group = QUndoGroup(self)
@@ -165,7 +173,7 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self.undo_action)
         edit_menu.addAction(self.redo_action)
 
-        self.patch_list = QListWidget()
+        self.patch_list = PatchList()
         self.patch_list.currentRowChanged.connect(self._on_row_changed)
         left = QWidget()
         lv = QVBoxLayout(left)
@@ -235,6 +243,7 @@ class MainWindow(QMainWindow):
         rv.addWidget(header)
         rv.addWidget(splitter, stretch=1)
         self.setCentralWidget(root)
+        self._build_library_ui()
         self.statusBar().showMessage("Ready")
 
     def _update_buttons(self) -> None:
@@ -246,13 +255,12 @@ class MainWindow(QMainWindow):
         self.open_file_button.setEnabled(self._location is not None and not self._saving)
         self.save_file_button.setEnabled(patch is not None)
         self.live_check.setEnabled(self._is_connected)
-        over = patch is not None and self.dsp_percent() > edit.DSP_LIMIT_PERCENT + 1e-9
+        blockers = self.save_blockers()
         dirty = self._location is not None and self.is_dirty(self._location)
         self.save_button.setEnabled(
-            self._is_connected and patch is not None and dirty and not over and not self._saving)
-        if over:
-            tip = (f"DSP load is {self.dsp_percent():.0f}% (above 100%): remove or replace an effect "
-                   "before saving")
+            self._is_connected and patch is not None and dirty and not blockers and not self._saving)
+        if blockers:
+            tip = "Cannot save: " + "; ".join(blockers[:3])
         elif not self._is_connected:
             tip = "Connect to the pedal to save"
         elif not dirty:
@@ -260,6 +268,7 @@ class MainWindow(QMainWindow):
         else:
             tip = "Back up the slot, write this patch to the pedal and verify it by reading it back"
         self.save_button.setToolTip(tip)
+        self._update_library_actions()
 
     # ------------------------------------------------------------- patches
 
@@ -367,7 +376,8 @@ class MainWindow(QMainWindow):
         previous = self.chain.selected_slot if keep else None
         self._location = location
         patch = self._patches.get(location)
-        self.chain.set_patch(patch, self.catalog)
+        self.chain.set_patch(patch, self.catalog,
+                             None if patch is None else edit.slot_problems(patch, self.catalog, self.allowed_ids))
         self.params.clear()
         self._update_header()
         if patch is None:
@@ -405,6 +415,11 @@ class MainWindow(QMainWindow):
         self.dsp_bar.setValue(min(100, round(dsp)))
         self.dsp_bar.setFormat(f"DSP: {dsp:.0f}%" + ("  (over the limit)" if dsp > 100 else ""))
         self.dsp_bar.setStyleSheet("QProgressBar::chunk { background: #c0392b; }" if dsp > 100 else "")
+
+    def save_blockers(self) -> list[str]:
+        """Reasons the selected patch must not be written to the pedal (A1, A2, A3 and DSP checks)."""
+        patch = self.current_patch
+        return [] if patch is None else edit.save_blockers(patch, self.catalog, self.allowed_ids)
 
     def dsp_percent(self) -> float:
         patch = self.current_patch
@@ -606,6 +621,10 @@ class MainWindow(QMainWindow):
             self._report_error(f"Cannot open {path}: {exc}")
             return
         self._push(edit.with_fillers(loaded, self.catalog), "Open file")
+        blockers = self.save_blockers()
+        if blockers:
+            self._report_error("This patch cannot be written to the pedal as it is: " + "; ".join(blockers[:3]))
+            return
         self.statusBar().showMessage(f"Opened {Path(path).name} into {self._display(self._location)}")
 
     # ------------------------------------------------------- save to pedal
@@ -618,8 +637,9 @@ class MainWindow(QMainWindow):
         if not self._is_connected or self._worker is None:
             self._report_error("Connect to the pedal to save")
             return
-        if self.dsp_percent() > edit.DSP_LIMIT_PERCENT + 1e-9:
-            self._report_error(f"DSP load is {self.dsp_percent():.0f}%: it must be 100% or less to save")
+        blockers = self.save_blockers()
+        if blockers:
+            self._report_error("Cannot save: " + "; ".join(blockers))
             return
         if self.backup_dir is None:
             self._report_error("No backup folder configured: refusing to write to the pedal")
@@ -728,6 +748,11 @@ class MainWindow(QMainWindow):
         w.save_finished.connect(self._on_save_finished)
         w.error.connect(self._report_error)
         self._save_requested.connect(w.save_patch)
+        self._queue_requested.connect(w.write_patches)
+        self._backup_requested.connect(w.backup_all)
+        w.queue_finished.connect(self._on_queue_done)
+        w.backup_progress.connect(self._on_backup_progress)
+        w.backup_finished.connect(self._on_backup_done)
         self._param_requested.connect(w.send_param)
         self._select_requested.connect(w.select_patch)
         self._thread.start()

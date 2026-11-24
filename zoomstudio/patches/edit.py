@@ -11,7 +11,7 @@ import copy
 from collections.abc import Mapping
 from typing import Any
 
-from .model import NAME_MAX_LEN, PARAM_COUNT, PARAM_MAX, VOLUME_MAX, EffectSlot, Patch
+from .model import MAX_EFFECT_SLOTS, NAME_MAX_LEN, PARAM_COUNT, PARAM_MAX, VOLUME_MAX, EffectSlot, Patch
 
 WIDE_FILLER = 0x00000001
 DSP_LIMIT_PERCENT = 100.0
@@ -215,3 +215,46 @@ def compare_patches(sent: Patch, got: Patch) -> list[str]:
             changed = [f"param{k + 1} {x} != {y}" for k, (x, y) in enumerate(zip(a[2] or (), b[2] or ())) if x != y]
             diffs.append(f"effect {i}: " + ", ".join(changed))
     return diffs
+
+
+# ------------------------------------------------------- save eligibility
+
+UNKNOWN_EFFECT_REASON = "unknown effect, DSP load cannot be checked"
+NOT_RUNNABLE_REASON = "does not run on the A1 FOUR"
+
+
+def slot_problems(patch: Patch, catalog: Mapping[int, Any], allowed_ids: set[int] | None) -> dict[int, str]:
+    """Reason per chain slot index (fillers counted) that blocks writing the patch to the pedal.
+
+    An effect missing from the catalog cannot be measured (A2); one outside ``allowed_ids`` (the set
+    the catalog filter offers) is not runnable on the A1 FOUR (A1). ``allowed_ids=None`` means no
+    restriction.
+    """
+    out: dict[int, str] = {}
+    for i, slot in enumerate(patch.effects):
+        if slot.is_placeholder:
+            continue
+        if slot.effect_id not in catalog:
+            out[i] = UNKNOWN_EFFECT_REASON
+        elif allowed_ids is not None and slot.effect_id not in allowed_ids:
+            out[i] = NOT_RUNNABLE_REASON
+    return out
+
+
+def save_blockers(patch: Patch, catalog: Mapping[int, Any], allowed_ids: set[int] | None) -> list[str]:
+    """Every reason the patch must not be written to the pedal (empty list: it may be written)."""
+    reasons: list[str] = []
+    for i, why in slot_problems(patch, catalog, allowed_ids).items():
+        info = catalog.get(patch.effects[i].effect_id)
+        reasons.append(f"{info.name if info else '0x%08X' % patch.effects[i].effect_id}: {why}")
+    dsp = dsp_percent(patch, catalog)
+    if dsp > DSP_LIMIT_PERCENT + 1e-9:
+        reasons.append(f"DSP load is {dsp:.0f}%: it must be 100% or less to save")
+    try:
+        chain = len(with_fillers(patch, catalog).effects)
+    except Exception:  # a malformed chain is reported by the other checks
+        chain = len(patch.effects)
+    if chain > MAX_EFFECT_SLOTS:
+        reasons.append(f"the chain needs {chain} slots with the wide-effect fillers; the maximum is "
+                       f"{MAX_EFFECT_SLOTS}")
+    return reasons

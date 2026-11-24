@@ -92,7 +92,8 @@ def main(argv: list[str] | None = None) -> int:
     apply_dark_theme(app)
 
     window = MainWindow(catalog, a1_ids=a1_ids, transport_factory=MidoTransport.open,
-                        installed_label=PEDAL_LABEL, backup_dir=autosave_dir())
+                        installed_label=PEDAL_LABEL, backup_dir=autosave_dir(),
+                        library_dir=workspace_root() / "patches")
     if not catalogs:
         window.statusBar().showMessage("No effect catalog found: pass --catalog DIR")
     if args.offline:

@@ -18,6 +18,7 @@ from .theme import group_color
 ALL_GROUPS = "All groups"
 MIME_EFFECT = "application/x-zoomstudio-effect"  # payload: catalog effect ID (decimal text)
 MIME_SLOT = "application/x-zoomstudio-slot"  # payload: slot index of a chain tile (decimal text)
+MIME_PATCH = "application/x-zoomstudio-patch"  # payload: location of a patch in the list (decimal text)
 CHAIN_MIN_TILES = 5  # the chain view always offers at least this many effect positions
 _ID_ROLE = Qt.ItemDataRole.UserRole
 _NAME_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -32,9 +33,11 @@ class EffectTile(QFrame):
     effect_dropped = Signal(int, int)  # slot index, catalog effect ID
     tile_dropped = Signal(int, int)  # source slot index, target slot index
 
-    def __init__(self, slot_index: int, slot: EffectSlot, info: EffectInfo | None, span: int) -> None:
+    def __init__(self, slot_index: int, slot: EffectSlot, info: EffectInfo | None, span: int,
+                 problem: str = "") -> None:
         super().__init__()
         self.slot_index = slot_index
+        self.problem = problem  # why this effect blocks writing the patch to the pedal ("": none)
         self.span = span
         self.is_empty = slot.is_empty
         self.is_wide = span == 2
@@ -44,6 +47,7 @@ class EffectTile(QFrame):
             self.effect_name = ""
         else:
             self.effect_name = info.name if info else f"0x{slot.effect_id:08X}"
+        label = ("! " + self.effect_name) if problem else self.effect_name
         self.setObjectName("tile")
         self.setMinimumHeight(110)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -51,7 +55,7 @@ class EffectTile(QFrame):
         self._press_pos = None
         self._color = group_color(self.group) if info else QColor("#555a62")
         layout = QVBoxLayout(self)
-        self.name_label = QLabel(self.effect_name or "empty")
+        self.name_label = QLabel(label or "empty")
         self.name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         font = self.name_label.font()
         font.setBold(True)
@@ -83,6 +87,8 @@ class EffectTile(QFrame):
         elif info:
             self.setToolTip(f"{info.name} ({info.group}) - {info.dsp_load_percent:.1f}% DSP"
                             + (" - occupies two slots" if self.is_wide else ""))
+        if problem:
+            self.setToolTip(f"Cannot be written to the pedal: {problem}\n" + self.toolTip())
         self.set_selected(False)
 
     def _sync_power_text(self) -> None:
@@ -104,6 +110,8 @@ class EffectTile(QFrame):
         else:
             base = self._color if self.is_enabled_effect else QColor("#44474d")
             bg, border, style = base.darker(160 if self.is_enabled_effect else 110).name(), base.name(), "solid"
+        if self.problem and not self.is_empty:
+            bg, border, style = "#4a1f1f", "#e5533d", "solid"
         if selected:
             border = "#ffffff"
         self.setStyleSheet(
@@ -171,7 +179,8 @@ class ChainView(QWidget):
         self._tiles = []
         self._selected = None
 
-    def set_patch(self, patch: Patch | None, catalog: dict[int, EffectInfo]) -> None:
+    def set_patch(self, patch: Patch | None, catalog: dict[int, EffectInfo],
+                  problems: dict[int, str] | None = None) -> None:
         self.clear()
         if patch is None:
             return
@@ -182,7 +191,7 @@ class ChainView(QWidget):
             info = catalog.get(slot.effect_id)
             followed_by_filler = i + 1 < len(slots) and slots[i + 1].is_wide_filler
             wide = not slot.is_empty and (followed_by_filler or (info is not None and info.is_wide))
-            tile = EffectTile(i, slot, info, 2 if wide else 1)
+            tile = EffectTile(i, slot, info, 2 if wide else 1, (problems or {}).get(i, ""))
             self._add_tile(tile)
         for k in range(max(0, CHAIN_MIN_TILES - len(self._tiles))):
             # empty drop targets beyond the stored chain (slot indexes past the end of the patch)
@@ -207,6 +216,44 @@ class ChainView(QWidget):
     @property
     def selected_slot(self) -> int | None:
         return self._selected
+
+
+class PatchList(QListWidget):
+    """Patch list whose rows can be dragged onto each other (a swap request, never a move)."""
+
+    patch_dropped = Signal(int, int)  # source location, target location
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDragDropMode(QListWidget.DragDropMode.DragDrop)
+        self.setDefaultDropAction(Qt.DropAction.IgnoreAction)
+
+    def mimeData(self, items) -> QMimeData:  # noqa: N802 (Qt API)
+        mime = QMimeData()
+        if items:
+            mime.setData(MIME_PATCH, QByteArray(str(items[0].data(Qt.ItemDataRole.UserRole)).encode()))
+        return mime
+
+    def dragEnterEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        if event.mimeData().hasFormat(MIME_PATCH):
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        if event.mimeData().hasFormat(MIME_PATCH) and self.itemAt(event.position().toPoint()) is not None:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        item = self.itemAt(event.position().toPoint())
+        if not event.mimeData().hasFormat(MIME_PATCH) or item is None:
+            event.ignore()
+            return
+        source = int(bytes(event.mimeData().data(MIME_PATCH)).decode())
+        event.acceptProposedAction()
+        self.patch_dropped.emit(source, int(item.data(Qt.ItemDataRole.UserRole)))
 
 
 class ParamRow(QWidget):

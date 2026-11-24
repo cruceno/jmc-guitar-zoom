@@ -9,16 +9,23 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
+from pathlib import Path
 
 from PySide6.QtCore import QMetaObject, QObject, Qt, Signal, Slot
 
 from zoomstudio.device import PedalClient, PedalError
 from zoomstudio.device.transport import Transport
+from zoomstudio.patches import library
 from zoomstudio.patches.backup import write_backup
 from zoomstudio.patches.edit import compare_patches
+from zoomstudio.patches.model import Patch
 from zoomstudio.patches.zptc import parse_zptc
 
 TransportFactory = Callable[[], Transport]
+
+
+class _ReadBackError(Exception):
+    """The pedal's read-back is invalid or differs from what was sent."""
 
 
 class PedalWorker(QObject):
@@ -30,6 +37,9 @@ class PedalWorker(QObject):
     loading_finished = Signal()
     patch_saved = Signal(int, object, str)  # location, patch read back from the pedal, backup path
     save_finished = Signal(int, bool)  # location, success (always emitted last)
+    backup_progress = Signal(str, int, int)  # phase ("patches" / "files"), done, total
+    backup_finished = Signal(str, bool)  # patches folder ("" if none was created), success (emitted last)
+    queue_finished = Signal(object, int)  # locations written and verified, failed location (0: none)
     error = Signal(str)
 
     def __init__(self, transport_factory: TransportFactory, timeout: float = 3.0) -> None:
@@ -39,6 +49,8 @@ class PedalWorker(QObject):
         self._client: PedalClient | None = None
         self._transport: Transport | None = None
         self._count = 0
+        self._identity = None
+        self._info = None
         self._cancel = threading.Event()
 
     # ------------------------------------------------------------ helpers
@@ -82,6 +94,7 @@ class PedalWorker(QObject):
             self._fail(exc)
             return
         self._client = client
+        self._identity, self._info = identity, info
         self._count = info.count
         self.connected.emit(identity, info)
 
@@ -148,10 +161,7 @@ class PedalWorker(QObject):
         try:
             with client.pc_mode(True):
                 try:
-                    previous = client.read_patch(location)
-                    backup = write_backup(backup_dir, location, previous)
-                    client.write_patch(location, data)
-                    readback = client.read_patch(location)
+                    readback, backup = self._read_write_read(client, location, data, backup_dir)
                 except (PedalError, OSError) as exc:
                     guard_error = exc
         except (PedalError, OSError) as exc:  # PC mode on/off failed
@@ -164,19 +174,177 @@ class PedalWorker(QObject):
         if guard_error is not None:
             self.error.emit(f"PC mode could not be switched off cleanly: {guard_error}")
         try:
-            stored = parse_zptc(readback)
-            diffs = compare_patches(parse_zptc(data), stored)
-        except ValueError as exc:
-            self.error.emit(f"Read-back of patch {location + 9} is not valid: {exc}")
-            self.save_finished.emit(location, False)
-            return
-        if diffs:
-            self.error.emit(f"Patch {location + 9} read-back differs from what was sent: "
-                            + "; ".join(diffs[:4]))
+            stored = self._verify(location, data, readback)
+        except _ReadBackError as exc:
+            self.error.emit(str(exc))
             self.save_finished.emit(location, False)
             return
         self.patch_saved.emit(location, stored, str(backup))
         self.save_finished.emit(location, True)
+
+    @staticmethod
+    def _read_write_read(client: PedalClient, location: int, data: bytes, backup_dir) -> tuple[bytes, Path]:
+        """Inside PC mode: read the slot, back it up, write ``data``, read the slot back.
+
+        Nothing is written unless the backup of the previous content was stored.
+        """
+        previous = client.read_patch(location)
+        backup = write_backup(backup_dir, location, previous)
+        client.write_patch(location, data)
+        return client.read_patch(location), backup
+
+    @staticmethod
+    def _verify(location: int, data: bytes, readback: bytes) -> Patch:
+        try:
+            stored = parse_zptc(readback)
+            diffs = compare_patches(parse_zptc(data), stored)
+        except ValueError as exc:
+            raise _ReadBackError(f"Read-back of patch {location + 9} is not valid: {exc}") from exc
+        if diffs:
+            raise _ReadBackError(f"Patch {location + 9} read-back differs from what was sent: "
+                                 + "; ".join(diffs[:4]))
+        return stored
+
+    @Slot(object, object)
+    def write_patches(self, items, backup_dir) -> None:
+        """Safe write of several slots (``items`` = ``[(location, data), ...]``) under one PC mode.
+
+        Each slot goes through the same steps as :meth:`save_patch` (backup of the previous content,
+        write, read-back compare). The queue stops at the first failure: later slots are not touched.
+        ``queue_finished`` reports the verified locations and the failed one.
+        """
+        client = self._require_client()
+        if client is None:
+            self.queue_finished.emit([], items[0][0] if items else 0)
+            return
+        if backup_dir is None:
+            self.error.emit("No backup folder configured: refusing to write to the pedal")
+            self.queue_finished.emit([], items[0][0] if items else 0)
+            return
+        self._cancel.clear()
+        written: list[int] = []
+        failed = 0
+        try:
+            with client.pc_mode(True):
+                for location, data in items:
+                    if self._cancel.is_set():
+                        failed = location
+                        self.error.emit(self._stopped(location, written, "cancelled"))
+                        break
+                    try:
+                        readback, backup = self._read_write_read(client, location, data, backup_dir)
+                        stored = self._verify(location, data, readback)
+                    except (PedalError, OSError, _ReadBackError) as exc:
+                        failed = location
+                        self.error.emit(self._stopped(location, written, str(exc) or type(exc).__name__))
+                        break
+                    written.append(location)
+                    self.patch_saved.emit(location, stored, str(backup))
+        except (PedalError, OSError) as exc:  # PC mode on/off failed
+            self.error.emit(f"PC mode could not be switched cleanly: {exc}")
+            if not written and not failed and items:
+                failed = items[0][0]
+        self.queue_finished.emit(written, failed)
+
+    @staticmethod
+    def _stopped(location: int, written: list[int], why: str) -> str:
+        done = ", ".join(str(n + 9) for n in written) or "none"
+        return f"Patch {location + 9}: {why}. Queue stopped; slots written: {done}"
+
+    @Slot(object, bool, object)
+    def backup_all(self, dest_parent, with_files: bool, stamp=None) -> None:
+        """Save every patch as ``NNN.zptc`` plus ``manifest.json`` (and optionally every pedal file).
+
+        Read-only on the pedal. Folders are created exclusively (an existing one is refused before
+        anything is asked of the pedal); ``backup_finished`` is emitted last.
+        """
+        client = self._require_client()
+        if client is None or self._info is None:
+            self.backup_finished.emit("", False)
+            return
+        stamp = library.timestamp(stamp or None)
+        try:
+            dest = library.new_folder(dest_parent, "backup", stamp)
+        except FileExistsError:
+            self.error.emit(f"Backup folder backup-{stamp} already exists: nothing was written")
+            self.backup_finished.emit("", False)
+            return
+        except OSError as exc:
+            self._fail(exc)
+            self.backup_finished.emit("", False)
+            return
+        self._cancel.clear()
+        info, identity = self._info, self._identity
+        manifest = {
+            "created": stamp, "model_id": f"0x{identity.model:02X}", "patch_count": info.count,
+            "patch_size": info.patch_size, "patches_per_bank": info.patches_per_bank, "patches": [],
+        }
+        ok = True
+        try:
+            with client.pc_mode(True):
+                ok = self._backup_patches(client, dest, manifest)
+                if ok and with_files:
+                    ok = self._backup_files(client, Path(dest_parent), stamp, manifest)
+        except (PedalError, OSError) as exc:
+            self._fail(exc)
+            ok = False
+        if self._cancel.is_set():
+            manifest["cancelled"] = True
+            ok = False
+        try:
+            library.write_manifest(dest, manifest)
+        except OSError as exc:
+            self._fail(exc)
+            ok = False
+        self.backup_finished.emit(str(dest), ok)
+
+    def _backup_patches(self, client: PedalClient, dest: Path, manifest: dict) -> bool:
+        ok, streak = True, 0
+        for location in range(1, self._count + 1):
+            if self._cancel.is_set():
+                return False
+            entry: dict = {"location": location}
+            try:
+                data = client.read_patch(location)
+                name = f"{location:03d}.zptc"
+                library.write_new(dest / name, data)
+                entry.update(file=name, bytes=len(data), status="ok")
+                streak = 0
+            except PedalError as exc:
+                entry["status"] = f"error: {exc}"
+                ok, streak = False, streak + 1
+                self.error.emit(f"Patch {location + 9}: {exc}")
+            manifest["patches"].append(entry)
+            self.backup_progress.emit("patches", location, self._count)
+            if streak >= 3:
+                self.error.emit("Backup aborted after 3 consecutive read failures")
+                return False
+        return ok
+
+    def _backup_files(self, client: PedalClient, parent: Path, stamp: str, manifest: dict) -> bool:
+        names = client.list_files()
+        try:
+            dest = library.new_folder(parent, "pedal-files", stamp)
+        except FileExistsError:
+            self.error.emit(f"Folder pedal-files-{stamp} already exists: pedal files were not saved")
+            return False
+        ok = True
+        files = []
+        for i, name in enumerate(names, start=1):
+            if self._cancel.is_set():
+                return False
+            try:
+                data = client.read_file(name)
+                library.write_new(dest / library.safe_file_name(name), data)
+                files.append({"name": name, "bytes": len(data)})
+            except PedalError as exc:
+                ok = False
+                files.append({"name": name, "error": str(exc)})
+                self.error.emit(f"File {name}: {exc}")
+            self.backup_progress.emit("files", i, len(names))
+        manifest["pedal_files_folder"] = dest.name
+        manifest["pedal_files"] = files
+        return ok
 
     @Slot(int, int, int)
     def send_param(self, slot: int, param: int, value: int) -> None:
