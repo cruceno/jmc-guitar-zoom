@@ -49,17 +49,25 @@ def disk_reply(maximum: int, available: int) -> bytes:
     return HDR + bytes([0x60, 0x04, 0x29, 0x01, 0x00, 0x08, 0x00]) + v(maximum) + v(available) + bytes([0, 0])
 
 
-def fake_pedal(patches: list[bytes], disk=(3_000_000, 150_000)) -> FakeTransport:
+def fake_pedal(patches: list[bytes], disk=(3_000_000, 150_000), transport: FakeTransport | None = None) -> FakeTransport:
     """A transport that answers connect + a full read of ``patches`` (locations 1..N)."""
-    t = FakeTransport()
+    t = transport or FakeTransport()
     t.on(bytes([0x7E, 0x7F, 0x06, 0x01]), S(identity_reply()))
     t.on(sysex.patch_info_request(MODEL), S(patch_info_reply(count=len(patches))))
     for loc, raw in enumerate(patches, start=1):
         bank, slot = divmod(loc - 1, 10)
         t.on(HDR + b"\x46", S(patch_reply(bank, slot, raw)))
-    for _ in range(3):  # enough for a full read plus disk refreshes
+    for _ in range(4):  # enough for a full read, disk refreshes and a save
         t.on(sysex.pc_mode(True, MODEL), S(HDR + b"\x00\x00"))
         t.on(sysex.pc_mode(False, MODEL), S(HDR + b"\x00\x00"))
     for _ in range(3):
         t.on(sysex.disk_usage_request(MODEL), S(disk_reply(*disk)))
     return t
+
+
+def queue_save(t: FakeTransport, previous: bytes, readback: bytes, loc: int = 44) -> None:
+    """Replies for one SAVE: read the old slot, acknowledge the write, read the slot back."""
+    bank, slot = divmod(loc - 1, 10)
+    t.on(HDR + b"\x46", S(patch_reply(bank, slot, previous)))
+    t.on(HDR + b"\x45", S(HDR + b"\x00\x00"))
+    t.on(HDR + b"\x46", S(patch_reply(bank, slot, readback)))

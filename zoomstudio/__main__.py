@@ -16,6 +16,21 @@ def workspace_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def autosave_dir(root: Path | None = None) -> Path:
+    """Where SAVE stores the pedal's previous content of a slot before overwriting it."""
+    return (root or workspace_root()) / "patches" / "autosave"
+
+
+def offerable_effect_ids(catalog: dict, a1_ids: set[int] | None, installed_label: str = PEDAL_LABEL) -> set[int] | None:
+    """Effects the editor may offer: the A1 FOUR list plus every effect installed on the pedal.
+
+    ``AllZDL7_2.lst`` omits OptComp and FD-DX1x12 although the pedal ships them.
+    """
+    if a1_ids is None:
+        return None
+    return set(a1_ids) | {i for i, e in catalog.items() if installed_label in e.sources}
+
+
 def default_catalogs(root: Path | None = None) -> list[tuple[str, Path]]:
     root = root or workspace_root()
     found: list[tuple[str, Path]] = []
@@ -70,14 +85,14 @@ def main(argv: list[str] | None = None) -> int:
     catalogs = [(label, folder) for label, folder in catalogs if folder.is_dir()]
     catalog = load_catalog(*catalogs) if catalogs else {}
     a1_list = find_a1_list(catalogs)
-    a1_ids = a1four_effect_ids(a1_list) if a1_list else None
+    a1_ids = offerable_effect_ids(catalog, a1four_effect_ids(a1_list) if a1_list else None)
 
     app = QApplication(sys.argv[:1])
     app.setApplicationName("Zoom Studio")
     apply_dark_theme(app)
 
     window = MainWindow(catalog, a1_ids=a1_ids, transport_factory=MidoTransport.open,
-                        installed_label=PEDAL_LABEL)
+                        installed_label=PEDAL_LABEL, backup_dir=autosave_dir())
     if not catalogs:
         window.statusBar().showMessage("No effect catalog found: pass --catalog DIR")
     if args.offline:

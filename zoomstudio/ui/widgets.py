@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
+from PySide6.QtCore import QByteArray, QMimeData, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QDrag, QImage, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDial, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
+    QApplication, QCheckBox, QComboBox, QDial, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QSpinBox, QToolButton, QVBoxLayout, QWidget,
 )
 
@@ -16,6 +16,9 @@ from zoomstudio.patches.model import EffectSlot, Patch
 from .theme import group_color
 
 ALL_GROUPS = "All groups"
+MIME_EFFECT = "application/x-zoomstudio-effect"  # payload: catalog effect ID (decimal text)
+MIME_SLOT = "application/x-zoomstudio-slot"  # payload: slot index of a chain tile (decimal text)
+CHAIN_MIN_TILES = 5  # the chain view always offers at least this many effect positions
 _ID_ROLE = Qt.ItemDataRole.UserRole
 _NAME_ROLE = Qt.ItemDataRole.UserRole + 1
 
@@ -25,6 +28,9 @@ class EffectTile(QFrame):
 
     clicked = Signal(int)  # slot index in the patch
     power_toggled = Signal(int, bool)
+    remove_requested = Signal(int)
+    effect_dropped = Signal(int, int)  # slot index, catalog effect ID
+    tile_dropped = Signal(int, int)  # source slot index, target slot index
 
     def __init__(self, slot_index: int, slot: EffectSlot, info: EffectInfo | None, span: int) -> None:
         super().__init__()
@@ -41,6 +47,8 @@ class EffectTile(QFrame):
         self.setObjectName("tile")
         self.setMinimumHeight(110)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setAcceptDrops(True)
+        self._press_pos = None
         self._color = group_color(self.group) if info else QColor("#555a62")
         layout = QVBoxLayout(self)
         self.name_label = QLabel(self.effect_name or "empty")
@@ -61,6 +69,15 @@ class EffectTile(QFrame):
         layout.addWidget(self.group_label)
         layout.addStretch(1)
         layout.addWidget(self.power, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self.remove_button = QToolButton(self)
+        self.remove_button.setText("x")
+        self.remove_button.setToolTip("Remove this effect")
+        self.remove_button.setAutoRaise(True)
+        self.remove_button.setVisible(not slot.is_empty)
+        self.remove_button.clicked.connect(lambda: self.remove_requested.emit(self.slot_index))
+        self.remove_button.setFixedSize(20, 20)
+        self.remove_button.move(4, 4)
+        self.remove_button.raise_()
         if slot.is_empty:
             self.setToolTip("Empty slot")
         elif info:
@@ -95,9 +112,36 @@ class EffectTile(QFrame):
         )
 
     def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt API)
-        if not self.is_empty:
-            self.clicked.emit(self.slot_index)
+        self._press_pos = event.position().toPoint()
+        self.clicked.emit(self.slot_index)
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        if (self.is_empty or self._press_pos is None or not event.buttons() & Qt.MouseButton.LeftButton
+                or (event.position().toPoint() - self._press_pos).manhattanLength() < QApplication.startDragDistance()):
+            return super().mouseMoveEvent(event)
+        mime = QMimeData()
+        mime.setData(MIME_SLOT, QByteArray(str(self.slot_index).encode()))
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        drag.setPixmap(self.grab())
+        self._press_pos = None
+        drag.exec(Qt.DropAction.MoveAction)
+
+    def dragEnterEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        mime = event.mimeData()
+        if mime.hasFormat(MIME_EFFECT) or mime.hasFormat(MIME_SLOT):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        mime = event.mimeData()
+        if mime.hasFormat(MIME_EFFECT):
+            self.effect_dropped.emit(self.slot_index, int(bytes(mime.data(MIME_EFFECT)).decode()))
+        elif mime.hasFormat(MIME_SLOT):
+            self.tile_dropped.emit(int(bytes(mime.data(MIME_SLOT)).decode()), self.slot_index)
+        else:
+            return
+        event.acceptProposedAction()
 
 
 class ChainView(QWidget):
@@ -105,6 +149,9 @@ class ChainView(QWidget):
 
     tile_selected = Signal(int)
     power_toggled = Signal(int, bool)
+    remove_requested = Signal(int)
+    effect_dropped = Signal(int, int)
+    tile_moved = Signal(int, int)
 
     def __init__(self) -> None:
         super().__init__()
@@ -136,10 +183,19 @@ class ChainView(QWidget):
             followed_by_filler = i + 1 < len(slots) and slots[i + 1].is_wide_filler
             wide = not slot.is_empty and (followed_by_filler or (info is not None and info.is_wide))
             tile = EffectTile(i, slot, info, 2 if wide else 1)
-            tile.clicked.connect(self.select)
-            tile.power_toggled.connect(self.power_toggled)
-            self._layout.addWidget(tile, stretch=tile.span)
-            self._tiles.append(tile)
+            self._add_tile(tile)
+        for k in range(max(0, CHAIN_MIN_TILES - len(self._tiles))):
+            # empty drop targets beyond the stored chain (slot indexes past the end of the patch)
+            self._add_tile(EffectTile(len(slots) + k, EffectSlot(), None, 1))
+
+    def _add_tile(self, tile: EffectTile) -> None:
+        tile.clicked.connect(self.select)
+        tile.power_toggled.connect(self.power_toggled)
+        tile.remove_requested.connect(self.remove_requested)
+        tile.effect_dropped.connect(self.effect_dropped)
+        tile.tile_dropped.connect(self.tile_moved)
+        self._layout.addWidget(tile, stretch=tile.span)
+        self._tiles.append(tile)
 
     def select(self, slot_index: int | None) -> None:
         self._selected = slot_index
@@ -238,8 +294,25 @@ class ParamPanel(QWidget):
             self._rows.append(row)
 
 
+class _CatalogList(QListWidget):
+    """Catalog rows that can be dragged onto a chain tile (payload: the effect ID)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setDragEnabled(True)
+        self.setDragDropMode(QListWidget.DragDropMode.DragOnly)
+
+    def mimeData(self, items) -> QMimeData:  # noqa: N802 (Qt API)
+        mime = QMimeData()
+        if items:
+            mime.setData(MIME_EFFECT, QByteArray(str(items[0].data(_ID_ROLE)).encode()))
+        return mime
+
+
 class CatalogPanel(QWidget):
     """Searchable effect catalog with group and A1 FOUR filters, DSP load and an SVG preview."""
+
+    effect_activated = Signal(int)  # double click on a row: catalog effect ID
 
     def __init__(self, catalog: dict[int, EffectInfo], a1_ids: set[int] | None, installed_label: str) -> None:
         super().__init__()
@@ -254,7 +327,7 @@ class CatalogPanel(QWidget):
         self.group_combo.addItems(sorted({e.group for e in catalog.values()}))
         self.a1_check = QCheckBox("A1 FOUR compatible")
         self.a1_check.setEnabled(a1_ids is not None)
-        self.list = QListWidget()
+        self.list = _CatalogList()
         self.preview = QLabel()
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview.setMinimumHeight(120)
@@ -273,6 +346,7 @@ class CatalogPanel(QWidget):
         self.group_combo.currentTextChanged.connect(self.refresh)
         self.a1_check.toggled.connect(self.refresh)
         self.list.currentItemChanged.connect(self._on_current)
+        self.list.itemDoubleClicked.connect(lambda item: self.effect_activated.emit(item.data(_ID_ROLE)))
         self.refresh()
 
     def _is_installed(self, info: EffectInfo) -> bool:
