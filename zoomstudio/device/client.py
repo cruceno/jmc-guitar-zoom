@@ -102,19 +102,12 @@ class PedalClient:
         return lambda data: data.startswith(want)
 
     def _is_ack(self, data: bytes) -> bool:
-        """Acknowledgement of PC mode (52/53) and patch write (45): exactly ``52 00 <model> 00 00``.
+        """Acknowledgement of PC mode (52/53), editor mode (50/51) and patch write (45).
 
-        Both were captured on a real A1 FOUR (fw 1.01); any other reply is not an ack.
+        All are answered with exactly ``52 00 <model> 00 00`` on a real A1 FOUR (fw 1.01);
+        any other reply is not an ack.
         """
         return data == sysex.header(self.model_id) + b"\x00\x00"
-
-    def _is_editor_ack(self, data: bytes) -> bool:
-        """Acknowledgement of editor mode 50/51.
-
-        TODO: not captured on hardware yet, so any pedal reply that is not an editor
-        event (cmd 64) is accepted. Tighten it once the real reply is known.
-        """
-        return (data.startswith(sysex.header(self.model_id)) and len(data) > 3 and data[3] != 0x64)
 
     def _request(self, payload: bytes, accept: Callable[[bytes], bool],
                  timeout: float | None = None) -> bytes:
@@ -197,7 +190,7 @@ class PedalClient:
 
     def editor_mode(self, on: bool = True, timeout: float | None = None) -> _ModeGuard:
         """Switch editor mode; usable as a context manager that switches it off again."""
-        self._request(sysex.editor_mode(on, self.model_id), self._is_editor_ack, timeout)
+        self._request(sysex.editor_mode(on, self.model_id), self._is_ack, timeout)
         return _ModeGuard(lambda: self.editor_mode(False, timeout)) if on else _ModeGuard(None)
 
     def pc_mode(self, on: bool = True, timeout: float | None = None) -> _ModeGuard:

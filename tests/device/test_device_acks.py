@@ -39,3 +39,12 @@ def test_write_without_ack_times_out():
     t.on(HDR + b"\x45", STRAY_FILE_STATUS)
     with pytest.raises(PedalTimeout):
         c.write_patch(44, bytes(760))
+
+
+def test_stray_reply_is_not_taken_as_editor_mode_ack():
+    from zoomstudio.device.errors import PedalTimeout
+    t = FakeTransport()
+    c = PedalClient(t, timeout=0.2)
+    t.on(HDR + b"\x50", STRAY_FILE_STATUS)
+    with pytest.raises(PedalTimeout):
+        c.editor_mode(True)
