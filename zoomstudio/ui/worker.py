@@ -11,9 +11,9 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QMetaObject, QObject, Qt, Signal, Slot
+from PySide6.QtCore import QMetaObject, QObject, QTimer, Qt, Signal, Slot
 
-from zoomstudio.device import PedalClient, PedalError
+from zoomstudio.device import PedalClient, PedalError, TunerReading
 from zoomstudio.device.transport import Transport
 from zoomstudio.patches import library
 from zoomstudio.patches.backup import write_backup
@@ -22,6 +22,7 @@ from zoomstudio.patches.model import Patch
 from zoomstudio.patches.zptc import parse_zptc
 
 TransportFactory = Callable[[], Transport]
+TUNER_POLL_MS = 50  # how often the worker thread drains tuner traffic while the tuner is on
 
 
 class _ReadBackError(Exception):
@@ -40,6 +41,8 @@ class PedalWorker(QObject):
     backup_progress = Signal(str, int, int)  # phase ("patches" / "files"), done, total
     backup_finished = Signal(str, bool)  # patches folder ("" if none was created), success (emitted last)
     queue_finished = Signal(object, int)  # locations written and verified, failed location (0: none)
+    tuner_reading = Signal(object, int)  # note name or None, offset -7..+7 (0: in tune)
+    tuner_state = Signal(bool)  # the worker turned the tuner off by itself (refused, I/O error, disconnect)
     error = Signal(str)
 
     def __init__(self, transport_factory: TransportFactory, timeout: float = 3.0) -> None:
@@ -52,6 +55,8 @@ class PedalWorker(QObject):
         self._identity = None
         self._info = None
         self._cancel = threading.Event()
+        self._tuner_timer: QTimer | None = None
+        self._tuner_unsubscribe: Callable[[], None] | None = None
 
     # ------------------------------------------------------------ helpers
 
@@ -72,6 +77,7 @@ class PedalWorker(QObject):
         return self._client
 
     def _close_transport(self) -> None:
+        self._stop_tuner_polling()
         transport, self._transport, self._client = self._transport, None, None
         if transport is not None:
             try:
@@ -100,6 +106,7 @@ class PedalWorker(QObject):
 
     @Slot()
     def disconnect_pedal(self) -> None:
+        self._tuner_off_quietly()
         self._close_transport()
         self.disconnected.emit()
 
@@ -366,3 +373,94 @@ class PedalWorker(QObject):
             client.select_patch(location)
         except (PedalError, OSError, ValueError) as exc:
             self._fail(exc)
+
+    # -------------------------------------------------------------- tuner
+
+    @property
+    def tuner_active(self) -> bool:
+        return self._tuner_timer is not None
+
+    @Slot(bool)
+    def set_tuner(self, on: bool) -> None:
+        self.tuner_on() if on else self.tuner_off()
+
+    @Slot()
+    def tuner_on(self) -> None:
+        """Switch the pedal tuner on and poll its CC 98/99 traffic on this thread."""
+        client = self._require_client()
+        if client is None:
+            self.tuner_state.emit(False)
+            return
+        if self.tuner_active:
+            return
+        try:
+            # The pedal only streams tuner CC 98/99 in editor mode (observed on a real A1 FOUR).
+            client.editor_mode(True)
+            client.tuner(True)
+        except (PedalError, OSError) as exc:
+            self._fail(exc)
+            self._leave_editor_mode_quietly(client)
+            self.tuner_state.emit(False)
+            return
+        self._tuner_unsubscribe = client.subscribe(self._on_tuner_event)
+        self._tuner_timer = QTimer(self)  # lives on the worker's thread (tuner_on runs there)
+        self._tuner_timer.setInterval(TUNER_POLL_MS)
+        self._tuner_timer.timeout.connect(self._poll_tuner)
+        self._tuner_timer.start()
+
+    @Slot()
+    def tuner_off(self) -> None:
+        was_active = self.tuner_active
+        self._stop_tuner_polling()
+        client = self._client
+        if client is not None and was_active:
+            try:
+                client.tuner(False)
+                client.editor_mode(False)
+            except (PedalError, OSError) as exc:
+                self._fail(exc)
+
+    def _tuner_off_quietly(self) -> None:
+        """Before closing the port: send tuner off if it is on; never raise."""
+        if not self.tuner_active:
+            return
+        client = self._client
+        self._stop_tuner_polling()
+        if client is not None:
+            try:
+                client.tuner(False)
+            except Exception:
+                pass
+            self._leave_editor_mode_quietly(client)
+        self.tuner_state.emit(False)
+
+    @staticmethod
+    def _leave_editor_mode_quietly(client) -> None:
+        try:
+            client.editor_mode(False)
+        except Exception:
+            pass
+
+    def _stop_tuner_polling(self) -> None:
+        timer, self._tuner_timer = self._tuner_timer, None
+        if timer is not None:
+            timer.stop()
+            timer.deleteLater()
+        unsubscribe, self._tuner_unsubscribe = self._tuner_unsubscribe, None
+        if unsubscribe is not None:
+            unsubscribe()
+
+    def _on_tuner_event(self, event) -> None:
+        if isinstance(event, TunerReading):
+            self.tuner_reading.emit(event.note, event.offset)
+
+    def _poll_tuner(self) -> None:
+        client = self._client
+        if client is None:
+            return
+        try:
+            client.poll(0)  # non-blocking; drains whatever the pedal sent since the last tick
+        except (PedalError, OSError) as exc:
+            self._stop_tuner_polling()
+            self._fail(exc)
+            self.tuner_state.emit(False)

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QMetaObject, QRegularExpression, QThread, Qt, Signal, Slot
 from PySide6.QtGui import (
-    QAction, QBrush, QColor, QKeySequence, QRegularExpressionValidator, QUndoCommand, QUndoGroup, QUndoStack,
+    QAction, QBrush, QColor, QKeySequence, QShortcut, QRegularExpressionValidator, QUndoCommand, QUndoGroup, QUndoStack,
 )
 from PySide6.QtWidgets import (
     QCheckBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidgetItem, QMainWindow,
@@ -21,6 +21,7 @@ from zoomstudio.patches.model import NAME_MAX_LEN, VOLUME_MAX, Patch
 from zoomstudio.patches.zptc import build_zptc, parse_zptc
 
 from .library import LibraryMixin
+from .tuner import TunerPanel
 from .widgets import CatalogPanel, ChainView, EffectTile, ParamPanel, ParamRow, PatchList
 from .worker import PedalWorker, TransportFactory
 
@@ -90,6 +91,7 @@ class MainWindow(LibraryMixin, QMainWindow):
     _save_requested = Signal(int, object, object)
     _param_requested = Signal(int, int, int)
     _select_requested = Signal(int)
+    _tuner_requested = Signal(bool)
     backup_finished = Signal(str, bool)  # backup-all ended: patches folder ("" if none), success
     queue_finished = Signal(object, int)  # a multi-slot write ended: locations written, failed location
     _backup_requested = Signal(object, bool, object)
@@ -118,6 +120,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         self._offline_dir: Path | None = None
         self._is_connected = False
         self._closed = False
+        self._tuner_on = False
         self._worker: PedalWorker | None = None
         self._thread: QThread | None = None
 
@@ -147,13 +150,16 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.open_file_button = QPushButton("Open file...")
         self.save_file_button = QPushButton("Save as file...")
         self.save_button = QPushButton("Save to pedal")
+        self.tuner_button = QPushButton("Tuner")
+        self.tuner_button.setCheckable(True)
+        self.tuner_button.setToolTip("Turn the pedal tuner on or off (T). The pedal is muted while it is on")
         self.live_check = QCheckBox("Live")
         self.live_check.setToolTip("Also send parameter and on/off changes to the pedal while editing "
                                    "(experimental: slot numbering is not verified on hardware)")
         h.addWidget(self.connection_label)
         h.addWidget(self.memory_bar)
         h.addStretch(1)
-        for w in (self.live_check, self.open_file_button, self.save_file_button, self.save_button,
+        for w in (self.tuner_button, self.live_check, self.open_file_button, self.save_file_button, self.save_button,
                   self.connect_button, self.disconnect_button, self.open_button, self.reload_button):
             h.addWidget(w)
         self.connect_button.clicked.connect(self._on_connect_clicked)
@@ -164,6 +170,9 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.save_file_button.clicked.connect(self._choose_save_file)
         self.open_file_button.clicked.connect(self._choose_open_file)
         self.live_check.toggled.connect(self._on_live_toggled)
+        self.tuner_button.toggled.connect(self._on_tuner_toggled)
+        self.tuner_shortcut = QShortcut(QKeySequence("T"), self)
+        self.tuner_shortcut.activated.connect(self._on_tuner_shortcut)
 
         self.undo_action = self.undo_group.createUndoAction(self, "Undo")
         self.undo_action.setShortcut(QKeySequence("Ctrl+Z"))
@@ -238,10 +247,15 @@ class MainWindow(LibraryMixin, QMainWindow):
         splitter.setStretchFactor(2, 1)
         splitter.setSizes([260, 760, 360])
 
+        self.splitter = splitter
+        self.tuner_panel = TunerPanel()
+        self.tuner_panel.hide()
+        self.header = header
         root = QWidget()
         rv = QVBoxLayout(root)
         rv.addWidget(header)
         rv.addWidget(splitter, stretch=1)
+        rv.addWidget(self.tuner_panel, stretch=1)
         self.setCentralWidget(root)
         self._build_library_ui()
         self.statusBar().showMessage("Ready")
@@ -255,6 +269,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.open_file_button.setEnabled(self._location is not None and not self._saving)
         self.save_file_button.setEnabled(patch is not None)
         self.live_check.setEnabled(self._is_connected)
+        self.tuner_button.setEnabled(self._is_connected and self._worker is not None and not self._saving)
         blockers = self.save_blockers()
         dirty = self._location is not None and self.is_dirty(self._location)
         self.save_button.setEnabled(
@@ -269,6 +284,47 @@ class MainWindow(LibraryMixin, QMainWindow):
             tip = "Back up the slot, write this patch to the pedal and verify it by reading it back"
         self.save_button.setToolTip(tip)
         self._update_library_actions()
+        if self._tuner_on:  # nothing but the tuner and Disconnect may be used while the pedal is muted
+            for w in (self.save_button, self.open_file_button, self.save_file_button, self.live_check,
+                      self.reload_button, self.connect_button, self.open_button):
+                w.setEnabled(False)
+            for act in (self.backup_action, self.backup_files_action, self.write_dirty_action, self.copy_action,
+                        self.paste_action, self.clear_action, self.export_selected_action, self.export_all_action,
+                        self.import_file_action, self.import_folder_action):
+                act.setEnabled(False)
+
+    # ------------------------------------------------------------- tuner
+
+    def _on_tuner_shortcut(self) -> None:
+        if self.tuner_button.isEnabled() or self.tuner_button.isChecked():
+            self.tuner_button.toggle()
+
+    def _on_tuner_toggled(self, on: bool) -> None:
+        if self._worker is None or not self._is_connected:
+            self._apply_tuner_state(False)
+            return
+        self._apply_tuner_state(on)
+        self._tuner_requested.emit(on)
+
+    def _apply_tuner_state(self, on: bool) -> None:
+        """Show/hide the tuner panel and lock/unlock the editor (the pedal itself is driven by the worker)."""
+        self._tuner_on = on
+        if self.tuner_button.isChecked() != on:
+            self.tuner_button.blockSignals(True)
+            self.tuner_button.setChecked(on)
+            self.tuner_button.blockSignals(False)
+        if on:
+            self.tuner_panel.show_reading(None, 0)
+        self.splitter.setEnabled(not on)
+        self.splitter.setVisible(not on)
+        self.tuner_panel.setVisible(on)
+        self.menuBar().setEnabled(not on)
+        self._update_buttons()
+
+    @Slot(bool)
+    def _on_tuner_state(self, on: bool) -> None:
+        if self._tuner_on != on:  # the worker refused or lost the tuner
+            self._apply_tuner_state(on)
 
     # ------------------------------------------------------------- patches
 
@@ -755,6 +811,9 @@ class MainWindow(LibraryMixin, QMainWindow):
         w.backup_finished.connect(self._on_backup_done)
         self._param_requested.connect(w.send_param)
         self._select_requested.connect(w.select_patch)
+        self._tuner_requested.connect(w.set_tuner)
+        w.tuner_reading.connect(self.tuner_panel.show_reading)
+        w.tuner_state.connect(self._on_tuner_state)
         self._thread.start()
 
     def start_connect(self) -> None:
@@ -798,6 +857,7 @@ class MainWindow(LibraryMixin, QMainWindow):
     @Slot()
     def _on_disconnected(self) -> None:
         self._is_connected = False
+        self._apply_tuner_state(False)
         self._live_location = None
         self.live_check.setChecked(False)
         self.connection_label.setText("Not connected")
