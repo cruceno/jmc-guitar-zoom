@@ -38,10 +38,10 @@ def live_message(patch: Patch, slot_index: int, param_index: int | None, value: 
     ``param_index`` is the dial index of the effect (0-based) or ``None`` for on/off. Readme of the
     protocol: param 0 = on/off, 2-9 = dials.
 
-    HYPOTHESIS, NOT VERIFIED ON HARDWARE: the pedal's ``slot`` is the index into the chain *with*
-    the ``0x00000001`` wide fillers (what ``patch.effects`` holds). If real hardware numbers only
-    the effects, change this one function (see ``edit.logical_index``). Live edit stays behind the
-    "Live" checkbox for that reason.
+    Verified on a real A1 FOUR (fw 1.01, 2026-11-24): the pedal's ``slot`` is the index into the
+    chain *with* the ``0x00000001`` wide fillers (what ``patch.effects`` holds) and ``param`` is the
+    dial index + 2. FD DLXR Bass (slot 1, param 3), Hall PreD after two wide effects (slot 6,
+    param 2) and Gt GEQ 7 VOL (slot 4, param 9) each changed exactly that value on the pedal.
     """
     slot = slot_index
     if param_index is None:
