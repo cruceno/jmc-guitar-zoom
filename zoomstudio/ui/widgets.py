@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QByteArray, QMimeData, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QDrag, QImage, QPainter, QPixmap
+from PySide6.QtCore import QByteArray, QEvent, QMimeData, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QDrag, QFont, QImage, QLinearGradient, QPainter, QPen, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QDial, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
+    QApplication, QCheckBox, QComboBox, QDial, QFrame, QGridLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QSpinBox, QToolButton, QVBoxLayout, QWidget,
 )
 
@@ -14,7 +14,10 @@ from zoomstudio.effects.catalog import EffectInfo
 from zoomstudio.patches.model import EffectSlot, Patch
 
 from . import strings as S
-from .cards import PatchCardDelegate
+from . import tokens
+from .cards import Knob, PatchCardDelegate, card_path, with_alpha
+from .fonts import display_font, ui_font
+from .icons import icon
 from .chain import CHAIN_MIN_TILES, ChainView, EffectTile, PedalTile  # noqa: F401  (re-exported)
 from .mime import MIME_EFFECT, MIME_PATCH, MIME_SLOT  # noqa: F401  (re-exported)
 from .theme import group_color
@@ -66,63 +69,115 @@ class PatchList(QListWidget):
 
 
 class ParamRow(QWidget):
-    """Knob and value box for one effect parameter."""
+    """Parameter card: name, knob, value box and range. Dial and spin stay in sync."""
 
     changed = Signal(int, int)  # parameter index, new value
+    activated = Signal(int)  # the card got the focus or was edited: its help is shown
 
     def __init__(self, index: int, name: str, maximum: int, default: int, value: int, tooltip: str = "") -> None:
         super().__init__()
         self.index = index
         self.name = name
         self.default = default
+        self.explanation = tooltip
+        self.current = False
         maximum = max(maximum, value)  # never hide a stored value that exceeds the catalog range
-        self.dial = QDial()
+        self.maximum = maximum
+        self.dial = Knob()
         self.dial.setRange(0, maximum)
-        self.dial.setNotchesVisible(maximum <= 20)
-        self.dial.setFixedSize(QSize(64, 64))
+        self.dial.default_value = default
         self.spin = QSpinBox()
         self.spin.setRange(0, maximum)
         self.dial.setValue(value)
         self.spin.setValue(value)
         self.label = QLabel(name)
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.label.setFont(ui_font(14, QFont.Weight.Medium))
+        self.range_label = QLabel(S.param_range(maximum, default))
+        self.range_label.setProperty("role", "secondary")
+        self.range_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setContentsMargins(6, 10, 6, 8)
+        layout.setSpacing(4)
         layout.addWidget(self.label)
         layout.addWidget(self.dial, alignment=Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(self.spin)
+        layout.addWidget(self.range_label)
         if tooltip:
             self.setToolTip(tooltip)
         self.dial.valueChanged.connect(self.spin.setValue)
         self.spin.valueChanged.connect(self.dial.setValue)
         self.spin.valueChanged.connect(lambda v: self.changed.emit(self.index, v))
+        self.spin.valueChanged.connect(lambda _v: self.activated.emit(self.index))
         self.dial.mouseDoubleClickEvent = lambda _e: self.spin.setValue(self.default)  # type: ignore[method-assign]
+        for w in (self.dial, self.spin):
+            w.installEventFilter(self)
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 (Qt API)
+        if event.type() == QEvent.Type.FocusIn:
+            self.activated.emit(self.index)
+        return super().eventFilter(obj, event)
+
+    def reset(self) -> None:
+        self.spin.setValue(self.default)
+
+    def set_current(self, current: bool) -> None:
+        self.current = current
+        self.update()
+
+    def paintEvent(self, _event) -> None:  # noqa: N802 (Qt API)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        path = card_path(rect)
+        fill = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+        if self.current:
+            fill.setColorAt(0, with_alpha(tokens.color("card-selected"), 0.28))
+            fill.setColorAt(1, with_alpha(tokens.color("card-selected"), 0.12))
+        else:
+            fill.setColorAt(0, tokens.color("card-top"))
+            fill.setColorAt(1, tokens.color("card-bottom"))
+        p.fillPath(path, fill)
+        p.setPen(QPen(with_alpha(tokens.color("accent"), 0.55) if self.current else tokens.color("card-rim"), 1))
+        p.drawPath(path)
 
 
 class ParamPanel(QWidget):
-    """Knobs for the parameters of the selected effect."""
+    """Cards for the parameters of the selected effect, with the help of the current parameter."""
 
     param_changed = Signal(int, int)  # parameter index, value
 
-    COLUMNS = 6
+    COLUMNS = 7
 
     def __init__(self) -> None:
         super().__init__()
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         self.title = QLabel(S.SELECT_EFFECT)
-        self.title.setStyleSheet("font-weight: bold;")
+        self.title.setFont(display_font(24, 500))
         self.description = QLabel("")
         self.description.setWordWrap(True)
-        self.description.setStyleSheet("color: #9a9da3;")
+        self.description.setProperty("role", "secondary")
         self._grid_host = QWidget()
         self._grid = QGridLayout(self._grid_host)
         self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setSpacing(8)
+        self.help = QLabel("")
+        self.help.setWordWrap(True)
+        self.reset_button = QPushButton(S.RESET)
+        self.reset_button.setIcon(icon("reset"))
+        self.reset_button.setEnabled(False)
+        self.reset_button.clicked.connect(self._reset_current)
+        foot = QHBoxLayout()
+        foot.addWidget(self.help, stretch=1)
+        foot.addWidget(self.reset_button, alignment=Qt.AlignmentFlag.AlignTop)
         outer.addWidget(self.title)
         outer.addWidget(self.description)
         outer.addWidget(self._grid_host)
         outer.addStretch(1)
+        outer.addLayout(foot)
         self._rows: list[ParamRow] = []
+        self._current: ParamRow | None = None
 
     def rows(self) -> list[ParamRow]:
         return list(self._rows)
@@ -133,21 +188,39 @@ class ParamPanel(QWidget):
             row.setParent(None)
             row.deleteLater()
         self._rows = []
+        self._current = None
         self.title.setText(message)
         self.description.setText("")
+        self.help.setText("")
+        self.reset_button.setEnabled(False)
 
     def show_effect(self, slot: EffectSlot, info: EffectInfo | None) -> None:
         self.clear()
         if info is None:
             self.title.setText(S.unknown_effect_title(slot.effect_id))
             return
-        self.title.setText(f"{info.name}  -  {S.group_label(info.group)}")
+        self.title.setText(f"{info.name}  ·  {S.group_label(info.group)}")
         self.description.setText(info.description)
         for i, param in enumerate(info.params[: len(slot.params)]):
             row = ParamRow(i, param.name, param.max, param.default, slot.params[i], param.explanation)
             row.changed.connect(self.param_changed)
+            row.activated.connect(lambda _idx, r=row: self._select(r) if r in self._rows else None)
             self._grid.addWidget(row, i // self.COLUMNS, i % self.COLUMNS)
             self._rows.append(row)
+        if self._rows:
+            self._select(self._rows[0])
+
+    def _select(self, row: ParamRow) -> None:
+        if self._current is not None:
+            self._current.set_current(False)
+        self._current = row
+        row.set_current(True)
+        self.help.setText(f"{row.name}: {row.explanation or S.NO_PARAM_HELP}\n{S.param_range(row.maximum, row.default)}")
+        self.reset_button.setEnabled(True)
+
+    def _reset_current(self) -> None:
+        if self._current is not None:
+            self._current.reset()
 
 
 class _CatalogList(QListWidget):

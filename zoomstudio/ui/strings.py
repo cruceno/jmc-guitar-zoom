@@ -470,3 +470,11 @@ def slot_label(index: int, wide: bool) -> str:
 def footswitch_name(is_on: bool, effect: str) -> str:
     """Accessible name: the action the footswitch performs when pressed."""
     return f"{TURN_OFF if is_on else TURN_ON} {effect}"
+
+RESET = "Restablecer"
+PARAM_HINT = "Arrastre una perilla · doble clic para restablecer"
+NO_PARAM_HELP = "Sin descripción para este parámetro"
+
+
+def param_range(maximum: int, default: int) -> str:
+    return f"0–{maximum} · pred. {default}"

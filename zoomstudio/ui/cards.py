@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QFontMetrics, QLinearGradient, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import QStyle, QStyledItemDelegate
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QFontMetrics, QLinearGradient, QPainter, QPainterPath, QPen, QRadialGradient
+from PySide6.QtWidgets import QDial, QStyle, QStyledItemDelegate
 
 from . import strings as S
 from . import tokens
-from .fonts import ui_font
+from .fonts import display_font, ui_font
 from .glass import paint_glow
 from .theme import group_color
 
@@ -108,3 +108,51 @@ class PatchCardDelegate(QStyledItemDelegate):
             p.drawRoundedRect(block, 2.5, 2.5)
             x += span * SLOT_WIDTH
         p.restore()
+
+
+class Knob(QDial):
+    """Painted knob: 270 degree track, accent value arc, pointer, default tick and the value in the middle."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.default_value = 0
+        self.setFixedSize(QSize(72, 72))
+        self.setNotchesVisible(False)
+
+    def paintEvent(self, _event) -> None:  # noqa: N802 (Qt API)
+        from math import cos, radians, sin
+
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        c = QPointF(self.width() / 2, self.height() / 2)
+        r = min(self.width(), self.height()) / 2 - 6
+        span = max(1, self.maximum() - self.minimum())
+        frac = (self.value() - self.minimum()) / span
+        face = QRadialGradient(c - QPointF(r * 0.35, r * 0.4), r * 1.5)
+        face.setColorAt(0, QColor(255, 255, 255, 41))
+        face.setColorAt(1, QColor(0, 0, 0, 90))
+        p.setBrush(face)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(c, r - 5, r - 5)
+        arc = QRectF(c.x() - r, c.y() - r, 2 * r, 2 * r)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(tokens.color("knob-arc-track"), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        p.drawArc(arc, 225 * 16, -270 * 16)
+        if frac > 0:
+            p.setPen(QPen(tokens.color("knob-arc-value"), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            p.drawArc(arc, 225 * 16, round(-270 * frac * 16))
+        tick = radians(225 - 270 * (self.default_value - self.minimum()) / span)
+        p.setPen(QPen(tokens.color("knob-default-tick"), 1.5))
+        p.drawLine(QPointF(c.x() + cos(tick) * (r + 1), c.y() - sin(tick) * (r + 1)),
+                   QPointF(c.x() + cos(tick) * (r + 4), c.y() - sin(tick) * (r + 4)))
+        ang = radians(225 - 270 * frac)
+        p.setPen(QPen(tokens.color("knob-indicator"), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        p.drawLine(QPointF(c.x() + cos(ang) * (r - 14), c.y() - sin(ang) * (r - 14)),
+                   QPointF(c.x() + cos(ang) * (r - 7), c.y() - sin(ang) * (r - 7)))
+        p.setPen(tokens.color("text-primary"))
+        p.setFont(display_font(16, 500))
+        p.drawText(QRectF(c.x() - 20, c.y() - 11, 40, 22), Qt.AlignmentFlag.AlignCenter, str(self.value()))
+        if self.hasFocus():
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(tokens.color("focus-ring"), 2))
+            p.drawEllipse(c, r + 3, r + 3)

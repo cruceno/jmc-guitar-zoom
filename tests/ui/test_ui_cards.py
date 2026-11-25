@@ -4,6 +4,7 @@ from PySide6.QtWidgets import QStyleOptionViewItem
 
 from ui_replies import FIXTURES
 from zoomstudio.effects.catalog import load_catalog
+from zoomstudio.ui import strings, tokens
 from zoomstudio.ui.cards import CARD_HEIGHT, ROLE_DIRTY, ROLE_NAME, ROLE_NUMBER, ROLE_STRIP, PatchCardDelegate
 from zoomstudio.ui.main_window import MainWindow
 
@@ -43,3 +44,33 @@ def test_list_paints_with_the_delegate(window):
     window.select_location(44)
     image = window.patch_list.viewport().grab().toImage()
     assert not image.isNull() and any(image.pixelColor(x, 30).alpha() for x in range(0, 200, 20))
+
+
+def test_parameter_cards_show_range_and_default_and_keep_dial_and_spin_in_sync(window):
+    window.select_location(44)
+    window.select_tile(1)
+    rows = window.param_rows()
+    assert len(rows) == 7 and window.params.COLUMNS == 7
+    assert rows[1].range_label.text() == strings.param_range(rows[1].maximum, rows[1].default)
+    rows[1].dial.setValue(60)
+    assert rows[1].spin.value() == 60 and rows[1].dial.default_value == rows[1].default
+
+
+def test_reset_button_restores_the_default_of_the_current_parameter(window):
+    window.select_location(44)
+    window.select_tile(1)
+    row = window.param_rows()[1]
+    row.spin.setValue(77)
+    assert window.params.reset_button.isEnabled() and row.current
+    window.params.reset_button.click()
+    assert row.spin.value() == row.default and window.current_patch.effects[1].params[1] == row.default
+
+
+def test_knob_draws_the_value_arc_in_the_accent_colour(window):
+    window.select_location(44)
+    window.select_tile(1)
+    knob = window.param_rows()[1].dial
+    knob.setValue(knob.maximum())
+    image = knob.grab().toImage()
+    accent = tokens.color("knob-arc-value").rgb()
+    assert any(image.pixelColor(x, y).rgb() == accent for x in range(image.width()) for y in range(image.height()))
