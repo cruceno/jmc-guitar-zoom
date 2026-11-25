@@ -121,10 +121,10 @@ class PedalBody(QFrame):
                        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap, t.effect_name)
             p.setFont(ui_font(12))
             p.setPen(t.text_colour)
-            p.drawText(QRectF(inner.left(), inner.top() + 56, inner.width(), 16), Qt.AlignmentFlag.AlignLeft,
+            p.drawText(QRectF(inner.left(), inner.top() + 50, inner.width(), 16), Qt.AlignmentFlag.AlignLeft,
                        S.group_label(t.group))
             if self.badge_text():
-                badge = QRectF(inner.left(), inner.top() + 74, 52, 16)
+                badge = QRectF(inner.left(), inner.top() + 67, 52, 15)
                 p.setPen(QPen(QColor(255, 255, 255, 46), 1))
                 p.drawPath(card_path(badge, 8))
                 p.setPen(tokens.color("text-secondary"))
@@ -154,6 +154,19 @@ class PedalBody(QFrame):
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.setPen(QPen(tokens.color("focus-ring"), 2))
             p.drawRoundedRect(rect.adjusted(-5, -5, 5, 5), 17, 17)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        chain = self.tile.parentWidget()
+        ctrl = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+        key = event.key()
+        if isinstance(chain, ChainView) and key in (Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Home, Qt.Key.Key_End):
+            if key in (Qt.Key.Key_Left, Qt.Key.Key_Right):
+                chain.step(self.tile, -1 if key == Qt.Key.Key_Left else 1, move=ctrl)
+            else:
+                chain.go_to(0 if key == Qt.Key.Key_Home else -1)
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def focusInEvent(self, event) -> None:  # noqa: N802 (Qt API)
         super().focusInEvent(event)
@@ -300,12 +313,14 @@ class ChainView(QWidget):
         super().__init__()
         self._tiles: list[PedalTile] = []
         self._selected: int | None = None
+        self._restore_focus = False
         self.setFixedHeight(PEDAL_H + 2 * BODY_PAD + 2 + FOOT + 26)
 
     def tiles(self) -> list[PedalTile]:
         return list(self._tiles)
 
     def clear(self) -> None:
+        self._restore_focus = any(t.body.hasFocus() for t in self._tiles)  # the rebuild must not drop the focus
         for tile in self._tiles:
             tile.setParent(None)  # leave the window now; deleteLater alone keeps painting it
             tile.deleteLater()
@@ -385,10 +400,34 @@ class ChainView(QWidget):
             p.setPen(tokens.color("text-secondary"))
             p.drawText(QRectF(x - JACK_W / 2, y + 14, JACK_W, 18), Qt.AlignmentFlag.AlignCenter, label)
 
+    def step(self, tile: PedalTile, delta: int, move: bool = False) -> None:
+        """Select the neighbouring pedal, or (``move``) move this effect onto its place."""
+        i = self._tiles.index(tile) + delta
+        if not 0 <= i < len(self._tiles):
+            return
+        if not move:
+            self.go_to(i)
+        elif not tile.is_empty and not self._tiles[i].is_empty:
+            self._restore_focus = True
+            self.tile_moved.emit(tile.slot_index, self._tiles[i].slot_index)
+
+    def go_to(self, index: int) -> None:
+        """Select the pedal at ``index`` (-1: the last) and give it the keyboard focus."""
+        if self._tiles:
+            tile = self._tiles[index]
+            self.select(tile.slot_index)
+            tile.body.setFocus()
+
     def select(self, slot_index: int | None) -> None:
         self._selected = slot_index
         for tile in self._tiles:
-            tile.set_selected(tile.slot_index == slot_index)
+            chosen = tile.slot_index == slot_index
+            tile.set_selected(chosen)
+            tile.body.setFocusPolicy(Qt.FocusPolicy.StrongFocus if chosen or slot_index is None
+                                     else Qt.FocusPolicy.ClickFocus)  # one tab stop: the selected pedal
+            if chosen and self._restore_focus:
+                tile.body.setFocus()
+                self._restore_focus = False
         if slot_index is not None:
             self.tile_selected.emit(slot_index)
 
