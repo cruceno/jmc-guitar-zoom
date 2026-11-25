@@ -64,13 +64,13 @@ def catalog():
     return load_catalog(("pedal", FIXTURES / "catalog"), ("Guitar Lab", EFFECTS / "lib"))
 
 
-def connected_window(qtbot, monkeypatch, catalog, tmp_path, pedal_files: PedalFiles, a1_ids=None):
+def connected_window(qtbot, monkeypatch, catalog, tmp_path, pedal_files: PedalFiles, a1_ids=None, **kw):
     pedal_files.install(monkeypatch)
     transport = fake_pedal(PATCHES)
     for _ in range(30):  # every state read, install and removal runs in its own PC mode
         transport.on(sysex.pc_mode(True, 0x6E), S(HDR + b"\x00\x00"))
         transport.on(sysex.pc_mode(False, 0x6E), S(HDR + b"\x00\x00"))
-    w = MainWindow(catalog, a1_ids=a1_ids, transport_factory=lambda: transport, backup_dir=tmp_path)
+    w = MainWindow(catalog, a1_ids=a1_ids, transport_factory=lambda: transport, backup_dir=tmp_path, **kw)
     qtbot.addWidget(w)
     with qtbot.waitSignal(w.patches_loaded, timeout=5000):
         w.connect_button.click()
@@ -117,13 +117,14 @@ def test_an_installed_flag_without_the_file_is_listed_as_missing_its_file(qtbot,
     assert "OPTCOMP.ZD2" not in names(panel, "available")  # its flag is set: nothing to install
 
 
-def test_effects_the_list_does_not_contain_are_not_offered(qtbot, monkeypatch, catalog, tmp_path):
+def test_effects_the_list_does_not_contain_are_shown_but_cannot_be_installed(qtbot, monkeypatch, catalog, tmp_path):
     unlisted = dataclasses.replace(catalog[0x1800030], effect_id=0x1800099, filename="ZZNEW_100.zd2")
     pedal_files = PedalFiles(BEFORE)
     w = connected_window(qtbot, monkeypatch, {**catalog, unlisted.effect_id: unlisted}, tmp_path, pedal_files)
     panel = open_screen(qtbot, w)
-    assert "ZZNEW.ZD2" not in names(panel, "available")
-    assert names(panel, "available") == ["160_COMP.ZD2", "MDL_12ST.ZD2"]
+    assert names(panel, "available") == ["160_COMP.ZD2", "MDL_12ST.ZD2", "ZZNEW.ZD2"]
+    panel.select_effect("ZZNEW.ZD2")
+    assert not panel.install_button.isEnabled()  # the pedal's list has no record of it
 
 
 def test_only_effects_of_the_a1_four_are_offered(qtbot, monkeypatch, catalog, tmp_path):
@@ -563,3 +564,100 @@ def test_a_failed_repair_goes_through_the_error_path(qtbot, monkeypatch, catalog
         panel.repair_button.click()
     assert blocker.args[0].startswith("No se pudo reparar MDL_12ST.ZD2")
     assert "MDL_12ST.ZD2" not in files.files
+
+
+# ---------------------------------------------------------------- pedal filter: the full catalog, installable or not
+
+A1, G5N = 0x6E001100, 0x6E000000
+MDL_12ST, COMP_160 = 0x14400190, 0x1800030  # 12Strings and 160 Comp of the local lib (see the tests above)
+
+
+def pedal_registry(extra_a1=()):
+    from zoomstudio.effects.models import PedalModel
+
+    return {A1: PedalModel(A1, "A1 FOUR", frozenset({MDL_12ST, 0x1000010, 0x1000090, 0x400002C, 0x2000054, 0x9000030, *extra_a1})),
+            G5N: PedalModel(G5N, "G5n", frozenset({MDL_12ST, COMP_160}))}
+
+
+def pedal_screen(qtbot, monkeypatch, catalog, tmp_path, registry=None, files=None):
+    from zoomstudio.effects import models as pm
+
+    monkeypatch.setattr(pm, "SUPPORTED_MODELS", {A1})
+    files = files or PedalFiles(BEFORE)
+    files.install(monkeypatch)
+    w = connected_window(qtbot, monkeypatch, catalog, tmp_path, files, models=registry or pedal_registry())
+    return w, open_screen(qtbot, w), files
+
+
+def entry_item(panel, which, file):
+    cards = getattr(panel, f"{which}_list")
+    return next(cards.item(i) for i in range(cards.count())
+                if cards.item(i).data(ROLE_ENTRY) is not None and cards.item(i).data(ROLE_ENTRY).file == file)
+
+
+def test_the_pedal_filter_defaults_to_the_connected_pedal_and_offers_all_and_the_others(qtbot, monkeypatch, catalog, tmp_path):
+    w, panel, _files = pedal_screen(qtbot, monkeypatch, catalog, tmp_path)
+    combo = panel.pedal_combo
+    assert combo.currentData() == A1 and combo.itemText(combo.currentIndex()) == "A1 FOUR (conectada)"
+    texts = [combo.itemText(i) for i in range(combo.count())]
+    assert ST.EFFECTS_ALL_PEDALS == "Todos los pedales" and ST.EFFECTS_ALL_PEDALS in texts and "G5n" in texts
+    assert names(panel, "installed") == ON_PEDAL  # the installed list does not depend on the filter
+    assert "160_COMP.ZD2" not in names(panel, "available")  # a G5n effect: not shown for the A1 FOUR
+    assert "MDL_12ST.ZD2" in names(panel, "available")
+
+
+def test_all_pedals_shows_the_full_catalog_with_a_badge_on_what_the_pedal_cannot_install(qtbot, monkeypatch, catalog, tmp_path):
+    _w, panel, _files = pedal_screen(qtbot, monkeypatch, catalog, tmp_path)
+    panel.pedal_combo.setCurrentIndex(panel.pedal_combo.findData("all"))
+    assert "160_COMP.ZD2" in names(panel, "available") and "MDL_12ST.ZD2" in names(panel, "available")
+    other = entry_item(panel, "available", "160_COMP.ZD2")
+    assert ST.not_compatible_with("A1 FOUR") == "No compatible con A1 FOUR"
+    assert ST.not_compatible_with("A1 FOUR") in other.toolTip() and ST.not_compatible_with("A1 FOUR") in other.data(Qt.ItemDataRole.AccessibleTextRole)
+    assert ST.not_compatible_with("A1 FOUR") not in entry_item(panel, "available", "MDL_12ST.ZD2").toolTip()
+
+
+def test_a_non_compatible_effect_has_install_disabled_with_the_reason_and_keeps_its_description_and_star(qtbot, monkeypatch, catalog, tmp_path):
+    w, panel, _files = pedal_screen(qtbot, monkeypatch, catalog, tmp_path)
+    panel.pedal_combo.setCurrentIndex(panel.pedal_combo.findData("all"))
+    panel.select_effect("160_COMP.ZD2")
+    assert panel.install_button.isVisibleTo(panel) and not panel.install_button.isEnabled()
+    assert panel.reason_label.text() == ST.effects_not_compatible_reason("A1 FOUR")
+    assert panel.reason_label.property("blocking") is False
+    assert panel.description_of("160_COMP.ZD2") and panel.detail_text.text() == panel.description_of("160_COMP.ZD2")
+    item = entry_item(panel, "available", "160_COMP.ZD2")
+    panel.available_list.favorite_toggled.emit(item)  # the star still works
+    assert w.favorites.is_favorite(COMP_160)
+
+
+def test_an_effect_the_pedals_list_does_not_contain_is_shown_but_cannot_be_installed(qtbot, monkeypatch, catalog, tmp_path):
+    unlisted = dataclasses.replace(catalog[MDL_12ST], effect_id=0x1800099, filename="ZZNEW_100.zd2")
+    registry = pedal_registry(extra_a1=(0x1800099,))
+    files = PedalFiles(BEFORE)
+    files.install(monkeypatch)
+    w = connected_window(qtbot, monkeypatch, {**catalog, unlisted.effect_id: unlisted}, tmp_path, files, models=registry)
+    panel = open_screen(qtbot, w)
+    panel.select_effect("ZZNEW.ZD2")
+    assert not panel.install_button.isEnabled() and panel.reason_label.text() == ST.EFFECTS_NOT_IN_PEDAL_LIST
+
+
+def test_an_installable_effect_still_installs_from_the_filtered_list(qtbot, monkeypatch, catalog, tmp_path):
+    w, panel, files = pedal_screen(qtbot, monkeypatch, catalog, tmp_path)
+    panel.pedal_combo.setCurrentIndex(panel.pedal_combo.findData("all"))
+    panel.select_effect("MDL_12ST.ZD2")
+    assert panel.install_button.isEnabled()
+    with qtbot.waitSignal(panel.state_shown, timeout=5000):
+        panel.install_button.click()
+    assert files.files[flst.FLST_NAME] == AFTER and "MDL_12ST.ZD2" in names(panel, "installed")
+
+
+def test_grouping_search_and_favorites_work_with_the_pedal_filter(qtbot, monkeypatch, catalog, tmp_path):
+    w, panel, _files = pedal_screen(qtbot, monkeypatch, catalog, tmp_path)
+    panel.pedal_combo.setCurrentIndex(panel.pedal_combo.findData(G5N))  # effects of the G5n, installable or not
+    assert set(names(panel, "available")) == {"160_COMP.ZD2", "MDL_12ST.ZD2"}
+    panel.search.setText("comp")
+    assert names(panel, "available") == ["160_COMP.ZD2"] and panel.section_groups("available") == ["DYNAMICS"]
+    panel.search.setText("")
+    w.favorites.set_favorite(COMP_160, True)
+    assert panel.section_groups("available")[0] == "\0favorites"
+    panel.group_combo.setCurrentIndex(panel.group_combo.findData("\0favorites"))
+    assert names(panel, "available") == ["160_COMP.ZD2"]

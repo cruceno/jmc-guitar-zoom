@@ -449,6 +449,7 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.effects_panel.install_requested.connect(self._on_effect_install)
         self.effects_panel.remove_requested.connect(self._on_effect_remove)
         self.effects_panel.repair_requested.connect(self._on_effect_repair)
+        self._sync_effects_pedals()
         self.effects_panel.patch_requested.connect(self._open_patch_from_effects)
         self.bank_panel = BankScreen(backdrop_root)
         self.bank_panel.hide()
@@ -1367,6 +1368,13 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
             if self._location is not None:
                 self._show_patch(self._location, keep=True)  # which effects the pedal cannot run changed
         self.catalog_panel.set_pedal(self.allowed_ids, self._target_name(), self.target_model)
+        self._sync_effects_pedals()
+
+    def _sync_effects_pedals(self) -> None:
+        """The effects screen installs on the connected pedal (else the target); its filter names it."""
+        pedal = self.connected_model if self.connected_model in self.models else self.target_model
+        self.effects_panel.set_pedals(self.models, pedal, pedal is not None and pedal == self.connected_model,
+                                      self._ids_for(pedal))
 
     @Slot(object, object)
     def _on_connected(self, identity, info) -> None:

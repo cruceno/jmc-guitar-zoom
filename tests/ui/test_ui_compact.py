@@ -14,7 +14,7 @@ from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtWidgets import (QAbstractScrollArea, QLabel, QScrollBar, QSizePolicy, QStatusBar, QToolButton,
                                QWidget)
 
-from test_ui_effects_manager import AFTER, BEFORE, PATCHES, PedalFiles
+from test_ui_effects_manager import AFTER, BEFORE, PATCHES, PedalFiles, pedal_registry
 from test_ui_clipping import SLACK, clipped, themed  # noqa: F401 (themed is a fixture)
 from ui_replies import FIXTURES, HDR, S, fake_pedal
 from zoomstudio.device import sysex
@@ -25,7 +25,7 @@ from zoomstudio.ui.widgets import ParamRow
 
 EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
 SIZES = [(1280, 760), (1440, 900), (1600, 1000)]
-STATES = ["two-pedals", "no-patch", "gt-geq-7", "effects-manager", "bank", "tuner", "offline"]
+STATES = ["two-pedals", "no-patch", "gt-geq-7", "effects-manager", "effects-all-pedals", "bank", "tuner", "offline"]
 SQUEEZE_SLACK = 1
 
 
@@ -55,7 +55,9 @@ def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
         transport.on(sysex.pc_mode(True, 0x6E), S(HDR + b"\x00\x00"))
         transport.on(sysex.pc_mode(False, 0x6E), S(HDR + b"\x00\x00"))
         transport.on(sysex.pc_mode(True, 0x6E), S(HDR + b"\x00\x00"))
-    w = MainWindow(catalog, transport_factory=lambda: transport, backup_dir=tmp_path, bank_dir=tmp_path / "bank")
+    registry = pedal_registry() if state == "effects-all-pedals" else None
+    w = MainWindow(catalog, transport_factory=lambda: transport, backup_dir=tmp_path, bank_dir=tmp_path / "bank",
+                   models=registry)
     qtbot.addWidget(w)
     with qtbot.waitSignal(w.patches_loaded, timeout=5000):
         w.connect_button.click()
@@ -68,6 +70,12 @@ def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
         with qtbot.waitSignal(w.effects_panel.state_shown, timeout=5000):
             w.open_effects_screen()
         w.effects_panel.select_effect("HALL.ZD2")
+    elif state == "effects-all-pedals":  # the full catalog: a card with the «No compatible con …» badge, selected
+        w.select_location(2)
+        with qtbot.waitSignal(w.effects_panel.state_shown, timeout=5000):
+            w.open_effects_screen()
+        w.effects_panel.pedal_combo.setCurrentIndex(w.effects_panel.pedal_combo.findData("all"))
+        w.effects_panel.select_effect("160_COMP.ZD2")
     elif state == "bank":
         w.bank_button.setChecked(True)
     elif state == "tuner":

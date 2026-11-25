@@ -942,3 +942,23 @@ def discard_patch_text(display: int, name: str) -> str:
 
 # ---- pedal target
 CATALOG_PEDAL_TIP = "Pedal para el que se muestran los efectos compatibles"
+
+
+# ---- effects screen: pedal filter (names always come from the detected model, never written here)
+EFFECTS_ALL_PEDALS = "Todos los pedales"
+EFFECTS_PEDAL_TIP = "Pedal cuyos efectos se muestran"
+EFFECTS_THIS_PEDAL = "este pedal"
+EFFECTS_NOT_INSTALLABLE = "No compatible con este pedal"
+EFFECTS_NOT_IN_PEDAL_LIST = "La lista de la pedalera no incluye este efecto: no se puede instalar"
+
+
+def pedal_connected_label(name: str) -> str:
+    return f"{name} (conectada)"
+
+
+def not_compatible_with(name: str) -> str:
+    return f"No compatible con {name}"
+
+
+def effects_not_compatible_reason(name: str) -> str:
+    return f"Este efecto no es compatible con {name}: no se puede instalar"

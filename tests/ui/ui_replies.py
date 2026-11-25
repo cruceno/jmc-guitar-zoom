@@ -38,8 +38,9 @@ def patch_info_reply(count=50, psize=760, bsize=10) -> bytes:
                         bsize & 0x7F, bsize >> 7, 0, 0])
 
 
-def identity_reply(model=MODEL) -> bytes:
-    return bytes([0x7E, 0x00, 0x06, 0x02, 0x52, model, 0x00, 0x00, 0x00, 0x31, 0x2E, 0x30, 0x30])
+def identity_reply(model=MODEL, member=0x11) -> bytes:
+    """Identity of the pedal; member 0x11 is the A1 FOUR (model id 0x6E001100), 0x0C the G1 FOUR."""
+    return bytes([0x7E, 0x00, 0x06, 0x02, 0x52, model, 0x00, member & 0x7F, member >> 7, 0x31, 0x2E, 0x30, 0x30])
 
 
 def disk_reply(maximum: int, available: int) -> bytes:
@@ -49,10 +50,11 @@ def disk_reply(maximum: int, available: int) -> bytes:
     return HDR + bytes([0x60, 0x04, 0x29, 0x01, 0x00, 0x08, 0x00]) + v(maximum) + v(available) + bytes([0, 0])
 
 
-def fake_pedal(patches: list[bytes], disk=(3_000_000, 150_000), transport: FakeTransport | None = None) -> FakeTransport:
+def fake_pedal(patches: list[bytes], disk=(3_000_000, 150_000), transport: FakeTransport | None = None,
+               member: int = 0x11) -> FakeTransport:
     """A transport that answers connect + a full read of ``patches`` (locations 1..N)."""
     t = transport or FakeTransport()
-    t.on(bytes([0x7E, 0x7F, 0x06, 0x01]), S(identity_reply()))
+    t.on(bytes([0x7E, 0x7F, 0x06, 0x01]), S(identity_reply(member=member)))
     t.on(sysex.patch_info_request(MODEL), S(patch_info_reply(count=len(patches))))
     for loc, raw in enumerate(patches, start=1):
         bank, slot = divmod(loc - 1, 10)

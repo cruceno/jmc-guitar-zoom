@@ -37,6 +37,7 @@ from .painted import SearchField, SectionLabel
 from .theme import group_color, group_fill_color, group_text_color
 
 ROLE_ENTRY = Qt.ItemDataRole.UserRole + 30  # the Entry behind a card
+ROLE_BADGE = Qt.ItemDataRole.UserRole + 32  # text of the badge on a card the pedal cannot install
 DETAIL_WIDTH = 360
 BYPASS = "BYPASS.ZD2"  # the list's first record: the pedal's "no effect", not an effect to manage
 
@@ -49,6 +50,11 @@ class Entry:
     info: EffectInfo | None
     size: int | None  # bytes of the local .zd2
     missing: bool = False  # flagged installed in the list, but the file is not on the pedal
+    compat: str = "ok"  # "ok", or why the connected pedal cannot install it: "model", "list" or "copy"
+
+    @property
+    def installable(self) -> bool:
+        return self.compat == "ok"
 
     @property
     def name(self) -> str:
@@ -79,7 +85,8 @@ def build_entries(catalog: dict[int, EffectInfo], allowed_ids: set[int] | None, 
     """``(installed, available)`` for the pedal's list and file names.
 
     Installed: flag set in the first section of FLST_SEQ.ZT2; one whose file is not on the pedal is kept and marked
-    ``missing`` so it can be repaired (only for effects the local catalog knows). Available: a catalog
+    ``missing`` so it can be repaired (only for effects the local catalog knows). Available: every other catalog
+    effect, marked with why the connected pedal cannot install it (``compat``) when it cannot. Formerly: a catalog
     effect with a local .zd2, allowed on the A1 FOUR, that the list contains with its flag off.
     """
     on_pedal = set(files)
@@ -92,16 +99,24 @@ def build_entries(catalog: dict[int, EffectInfo], allowed_ids: set[int] | None, 
         if file != BYPASS and (file in on_pedal or info is not None):  # a missing file of an unknown effect: nothing to show
             installed.append(Entry(file, info, _local_size(info.path if info else None), missing=file not in on_pedal))
     available = []
+    flagged = {e.file for e in installed}
     for file, info in by_file.items():
-        if info.path is None or (allowed_ids is not None and info.effect_id not in allowed_ids):
+        if file in flagged:
             continue
-        try:
-            listed_off = not flst.is_installed(flst_bytes, file)
-        except flst.FlstError:
-            continue  # the list does not contain it: the pedal cannot install it
         size = _local_size(info.path)
-        if listed_off and size is not None:
-            available.append(Entry(file, info, size))
+        try:
+            listed = not flst.is_installed(flst_bytes, file)  # in the list with its flag off: installable
+        except flst.FlstError:
+            listed = None  # the list does not contain it
+        if allowed_ids is not None and info.effect_id not in allowed_ids:
+            compat = "model"
+        elif listed is None:
+            compat = "list"
+        elif size is None:
+            compat = "copy"
+        else:
+            compat = "ok"
+        available.append(Entry(file, info, size, compat=compat))
     key = lambda e: e.name.lower()  # noqa: E731
     return sorted(installed, key=key), sorted(available, key=key)
 
@@ -176,7 +191,19 @@ class EffectCard(QStyledItemDelegate):
             p.setFont(ui_font(12))
             p.setPen(group_text_color(entry.group))
             line.setRight(chip.left() - 8)
-        text = S.group_label(entry.group) if entry.missing else f"{S.group_label(entry.group)} · {S.effects_size(entry.size)}"
+        badge = index.data(ROLE_BADGE)
+        if badge:  # not installable on the connected pedal: a chip with the words, not only a colour
+            chip_w = QFontMetrics(ui_font(11)).horizontalAdvance(badge) + 14
+            chip = QRectF(right - chip_w, rect.top() + 30, chip_w, 16)
+            p.setPen(QPen(with_alpha(tokens.color("status-warn"), 0.8), 1))
+            p.drawPath(card_path(chip, 8))
+            p.setFont(ui_font(11))
+            p.setPen(tokens.color("status-warn"))
+            p.drawText(chip, Qt.AlignmentFlag.AlignCenter, badge)
+            p.setFont(ui_font(12))
+            p.setPen(group_text_color(entry.group))
+            line.setRight(chip.left() - 8)
+        text = S.group_label(entry.group) if (entry.missing or badge) else f"{S.group_label(entry.group)} · {S.effects_size(entry.size)}"
         p.drawText(line, Qt.AlignmentFlag.AlignVCenter, QFontMetrics(ui_font(12)).elidedText(
             text, Qt.TextElideMode.ElideRight, int(line.width())))
         p.restore()
@@ -247,6 +274,17 @@ class EffectsManager(GlassPanel):
         self.group_combo.addItem(S.ALL_GROUPS, None)
         self.group_combo.addItem(S.FAVORITES, FAVORITES_KEY)
         self.group_combo.currentIndexChanged.connect(lambda _i: self._populate())
+        self.pedal_combo = QComboBox()  # which pedal's effects the right column lists (default: the connected one)
+        self.pedal_combo.setToolTip(S.EFFECTS_PEDAL_TIP)
+        self.pedal_combo.setAccessibleName(S.EFFECTS_PEDAL_TIP)
+        self.pedal_combo.setMinimumWidth(170)
+        self.pedal_combo.currentIndexChanged.connect(lambda _i: self._populate())
+        self.pedal_combo.hide()
+        self._models: dict = {}
+        self._pedal_id: int | None = None  # the pedal the install flow is for (connected, else the target)
+        self._pedal_name = ""
+        self._flst_bytes: bytes | None = None
+        self._files: list[str] = []
 
         self.installed_list, self.installed_count, self.installed_empty = _CardList(), QLabel(""), QLabel("")
         self.available_list, self.available_count, self.available_empty = _CardList(), QLabel(""), QLabel("")
@@ -348,6 +386,7 @@ class EffectsManager(GlassPanel):
         filters.setSpacing(10)
         filters.addWidget(self.search, stretch=1)
         filters.addWidget(self.group_combo)
+        filters.addWidget(self.pedal_combo)
         lists.addLayout(filters)
         columns = QHBoxLayout()
         columns.setSpacing(14)
@@ -501,7 +540,42 @@ class EffectsManager(GlassPanel):
         self._show_message(S.EFFECTS_LOAD_FAILED, retry=True)
         self._update_actions()
 
+    def set_pedals(self, models: dict, pedal_id: int | None, connected: bool, allowed_ids: set[int] | None) -> None:
+        """The pedal models Guitar Lab lists and the one effects are installed on (``connected``: it is the real one).
+
+        The filter offers that pedal first (named after its ``modelName``), then every pedal, then the others.
+        """
+        self._models, self._pedal_id, self._allowed = models, pedal_id, allowed_ids
+        known = models.get(pedal_id)
+        self._pedal_name = known.name if known is not None else ""
+        chosen = self.pedal_combo.currentData()
+        self.pedal_combo.blockSignals(True)
+        self.pedal_combo.clear()
+        if known is not None:
+            self.pedal_combo.addItem(S.pedal_connected_label(known.name) if connected else known.name, pedal_id)
+            self.pedal_combo.addItem(S.EFFECTS_ALL_PEDALS, "all")
+            for model in sorted(models.values(), key=lambda m: m.name):
+                if model.model_id != pedal_id:
+                    self.pedal_combo.addItem(model.name, model.model_id)
+            index = self.pedal_combo.findData(chosen)
+            self.pedal_combo.setCurrentIndex(max(index, 0))
+        self.pedal_combo.blockSignals(False)
+        self.pedal_combo.setVisible(known is not None)
+        if self._flst_bytes is not None and self._loaded:
+            self._rebuild()
+        else:
+            self._populate()
+
+    def _rebuild(self) -> None:
+        try:
+            self._installed, self._available = build_entries(self._catalog, self._allowed, self._flst_bytes, self._files)
+        except flst.FlstError:
+            return
+        self._refill_groups()
+        self._populate()
+
     def set_state(self, flst_bytes: bytes, files: list[str], usage) -> None:
+        self._flst_bytes, self._files = flst_bytes, list(files)
         try:
             installed, available = build_entries(self._catalog, self._allowed, flst_bytes, files)
         except flst.FlstError:
@@ -535,7 +609,17 @@ class EffectsManager(GlassPanel):
 
     # ------------------------------------------------------------ lists and selection
 
-    def _matches(self, entry: Entry, query: str) -> bool:
+    def _in_pedal_filter(self, entry: Entry) -> bool:
+        """The right column lists the effects of the chosen pedal (every one for «Todos los pedales»)."""
+        choice = self.pedal_combo.currentData()
+        if choice is None or choice == "all" or entry.info is None:
+            return True
+        model = self._models.get(choice)
+        return model is None or entry.info.effect_id in model.effect_ids
+
+    def _matches(self, entry: Entry, query: str, apply_pedal: bool = False) -> bool:
+        if apply_pedal and not self._in_pedal_filter(entry):
+            return False
         haystack = f"{entry.name} {entry.file} {entry.group} {S.group_label(entry.group)}".lower()
         group = self.group_combo.currentData()
         if group == FAVORITES_KEY:
@@ -566,7 +650,7 @@ class EffectsManager(GlassPanel):
                  S.EFFECTS_NONE_INSTALLED),
                 ("available", self.available_list, self._available, self.available_count, self.available_empty,
                  S.EFFECTS_NONE_AVAILABLE)):
-            shown = [e for e in entries if self._matches(e, query)]
+            shown = [e for e in entries if self._matches(e, query, apply_pedal=which == "available")]
             cards.blockSignals(True)
             cards.clear()
             def section_of(e: Entry) -> str:
@@ -582,6 +666,11 @@ class EffectsManager(GlassPanel):
                     item = QListWidgetItem()
                     item.setData(ROLE_ENTRY, entry)
                     item.setData(ROLE_FAV, self._is_favorite(entry) if entry.info is not None else None)
+                    if not entry.installable:
+                        badge = S.not_compatible_with(self._pedal_name) if self._pedal_name else S.EFFECTS_NOT_INSTALLABLE
+                        item.setData(ROLE_BADGE, badge)
+                        item.setToolTip(badge)
+                        item.setData(Qt.ItemDataRole.AccessibleTextRole, f"{entry.name}, {badge}")
                     if entry.missing:
                         item.setToolTip(S.EFFECTS_MISSING_TIP)
                         item.setData(Qt.ItemDataRole.AccessibleTextRole, f"{entry.name}, {S.EFFECTS_MISSING_TIP}")
@@ -709,6 +798,9 @@ class EffectsManager(GlassPanel):
                 reason, blocking = S.effects_install_blocked(need, entry.size, MEMORY_MARGIN, self._free or 0), True
             else:
                 enabled, reason = True, S.EFFECTS_REPAIR_OK
+        elif installing and not entry.installable:  # shown, with its description and star, but not installable
+            reason = (S.effects_not_compatible_reason(self._pedal_name or S.EFFECTS_THIS_PEDAL) if entry.compat == "model"
+                      else S.EFFECTS_NOT_IN_PEDAL_LIST if entry.compat == "list" else S.EFFECTS_NO_LOCAL_COPY)
         elif installing:
             need = (entry.size or 0) + MEMORY_MARGIN
             if self._free is None or entry.size is None or need > self._free:
