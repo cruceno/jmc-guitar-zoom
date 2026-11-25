@@ -6,9 +6,7 @@ import pytest
 
 from zoomstudio.effects import flst
 
-FIXTURES = Path(__file__).parent / "fixtures" / "flst"
-BEFORE = (FIXTURES / "before-12st.ZT2").read_bytes()  # 12Strings not installed
-AFTER = (FIXTURES / "after-12st.ZT2").read_bytes()  # same pedal after Guitar Lab installed it
+from flst_factory import AFTER, BEFORE  # noqa: E402  (12Strings not installed / installed; layout in flst_factory)
 
 
 def test_install_flag_reproduces_guitar_lab_byte_for_byte():

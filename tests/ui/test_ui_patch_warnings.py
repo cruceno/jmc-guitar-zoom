@@ -19,7 +19,7 @@ from zoomstudio.ui.cards import ROLE_MISSING
 from zoomstudio.ui.main_window import MainWindow
 
 COMP_160 = 0x1800030
-EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
+from fixture_files import EFFECTS  # noqa: E402
 TIP_2 = "Usa efectos que no están en la pedalera: 12Strings"
 
 

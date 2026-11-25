@@ -19,7 +19,7 @@ from zoomstudio.ui import strings as S
 from zoomstudio.ui.main_window import MainWindow
 from zoomstudio.ui.painted import PaintedText
 
-EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
+from fixture_files import EFFECTS  # noqa: E402
 SIZES = [(1440, 900), (2000, 1056)]
 STATES = ["no-patch", "patch-selected", "effects-manager", "effects-repair", "not-installed", "patch-warnings", "unused-view", "usage-many", "usage-one", "usage-none", "usage-incomplete", "tuner", "offline", "bank", "bank-empty", "bank-drag", *UPDATE_STATES]
 SLACK = 2  # px of rounding the metrics may differ from the painted text by

@@ -6,7 +6,8 @@ import pytest
 from zoomstudio.effects import i18n
 from zoomstudio.effects.catalog import EffectInfo, ParamInfo, load_zd2
 
-FIX = Path(__file__).parent / "fixtures"
+from fixture_files import EFFECTS as FIX  # noqa: E402
+
 DATA = Path(i18n.__file__).with_name("descriptions_es.json")
 
 

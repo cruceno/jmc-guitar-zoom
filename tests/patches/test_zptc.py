@@ -8,7 +8,8 @@ import decode_preset as d
 from zoomstudio.patches.model import EffectSlot
 from zoomstudio.patches.zptc import PATCH_BUFFER_SIZE, build_zptc, parse_zptc
 
-FIX = Path(__file__).parent / "fixtures"
+from fixture_files import PATCHES as FIX  # noqa: E402
+
 FIXTURES = ["001.zptc", "019.zptc", "041.zptc", "53-HB-Jazz.zptc"]
 
 
@@ -35,7 +36,7 @@ def test_parsed_values_match_decode_preset():
     data = raw("001.zptc")
     cfg = d.ZPTC.parse(data)
     patch = parse_zptc(data)
-    assert patch.name == "AG D-28"
+    assert patch.name == "Acoustic A"
     assert patch.volume == 100
     assert [s.effect_id for s in patch.effects] == [int(i) for i in cfg.ids]
     assert patch.effects[0].effect_id == 0x14400000
@@ -136,3 +137,14 @@ def test_description_lengths_round_trip(text):
     out = build_zptc(patch)
     assert parse_zptc(out).description == text
     assert struct.unpack("<I", out[4:8])[0] <= 760
+
+
+def test_fields_the_app_does_not_interpret_survive_a_rebuild():
+    # hardware observation: the pedal stores header, effect-record and PPRM bits this app does not understand
+    import patch_factory
+
+    data = patch_factory.quirky_patch()
+    patch = parse_zptc(data)
+    assert patch.header_data == b"\x01\x02\x03\x04\x05\x06" and patch.effects[0].unknown_bytes == b"\x124V"
+    assert patch.effects[0].unknown_bits == 0b101010 and patch.name_raw == "Quirks    "
+    assert build_zptc(patch) == data

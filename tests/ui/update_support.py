@@ -14,8 +14,7 @@ from zoomstudio.library.updater import LibraryUpdater  # noqa: E402
 from zoomstudio.ui.main_window import MainWindow  # noqa: E402
 from zoomstudio.ui.settings import UpdateStore  # noqa: E402
 
-FIXTURES = HERE / "fixtures"
-EFFECTS = HERE.parent / "effects" / "fixtures"
+from fixture_files import EFFECTS, UI as FIXTURES  # noqa: E402
 RACKCOMP = ("0x01000020", "RACKCOMP.zip", "1.40", EFFECTS / "RACKCOMP.ZD2")  # not in the window's catalog: new
 RACKCOMP_ID = 0x1000020
 HALL_ID = 0x9000030

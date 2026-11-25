@@ -9,9 +9,7 @@ from zoomstudio.device.errors import PedalFileNotFound, PedalTimeout
 from zoomstudio.device.sysex import DiskUsage
 from zoomstudio.effects import installer
 
-FIXTURES = Path(__file__).parent / "fixtures" / "flst"
-BEFORE = (FIXTURES / "before-12st.ZT2").read_bytes()
-AFTER = (FIXTURES / "after-12st.ZT2").read_bytes()
+from flst_factory import AFTER, BEFORE  # noqa: E402
 ZD2 = bytes(range(256)) * 100  # stands in for MDL_12ST.ZD2
 NAME = "MDL_12ST.ZD2"
 

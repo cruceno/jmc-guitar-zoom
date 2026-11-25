@@ -347,7 +347,7 @@ def test_declining_the_swap_changes_nothing(offline, monkeypatch):
     w, t = offline
     monkeypatch.setattr(ConfirmDialog, "ask", staticmethod(lambda *a, **k: False))
     w.swap_patches(1, 2)
-    assert w._patches[1].name == "AG D-28" and not w.any_dirty()
+    assert w._patches[1].name == "Acoustic A" and not w.any_dirty()
 
 
 def test_dragging_a_patch_onto_another_confirms_and_swaps(offline, yes):
@@ -359,7 +359,7 @@ def test_dragging_a_patch_onto_another_confirms_and_swaps(offline, yes):
     event = QDropEvent(pos, Qt.DropAction.MoveAction, mime, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
     w.patch_list.dropEvent(event)
     assert "19" not in yes[0] and "10" in yes[0] and "11" in yes[0]  # display numbers of slots 1 and 2
-    assert w._patches[1].name == "AG J-45" and w._patches[2].name == "AG D-28"
+    assert w._patches[1].name == "Acoustic B" and w._patches[2].name == "Acoustic A"
 
 
 def test_pasting_without_a_copy_reports_it(offline):
@@ -385,7 +385,7 @@ def test_export_selected_and_all_then_import_back(offline, tmp_path, yes):
     assert json.loads((folder / "manifest.json").read_text())["patches"][3]["location"] == 44
     w.clear_slot(44)
     w.import_folder(folder)
-    assert w._patches[44].name == "HB Jazz" and w._patches[1].name == "AG D-28"
+    assert w._patches[44].name == "HB Jazz" and w._patches[1].name == "Acoustic A"
     w.select_location(50)
     w.import_file(dest / next(p.name for p in dest.glob("*.zptc")))
     assert w._patches[50].name == "HB Jazz" and w.is_dirty(50)

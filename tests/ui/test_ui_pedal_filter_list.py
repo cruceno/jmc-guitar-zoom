@@ -20,7 +20,7 @@ from zoomstudio.ui.main_window import MainWindow
 
 VARIANT = 0x9A09030  # «Hall» again: another model's file and id under the same display name (real: Air / AIR88)
 UNLISTED = 0x1800099  # an A1 FOUR effect of Guitar Lab's list that this pedal's FLST_SEQ.ZT2 has no record of
-EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
+from fixture_files import EFFECTS  # noqa: E402
 
 
 @pytest.fixture(scope="module")

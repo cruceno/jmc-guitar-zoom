@@ -11,7 +11,7 @@ from zoomstudio.ui import memory, tokens
 from zoomstudio.ui import strings as ST
 from zoomstudio.ui.main_window import MainWindow
 
-EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
+from fixture_files import EFFECTS  # noqa: E402
 
 
 @pytest.fixture(scope="module")

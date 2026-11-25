@@ -11,7 +11,7 @@ import zoomzt2
 
 MODEL = 0x6E
 HDR = bytes([0x52, 0x00, MODEL])
-FIXTURES = Path(__file__).parent / "fixtures"
+from fixture_files import DEVICE as FIXTURES  # noqa: E402
 
 _upstream = zoomzt2.zoomzt2()
 

@@ -7,7 +7,8 @@ from zoomstudio.patches import edit
 from zoomstudio.patches.model import WIDE_FILLER_ID
 from zoomstudio.patches.zptc import parse_zptc
 
-UI_FIX = Path(__file__).parents[1] / "ui" / "fixtures"
+from fixture_files import UI as UI_FIX  # noqa: E402
+
 HB = parse_zptc((UI_FIX / "53-HB-Jazz.zptc").read_bytes())
 CATALOG = load_catalog(("pedal", UI_FIX / "catalog"))
 COMP, DLXR, HALL, GEQ = 0x1000010, 0x400002C, 0x9000030, 0x2000054

@@ -24,7 +24,7 @@ from zoomstudio.ui.main_window import MainWindow
 from zoomstudio.ui.painted import SearchField
 from zoomstudio.ui.widgets import ParamRow
 
-EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
+from fixture_files import EFFECTS  # noqa: E402
 SIZES = [(1280, 760), (1440, 900), (1600, 1000)]
 STATES = ["two-pedals", "no-patch", "gt-geq-7", "not-installed", "patch-warnings", "unused-view", "effects-manager", "effects-all-pedals", "read-only-pedal", "bank", "tuner", "offline", *UPDATE_STATES]
 SQUEEZE_SLACK = 1

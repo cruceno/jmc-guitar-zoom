@@ -3,3 +3,10 @@ __pycache__/
 *.pyc
 .pytest_cache/
 tmp/
+
+# Zoom files downloaded by scripts/fetch_test_fixtures.py (never committed)
+tests/.zoom-fixtures/
+
+# local notes, not published
+odd/
+BRIEF.md

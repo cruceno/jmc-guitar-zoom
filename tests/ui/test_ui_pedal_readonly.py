@@ -11,7 +11,7 @@ from zoomstudio.effects.models import A1_FOUR, PedalModel
 from zoomstudio.ui import strings as ST
 
 G1 = 0x6E000C00
-EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
+from fixture_files import EFFECTS  # noqa: E402
 
 
 @pytest.fixture(scope="module")

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from zoomstudio.library import updater
 
-FIX = Path(__file__).parents[1] / "effects" / "fixtures"
+from fixture_files import EFFECTS as FIX  # noqa: E402
 A1 = "0x6E001100"
 G5N = "0x6E000000"
 GARBAGE = b"\r\n   \r\n\x00"

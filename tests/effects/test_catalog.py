@@ -9,7 +9,8 @@ from zoomstudio.effects.catalog import (
     load_zd2,
 )
 
-FIX = Path(__file__).parent / "fixtures"
+from fixture_files import EFFECTS as FIX  # noqa: E402
+
 
 
 def ranges(info):

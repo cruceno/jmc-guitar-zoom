@@ -23,9 +23,8 @@ from zoomstudio.ui.dialogs import ConfirmDialog
 from zoomstudio.ui.effects_manager import ROLE_ENTRY
 from zoomstudio.ui.main_window import MainWindow
 
-EFFECTS = Path(__file__).parents[1] / "effects" / "fixtures"
-BEFORE = (EFFECTS / "flst" / "before-12st.ZT2").read_bytes()
-AFTER = (EFFECTS / "flst" / "after-12st.ZT2").read_bytes()
+from fixture_files import EFFECTS  # noqa: E402
+from flst_factory import AFTER, BEFORE  # noqa: E402
 BACKUP = FIXTURES / "backup"
 PATCHES = [(BACKUP / "001.zptc").read_bytes(), (FIXTURES / "53-HB-Jazz.zptc").read_bytes()]
 ON_PEDAL = ["COMP.ZD2", "FDDLXR1U.ZD2", "FDDX1X12.ZD2", "GTGEQ71U.ZD2", "HALL.ZD2", "OPTCOMP.ZD2"]
@@ -197,7 +196,7 @@ def test_the_usage_list_shows_exactly_the_patches_using_the_effect_in_order(scre
     assert panel.usage_title.text() == "Usado en 2 patches"
     assert panel.usage_list.isVisibleTo(panel) and not panel.usage_empty.isVisibleTo(panel)
     first = panel.usage_list.item(0)
-    assert first.data(Qt.ItemDataRole.AccessibleTextRole) == ST.effects_usage_card_name(10, "AG D-28")
+    assert first.data(Qt.ItemDataRole.AccessibleTextRole) == ST.effects_usage_card_name(10, "Acoustic A")
     panel.select_effect("HALL.ZD2")
     assert panel.usage_locations() == [2] and panel.usage_title.text() == "Usado en 1 patch"
 

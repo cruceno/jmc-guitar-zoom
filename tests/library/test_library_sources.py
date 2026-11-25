@@ -8,7 +8,7 @@ from zoomstudio.effects import flst
 from zoomstudio.effects.catalog import load_catalog, load_zd2
 from zoomstudio.effects.models import load_models
 
-FIX = Path(__file__).parents[1] / "effects" / "fixtures"
+from fixture_files import EFFECTS as FIX  # noqa: E402
 
 
 def newer_comp(version=b"1.50") -> bytes:

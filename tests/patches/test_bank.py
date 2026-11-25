@@ -9,8 +9,9 @@ from zoomstudio.patches.bank import BankError, PatchBank
 from zoomstudio.patches.library import empty_patch
 from zoomstudio.patches.zptc import build_zptc, parse_zptc
 
-FIXTURES = Path(__file__).parent / "fixtures"
-HB = next(FIXTURES.glob("*.zptc")).read_bytes()
+from fixture_files import PATCHES as FIXTURES  # noqa: E402
+
+HB = (FIXTURES / "53-HB-Jazz.zptc").read_bytes()
 
 
 def named(name: str) -> bytes:

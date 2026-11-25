@@ -30,7 +30,7 @@ def reads_the_effect_list(monkeypatch):
 
 
 HALL, OPTCOMP, COMP, STRINGS = 0x9000030, 0x1000080, 0x1000010, 0x14400190  # STRINGS: 12Strings, installable
-EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
+from fixture_files import EFFECTS  # noqa: E402
 
 
 @pytest.fixture(scope="module")

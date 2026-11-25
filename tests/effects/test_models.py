@@ -28,7 +28,9 @@ def test_models_with_effects_are_parsed_and_empty_ones_are_ignored(tmp_path):
 def test_the_real_fixture_list_parses_and_matches_the_a1_helper():
     from pathlib import Path
 
-    path = Path(__file__).parents[1] / "ui" / "fixtures" / "AllZDL7_2.lst"
+    from fixture_files import UI
+
+    path = UI / "AllZDL7_2.lst"
     found = load_models(path)
     assert found[A1_FOUR].name == "A1 FOUR" and found[A1_FOUR].effect_ids == a1four_effect_ids(path)
 

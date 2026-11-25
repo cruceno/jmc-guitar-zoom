@@ -17,7 +17,7 @@ from zoomstudio.ui import strings as ST
 from zoomstudio.ui.dialogs import ConfirmDialog
 from zoomstudio.ui.effects_manager import ROLE_UNUSED
 
-EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
+from fixture_files import EFFECTS  # noqa: E402
 UNUSED = ["FDDLXR1U.ZD2", "FDDX1X12.ZD2", "HALL.ZD2", "GTGEQ71U.ZD2", "COMP.ZD2"]  # by file size, largest first
 SIZES = {"FDDLXR1U.ZD2": 44154, "FDDX1X12.ZD2": 32994, "HALL.ZD2": 17933, "GTGEQ71U.ZD2": 17772, "COMP.ZD2": 13390}
 
