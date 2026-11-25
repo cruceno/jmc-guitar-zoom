@@ -259,6 +259,34 @@ class PedalClient:
             data += block
         raise PedalProtocolError(f"file {name!r} exceeds {MAX_FILE_BLOCKS} blocks")
 
+    def write_file(self, name: str, data: bytes, timeout: float | None = None) -> None:
+        """Upload a file, replacing any file of that name.
+
+        Mirrors zoomzt2's file_upload + file_close: delete, open for write, a status
+        request, then 512-byte blocks each followed by a status request, then close.
+        The status replies carry no known success code, so callers verify the upload
+        by reading the file back.
+        """
+        sysex.check_file_name(name)
+        if not data:
+            raise ValueError("refusing to upload an empty file")
+        with self._lock:
+            self._file_step(sysex.file_delete_request(name, self.model_id), timeout)
+            self._file_step(sysex.file_open_write_request(name, self.model_id), timeout)
+            self._file_step(sysex.file_status_request(self.model_id), timeout)
+            for start in range(0, len(data), sysex.FILE_BLOCK_SIZE):
+                block = data[start:start + sysex.FILE_BLOCK_SIZE]
+                self._file_step(sysex.file_write_block_request(block, self.model_id), timeout)
+                self._file_step(sysex.file_status_request(self.model_id), timeout)
+            self._file_close(timeout)
+
+    def delete_file(self, name: str, timeout: float | None = None) -> None:
+        """Delete a file (zoomzt2's file_delete + file_close)."""
+        sysex.check_file_name(name)
+        with self._lock:
+            self._file_step(sysex.file_delete_request(name, self.model_id), timeout)
+            self._file_close(timeout)
+
     def disk_usage(self, timeout: float | None = None) -> DiskUsage:
         data = self._file_step(sysex.disk_usage_request(self.model_id), timeout)
         return sysex.parse_disk_usage(data, self.model_id)

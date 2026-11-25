@@ -285,7 +285,3 @@ def test_disk_usage(t, client):
     assert (du.maximum, du.available) == (2_000_000, 500_000)
     assert du.used_percent == pytest.approx(75.0)
     assert sent_data(t) == [sysex.disk_usage_request(MODEL)]
-
-
-def test_client_has_no_upload_or_delete_api(client):
-    assert not any(hasattr(client, n) for n in ("write_file", "upload_file", "delete_file", "file_upload", "file_delete"))
