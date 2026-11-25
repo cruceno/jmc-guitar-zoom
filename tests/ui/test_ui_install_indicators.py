@@ -380,3 +380,31 @@ def test_an_installed_flag_without_its_file_counts_as_not_installed(qtbot, monke
     w = connected_window(qtbot, monkeypatch, catalog, tmp_path, PedalFiles(BEFORE, ON_PEDAL[:-1]))  # no OPTCOMP.ZD2
     ready(qtbot, w)
     assert w.effect_installed(OPTCOMP) is False and w.effect_installed(HALL) is True
+
+
+def test_bulk_write_paths_refuse_effects_the_pedal_lacks(ed, monkeypatch):
+    # verifier V3 B1: only SAVE checked the installed state; write-all-dirty and paste still wrote
+    w, _ = ed
+    asks(monkeypatch, True)
+    w.replace_effect(0, STRINGS)
+    assert w.save_blockers()
+    queued = []
+    monkeypatch.setattr(w, "_queue_write", lambda patches: queued.append(sorted(patches)) or False)
+    w.write_all_dirty()
+    w.copy_patch(2)
+    w.paste_patch(1)
+    assert queued == []
+
+
+def test_a_bank_load_refuses_a_patch_whose_effects_the_pedal_lacks(ed, monkeypatch):
+    from zoomstudio.patches import edit
+    from zoomstudio.patches.zptc import build_zptc
+
+    w, _ = ed
+    asks(monkeypatch, True)
+    w.replace_effect(0, STRINGS)
+    entry = w.bank_store.add(build_zptc(edit.sent_form(w.current_patch)), 2)
+    queued = []
+    monkeypatch.setattr(w, "_queue_write", lambda patches: queued.append(sorted(patches)) or False)
+    w.load_from_bank(entry.id, 1)
+    assert queued == []

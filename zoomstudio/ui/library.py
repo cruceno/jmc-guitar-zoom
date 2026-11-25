@@ -172,7 +172,10 @@ class LibraryMixin:
                                                  changes[location], text, None, None, None))
 
     def _blockers(self, changes: dict[int, Patch]) -> dict[int, list[str]]:
-        found = {loc: edit.save_blockers(p, self.catalog, self.allowed_ids) for loc, p in changes.items()}
+        # every bulk write (write-all-dirty, paste, swap, clear, import, bank load) gets SAVE's checks, including
+        # effects the connected pedal lacks; None (state unknown) leaves that check out, as SAVE does
+        installed = getattr(self, "_installed_ids", None)
+        found = {loc: edit.save_blockers(p, self.catalog, self.allowed_ids, installed) for loc, p in changes.items()}
         return {loc: why for loc, why in found.items() if why}
 
     def _describe_blockers(self, blocked: dict[int, list[str]]) -> str:
