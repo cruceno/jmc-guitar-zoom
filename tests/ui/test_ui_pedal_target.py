@@ -4,13 +4,13 @@ from types import SimpleNamespace
 import pytest
 
 from ui_replies import FIXTURES
-from zoomstudio.effects import models as pedal_models
-from zoomstudio.effects.catalog import load_catalog
-from zoomstudio.effects.models import A1_FOUR, load_models
-from zoomstudio.ui import strings as ST
-from zoomstudio.ui.cards import ROLE_EFFECT
-from zoomstudio.ui.main_window import MainWindow
-from zoomstudio.ui.settings import TargetStore
+from jmc_guitar_zoom.effects import models as pedal_models
+from jmc_guitar_zoom.effects.catalog import load_catalog
+from jmc_guitar_zoom.effects.models import A1_FOUR, load_models
+from jmc_guitar_zoom.ui import strings as ST
+from jmc_guitar_zoom.ui.cards import ROLE_EFFECT
+from jmc_guitar_zoom.ui.main_window import MainWindow
+from jmc_guitar_zoom.ui.settings import TargetStore
 
 G5N = 0x6E000000
 LST = FIXTURES / "AllZDL7_2.lst"

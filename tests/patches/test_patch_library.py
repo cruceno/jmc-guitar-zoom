@@ -1,11 +1,11 @@
 import pytest
 
-from zoomstudio.patches import edit
-from zoomstudio.patches.library import (
+from jmc_guitar_zoom.patches import edit
+from jmc_guitar_zoom.patches.library import (
     EMPTY_PATCH_FILE, empty_patch, export_one, export_patches, new_folder, read_folder,
 )
-from zoomstudio.patches.model import EffectSlot
-from zoomstudio.patches.zptc import build_zptc, parse_zptc
+from jmc_guitar_zoom.patches.model import EffectSlot
+from jmc_guitar_zoom.patches.zptc import build_zptc, parse_zptc
 
 
 class Info:

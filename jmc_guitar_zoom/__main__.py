@@ -1,4 +1,4 @@
-"""Entry point: ``uv run python -m zoomstudio``."""
+"""Entry point: ``uv run python -m jmc_guitar_zoom``."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ A1_LIST = Path("cache") / LIST_NAME
 
 
 def workspace_root() -> Path:
-    """The folder that holds the zoom-studio repo and its sibling data folders."""
+    """The folder that holds the jmc-guitar-zoom repo and its sibling data folders."""
     return Path(__file__).resolve().parents[2]
 
 
@@ -87,7 +87,7 @@ def load_registry(catalogs: list[tuple[str, Path]], library: Path | None = None)
     """The model registry from the first list that loads: the library's copy, then Guitar Lab's cache.
 
     A damaged list (a bad download, a hand-edited file) must never stop the app from starting."""
-    from zoomstudio.effects.models import load_models
+    from jmc_guitar_zoom.effects.models import load_models
 
     for path in dict.fromkeys(p for p in (find_a1_list(catalogs, library), find_a1_list(catalogs)) if p):
         try:
@@ -100,7 +100,7 @@ def load_registry(catalogs: list[tuple[str, Path]], library: Path | None = None)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="zoomstudio", description="Zoom Studio - editor for the Zoom A1 FOUR")
+    p = argparse.ArgumentParser(prog="jmc-guitar-zoom", description="JMC Guitar Zoom - unofficial editor for the Zoom A1 FOUR (not affiliated with Zoom Corporation)")
     p.add_argument("--catalog", action="append", metavar="[LABEL=]DIR", default=[],
                    help="folder with .zd2 effect files (repeatable); a catalog labelled 'pedal' marks "
                         "effects as installed on the pedal. Default: newest patches/pedal-files-* and "
@@ -116,13 +116,13 @@ def main(argv: list[str] | None = None) -> int:
 
     from PySide6.QtWidgets import QApplication
 
-    from zoomstudio.device import MidoTransport
-    from zoomstudio.effects.catalog import load_catalog
-    from zoomstudio.ui.main_window import MainWindow
-    from zoomstudio.ui.fonts import install_spanish, register_fonts
-    from zoomstudio.ui.theme import apply_dark_theme
+    from jmc_guitar_zoom.device import MidoTransport
+    from jmc_guitar_zoom.effects.catalog import load_catalog
+    from jmc_guitar_zoom.ui.main_window import MainWindow
+    from jmc_guitar_zoom.ui.fonts import install_spanish, register_fonts
+    from jmc_guitar_zoom.ui.theme import apply_dark_theme
 
-    from zoomstudio.library.updater import LibraryUpdater
+    from jmc_guitar_zoom.library.updater import LibraryUpdater
 
     explicit = [parse_catalog_arg(c) for c in args.catalog]
     library = library_dir()
@@ -139,10 +139,16 @@ def main(argv: list[str] | None = None) -> int:
     updater = LibraryUpdater(library, extra_dirs=[f for label, f in catalogs if label != LIBRARY_LABEL])
 
     app = QApplication(sys.argv[:1])
-    from zoomstudio.ui import gc_guard
+    from jmc_guitar_zoom.ui import gc_guard
 
     gc_guard.install(app)  # cyclic GC only on this thread: a worker's collection crashed Shiboken (see gc_guard)
-    app.setApplicationName("Zoom Studio")
+    app.setApplicationName("JMC Guitar Zoom")
+    app.setOrganizationName("JMC Guitar Zoom")
+    from PySide6.QtCore import QStandardPaths
+
+    from jmc_guitar_zoom.ui.config_migration import migrate_legacy_config
+
+    migrate_legacy_config(Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppConfigLocation)))
     install_spanish(app)
     register_fonts()
     apply_dark_theme(app)

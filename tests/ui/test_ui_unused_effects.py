@@ -9,13 +9,13 @@ from PySide6.QtCore import Qt
 import test_ui_effects_manager as manager
 from test_ui_effects_manager import BEFORE, PATCHES, PedalFiles, connected_window, entry_item, names, open_screen
 from ui_replies import FIXTURES
-from zoomstudio.device import PedalClient
-from zoomstudio.device.errors import PedalError
-from zoomstudio.effects import flst
-from zoomstudio.effects.catalog import load_catalog
-from zoomstudio.ui import strings as ST
-from zoomstudio.ui.dialogs import ConfirmDialog
-from zoomstudio.ui.effects_manager import ROLE_UNUSED
+from jmc_guitar_zoom.device import PedalClient
+from jmc_guitar_zoom.device.errors import PedalError
+from jmc_guitar_zoom.effects import flst
+from jmc_guitar_zoom.effects.catalog import load_catalog
+from jmc_guitar_zoom.ui import strings as ST
+from jmc_guitar_zoom.ui.dialogs import ConfirmDialog
+from jmc_guitar_zoom.ui.effects_manager import ROLE_UNUSED
 
 from fixture_files import EFFECTS  # noqa: E402
 UNUSED = ["FDDLXR1U.ZD2", "FDDX1X12.ZD2", "HALL.ZD2", "GTGEQ71U.ZD2", "COMP.ZD2"]  # by file size, largest first

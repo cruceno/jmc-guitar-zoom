@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from zoomstudio.effects import flst
+from jmc_guitar_zoom.effects import flst
 
 from flst_factory import AFTER, BEFORE  # noqa: E402  (12Strings not installed / installed; layout in flst_factory)
 

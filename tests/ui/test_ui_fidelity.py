@@ -5,19 +5,19 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
 from ui_replies import FIXTURES
-from zoomstudio.effects.i18n import effect_description
-from zoomstudio.effects.catalog import load_catalog
-from zoomstudio.ui import strings, tokens
-from zoomstudio.ui.glass import BackdropRoot
-from zoomstudio.ui.main_window import MainWindow
-from zoomstudio.ui.tuner import TunerPanel
+from jmc_guitar_zoom.effects.i18n import effect_description
+from jmc_guitar_zoom.effects.catalog import load_catalog
+from jmc_guitar_zoom.ui import strings, tokens
+from jmc_guitar_zoom.ui.glass import BackdropRoot
+from jmc_guitar_zoom.ui.main_window import MainWindow
+from jmc_guitar_zoom.ui.tuner import TunerPanel
 
 
 @pytest.fixture
 def themed(qapp):
     """The real theme: the style sheet is what overrides fonts, so font checks need it."""
-    from zoomstudio.ui.fonts import register_fonts
-    from zoomstudio.ui.theme import apply_dark_theme
+    from jmc_guitar_zoom.ui.fonts import register_fonts
+    from jmc_guitar_zoom.ui.theme import apply_dark_theme
 
     register_fonts()
     apply_dark_theme(qapp)
@@ -128,12 +128,12 @@ def test_columns_are_248_centre_and_368_wide(window):
 
 
 def test_centre_is_three_glass_panels_header_chain_and_parameters(window):
-    from zoomstudio.ui.glass import GlassPanel
+    from jmc_guitar_zoom.ui.glass import GlassPanel
 
     panels = [w for w in window.centre.children() if isinstance(w, GlassPanel)]
     assert len(panels) == 3
     window.select_location(44)
-    from zoomstudio.ui.painted import SectionLabel
+    from jmc_guitar_zoom.ui.painted import SectionLabel
 
     assert strings.CHAIN_TITLE.upper() in [w.text() for w in window.centre.findChildren(SectionLabel)]
     assert window.chain_caption.text() == strings.chain_caption(5, 7)
@@ -155,7 +155,7 @@ def test_detail_card_has_a_parameter_column_and_an_effect_column(window):
 
 def test_a_450_character_description_wraps_and_fits_without_scrolling_at_1440_x_900(window, monkeypatch):
     sentence = "Modelo de un amplificador de combo limpio con graves cálidos, agudos brillantes y trémolo propio. "
-    monkeypatch.setattr("zoomstudio.ui.widgets.effect_description", lambda info: (sentence * 5)[:450])
+    monkeypatch.setattr("jmc_guitar_zoom.ui.widgets.effect_description", lambda info: (sentence * 5)[:450])
     window.select_location(44)
     window.select_tile(1)
     window.select_tile(0)
@@ -229,7 +229,7 @@ def test_unsaved_changes_marker_is_a_dot_label_shown_only_when_dirty(window):
 
 
 def test_status_bar_lives_in_a_glass_panel_and_marks_errors(window):
-    from zoomstudio.ui.glass import GlassPanel
+    from jmc_guitar_zoom.ui.glass import GlassPanel
 
     bar = window.statusBar()
     assert isinstance(bar.parentWidget(), GlassPanel)
@@ -244,7 +244,7 @@ def test_status_bar_lives_in_a_glass_panel_and_marks_errors(window):
 # ------------------------------------------------------------------ F09 live switch
 
 def test_live_is_a_switch_that_says_si_or_no(window):
-    from zoomstudio.ui.painted import LiveSwitch
+    from jmc_guitar_zoom.ui.painted import LiveSwitch
 
     assert isinstance(window.live_check, LiveSwitch) and window.live_check.isCheckable()
     assert window.live_check.state_text() == strings.SWITCH_OFF and not window.live_check.isEnabled()
@@ -266,7 +266,7 @@ def test_a_patch_without_effects_is_painted_without_a_fill(window):
     from PySide6.QtGui import QImage, QPainter
     from PySide6.QtWidgets import QStyleOptionViewItem
 
-    from zoomstudio.ui.cards import ROLE_STRIP, PatchCardDelegate
+    from jmc_guitar_zoom.ui.cards import ROLE_STRIP, PatchCardDelegate
 
     item = window.patch_list.item(0)
     index = window.patch_list.indexFromItem(item)
@@ -312,7 +312,7 @@ def test_empty_pedals_say_what_they_are_for(window):
 # ------------------------------------------------------------------ F17 menus
 
 def test_menus_are_glass_with_the_first_item_focused_and_the_history_note(window):
-    from zoomstudio.ui.glass import GlassMenu
+    from jmc_guitar_zoom.ui.glass import GlassMenu
 
     menu = window.edit_button.menu()
     assert isinstance(menu, GlassMenu) and isinstance(window.library_button.menu(), GlassMenu)
@@ -336,7 +336,7 @@ def test_write_everything_action_counts_the_edited_patches(window):
 # ------------------------------------------------------------------ F18 dialogs
 
 def test_confirm_dialog_dims_the_window_while_open_and_puts_the_destructive_choice_first(window, qtbot):
-    from zoomstudio.ui.dialogs import ConfirmDialog, Scrim
+    from jmc_guitar_zoom.ui.dialogs import ConfirmDialog, Scrim
 
     d = ConfirmDialog(window, "t", "x", strings.DISCARD_ACCEPT, danger=True)
     qtbot.addWidget(d)
@@ -354,7 +354,7 @@ def test_confirm_dialog_dims_the_window_while_open_and_puts_the_destructive_choi
 
 def test_backdrop_lights_are_placed_like_the_prototype():
     from PySide6.QtCore import QSize
-    from zoomstudio.ui.glass import render_backdrop
+    from jmc_guitar_zoom.ui.glass import render_backdrop
 
     image = render_backdrop(QSize(1440, 900))
     # sampled from the prototype's state-01 gutter, where the backdrop shows untouched: (x, y, rgb)
@@ -367,7 +367,7 @@ def test_backdrop_lights_are_placed_like_the_prototype():
 def test_parameter_help_has_half_the_detail_card_and_is_never_clipped(window, monkeypatch, qtbot):
     # N1 (fidelity recheck): the longer Spanish help was cut off in a narrow left column
     long_help = " ".join(["Ajusta el umbral que determina cuándo se activa el efecto."] * 4)
-    monkeypatch.setattr("zoomstudio.ui.widgets.param_explanation", lambda param: long_help)
+    monkeypatch.setattr("jmc_guitar_zoom.ui.widgets.param_explanation", lambda param: long_help)
     window.select_location(44)
     window.select_tile(1)
     p = window.params

@@ -1,7 +1,7 @@
 from PySide6.QtCore import QCoreApplication, QLocale
 from PySide6.QtGui import QFontDatabase, QFontMetrics
 
-from zoomstudio.ui import fonts
+from jmc_guitar_zoom.ui import fonts
 
 
 def test_bundled_families_are_registered_with_the_weights_the_design_uses(qapp):

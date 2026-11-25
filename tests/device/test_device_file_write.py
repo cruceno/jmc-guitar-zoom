@@ -3,11 +3,11 @@
 import pytest
 
 from device_replies import HDR
-from zoomstudio.device import sysex
-from zoomstudio.device.client import PedalClient
-from zoomstudio.device.errors import PedalTimeout
-from zoomstudio.device.messages import SysexMessage
-from zoomstudio.device.transport import FakeTransport
+from jmc_guitar_zoom.device import sysex
+from jmc_guitar_zoom.device.client import PedalClient
+from jmc_guitar_zoom.device.errors import PedalTimeout
+from jmc_guitar_zoom.device.messages import SysexMessage
+from jmc_guitar_zoom.device.transport import FakeTransport
 
 STATUS = SysexMessage(HDR + bytes([0x60, 0x03, 0x00, 0, 0, 0, 0]))
 NAME = b"MDL_12ST.ZD2\x00"

@@ -4,10 +4,10 @@ from PySide6.QtCore import QSize
 
 from test_ui_theme import luminance
 from ui_replies import FIXTURES
-from zoomstudio.effects.catalog import load_catalog
-from zoomstudio.ui import tokens
-from zoomstudio.ui.glass import Backdrop, BackdropRoot, GlassPanel
-from zoomstudio.ui.main_window import MainWindow
+from jmc_guitar_zoom.effects.catalog import load_catalog
+from jmc_guitar_zoom.ui import tokens
+from jmc_guitar_zoom.ui.glass import Backdrop, BackdropRoot, GlassPanel
+from jmc_guitar_zoom.ui.main_window import MainWindow
 
 
 def test_backdrop_is_built_once_per_size():

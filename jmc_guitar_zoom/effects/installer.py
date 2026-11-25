@@ -1,7 +1,7 @@
 """Install and remove effects on the pedal, replicating what Guitar Lab does.
 
 Guitar Lab installs an effect by uploading its ``.ZD2`` file unchanged and setting
-its flag in ``FLST_SEQ.ZT2`` (see :mod:`zoomstudio.effects.flst`). Both steps here
+its flag in ``FLST_SEQ.ZT2`` (see :mod:`jmc_guitar_zoom.effects.flst`). Both steps here
 are verified by reading the file back, and the list is backed up first.
 
 Order keeps the list from pointing at a missing file: install uploads the effect
@@ -14,9 +14,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from zoomstudio.device.errors import PedalError, PedalFileNotFound
-from zoomstudio.device.sysex import DiskUsage
-from zoomstudio.patches.backup import write_file_backup
+from jmc_guitar_zoom.device.errors import PedalError, PedalFileNotFound
+from jmc_guitar_zoom.device.sysex import DiskUsage
+from jmc_guitar_zoom.patches.backup import write_file_backup
 
 from . import flst
 from .flst import FLST_NAME

@@ -3,20 +3,20 @@ import json
 import pytest
 from PySide6.QtCore import QByteArray, QMimeData, QPointF, Qt
 from PySide6.QtGui import QDropEvent
-from zoomstudio.ui import strings
-from zoomstudio.ui.dialogs import ConfirmDialog
+from jmc_guitar_zoom.ui import strings
+from jmc_guitar_zoom.ui.dialogs import ConfirmDialog
 
 from ui_replies import FIXTURES, HDR, S, fake_pedal, patch_reply
-from zoomstudio.device import sysex
-from zoomstudio.device.messages import SysexMessage
-from zoomstudio.device.transport import FakeTransport
-from zoomstudio.effects.catalog import load_catalog
-from zoomstudio.patches import edit
-from zoomstudio.patches.library import empty_patch
-from zoomstudio.patches.model import EffectSlot
-from zoomstudio.patches.zptc import build_zptc, parse_zptc
-from zoomstudio.ui.main_window import MainWindow
-from zoomstudio.ui.widgets import MIME_PATCH
+from jmc_guitar_zoom.device import sysex
+from jmc_guitar_zoom.device.messages import SysexMessage
+from jmc_guitar_zoom.device.transport import FakeTransport
+from jmc_guitar_zoom.effects.catalog import load_catalog
+from jmc_guitar_zoom.patches import edit
+from jmc_guitar_zoom.patches.library import empty_patch
+from jmc_guitar_zoom.patches.model import EffectSlot
+from jmc_guitar_zoom.patches.zptc import build_zptc, parse_zptc
+from jmc_guitar_zoom.ui.main_window import MainWindow
+from jmc_guitar_zoom.ui.widgets import MIME_PATCH
 
 BACKUP = FIXTURES / "backup"
 HB = (FIXTURES / "53-HB-Jazz.zptc").read_bytes()

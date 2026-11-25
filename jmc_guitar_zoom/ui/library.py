@@ -15,9 +15,9 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import QFileDialog, QLabel, QProgressBar, QPushButton
 
-from zoomstudio.patches import edit, library
-from zoomstudio.patches.model import Patch
-from zoomstudio.patches.zptc import build_zptc, parse_zptc
+from jmc_guitar_zoom.patches import edit, library
+from jmc_guitar_zoom.patches.model import Patch
+from jmc_guitar_zoom.patches.zptc import build_zptc, parse_zptc
 
 from . import strings as S
 from .dialogs import ConfirmDialog

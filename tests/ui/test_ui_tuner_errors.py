@@ -1,8 +1,8 @@
 """Tuner off must always leave editor mode, even when the pedal errors (verifier B3)."""
 from contextlib import contextmanager
 
-from zoomstudio.device.errors import PedalTimeout
-from zoomstudio.ui.worker import PedalWorker
+from jmc_guitar_zoom.device.errors import PedalTimeout
+from jmc_guitar_zoom.ui.worker import PedalWorker
 
 
 class FakeClient:

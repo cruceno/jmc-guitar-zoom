@@ -2,10 +2,10 @@ from pathlib import Path
 
 import pytest
 
-from zoomstudio.effects.catalog import load_catalog
-from zoomstudio.patches import edit
-from zoomstudio.patches.model import WIDE_FILLER_ID
-from zoomstudio.patches.zptc import parse_zptc
+from jmc_guitar_zoom.effects.catalog import load_catalog
+from jmc_guitar_zoom.patches import edit
+from jmc_guitar_zoom.patches.model import WIDE_FILLER_ID
+from jmc_guitar_zoom.patches.zptc import parse_zptc
 
 from fixture_files import UI as UI_FIX  # noqa: E402
 
@@ -97,7 +97,7 @@ def test_compare_patches_reports_named_field_differences():
 
 
 def test_write_backup_never_overwrites(tmp_path):
-    from zoomstudio.patches.backup import write_backup
+    from jmc_guitar_zoom.patches.backup import write_backup
 
     first = write_backup(tmp_path / "autosave", 44, b"one", now="20261124-120000")
     second = write_backup(tmp_path / "autosave", 44, b"two", now="20261124-120000")

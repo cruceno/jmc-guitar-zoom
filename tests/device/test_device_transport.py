@@ -1,7 +1,7 @@
 import threading
 
-from zoomstudio.device.messages import ControlChange, ProgramChange, SysexMessage
-from zoomstudio.device.transport import FakeTransport, MidoTransport, find_port_name
+from jmc_guitar_zoom.device.messages import ControlChange, ProgramChange, SysexMessage
+from jmc_guitar_zoom.device.transport import FakeTransport, MidoTransport, find_port_name
 
 
 def test_fake_transport_scripted_replies_are_queued_per_request():

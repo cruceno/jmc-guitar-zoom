@@ -3,9 +3,9 @@
 import pytest
 
 from device_replies import HDR
-from zoomstudio.device.client import PedalClient
-from zoomstudio.device.messages import SysexMessage
-from zoomstudio.device.transport import FakeTransport
+from jmc_guitar_zoom.device.client import PedalClient
+from jmc_guitar_zoom.device.messages import SysexMessage
+from jmc_guitar_zoom.device.transport import FakeTransport
 
 PATCH_INFO = HDR + bytes([0x43, 0x32, 0x00, 0x78, 0x05, 0x32, 0x00, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00])
 ACK = SysexMessage(HDR + b"\x00\x00")
@@ -32,7 +32,7 @@ def test_stray_reply_is_not_taken_as_write_ack():
 
 
 def test_write_without_ack_times_out():
-    from zoomstudio.device.errors import PedalTimeout
+    from jmc_guitar_zoom.device.errors import PedalTimeout
     t = FakeTransport()
     c = PedalClient(t, timeout=0.2)
     t.on(HDR + b"\x44", SysexMessage(PATCH_INFO))
@@ -42,7 +42,7 @@ def test_write_without_ack_times_out():
 
 
 def test_stray_reply_is_not_taken_as_editor_mode_ack():
-    from zoomstudio.device.errors import PedalTimeout
+    from jmc_guitar_zoom.device.errors import PedalTimeout
     t = FakeTransport()
     c = PedalClient(t, timeout=0.2)
     t.on(HDR + b"\x50", STRAY_FILE_STATUS)

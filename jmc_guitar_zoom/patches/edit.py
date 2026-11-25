@@ -124,7 +124,7 @@ def default_params(info: Any) -> list[int]:
         try:
             import zoomzt2
 
-            from zoomstudio.effects.catalog import _parse_records
+            from jmc_guitar_zoom.effects.catalog import _parse_records
 
             zd2 = zoomzt2.ZD2.parse_file(str(path))
             table = _parse_records(zd2.DATA.data)[2:]

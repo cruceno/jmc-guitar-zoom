@@ -4,11 +4,11 @@ import pytest
 from test_ui_effects_manager import (AFTER, BEFORE, COMP_160, MDL_12ST, ON_PEDAL, PedalFiles, connected_window, names,
                                      open_screen)
 from ui_replies import FIXTURES
-from zoomstudio.effects import flst
-from zoomstudio.effects import models as pm
-from zoomstudio.effects.catalog import load_catalog
-from zoomstudio.effects.models import A1_FOUR, PedalModel
-from zoomstudio.ui import strings as ST
+from jmc_guitar_zoom.effects import flst
+from jmc_guitar_zoom.effects import models as pm
+from jmc_guitar_zoom.effects.catalog import load_catalog
+from jmc_guitar_zoom.effects.models import A1_FOUR, PedalModel
+from jmc_guitar_zoom.ui import strings as ST
 
 G1 = 0x6E000C00
 from fixture_files import EFFECTS  # noqa: E402

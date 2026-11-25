@@ -3,10 +3,10 @@ import dataclasses
 import pytest
 from updater_support import A1, COMP, G5N, GARBAGE, GEQ, HALL, FakeFetcher, effect, effects_lst, standard_routes, versions_lst
 
-from zoomstudio.effects.catalog import load_zd2
-from zoomstudio.effects.models import load_models
-from zoomstudio.library import updater
-from zoomstudio.library.updater import LibraryUpdater
+from jmc_guitar_zoom.effects.catalog import load_zd2
+from jmc_guitar_zoom.effects.models import load_models
+from jmc_guitar_zoom.library import updater
+from jmc_guitar_zoom.library.updater import LibraryUpdater
 
 
 def local_of(*specs_versions):

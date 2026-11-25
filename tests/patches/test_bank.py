@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from zoomstudio.patches import bank as bank_module
-from zoomstudio.patches.bank import BankError, PatchBank
-from zoomstudio.patches.library import empty_patch
-from zoomstudio.patches.zptc import build_zptc, parse_zptc
+from jmc_guitar_zoom.patches import bank as bank_module
+from jmc_guitar_zoom.patches.bank import BankError, PatchBank
+from jmc_guitar_zoom.patches.library import empty_patch
+from jmc_guitar_zoom.patches.zptc import build_zptc, parse_zptc
 
 from fixture_files import PATCHES as FIXTURES  # noqa: E402
 

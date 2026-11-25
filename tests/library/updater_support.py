@@ -4,7 +4,7 @@ import json
 import zipfile
 from pathlib import Path
 
-from zoomstudio.library import updater
+from jmc_guitar_zoom.library import updater
 
 from fixture_files import EFFECTS as FIX  # noqa: E402
 A1 = "0x6E001100"

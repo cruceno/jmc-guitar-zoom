@@ -3,19 +3,19 @@ from PySide6.QtCore import QMimeData, QPointF, Qt
 from PySide6.QtGui import QDropEvent
 from PySide6.QtWidgets import QMessageBox
 
-from zoomstudio.ui import strings
-from zoomstudio.ui.dialogs import ConfirmDialog
+from jmc_guitar_zoom.ui import strings
+from jmc_guitar_zoom.ui.dialogs import ConfirmDialog
 
 from ui_replies import FIXTURES, HDR, S, fake_pedal, patch_reply, queue_save
-from zoomstudio.device import sysex
-from zoomstudio.device.messages import SysexMessage
-from zoomstudio.device.transport import FakeTransport
-from zoomstudio.effects.catalog import a1four_effect_ids, load_catalog
-from zoomstudio.patches import edit
-from zoomstudio.patches.model import WIDE_FILLER_ID
-from zoomstudio.patches.zptc import build_zptc, parse_zptc
-from zoomstudio.ui.main_window import MainWindow
-from zoomstudio.ui.widgets import MIME_EFFECT, MIME_SLOT
+from jmc_guitar_zoom.device import sysex
+from jmc_guitar_zoom.device.messages import SysexMessage
+from jmc_guitar_zoom.device.transport import FakeTransport
+from jmc_guitar_zoom.effects.catalog import a1four_effect_ids, load_catalog
+from jmc_guitar_zoom.patches import edit
+from jmc_guitar_zoom.patches.model import WIDE_FILLER_ID
+from jmc_guitar_zoom.patches.zptc import build_zptc, parse_zptc
+from jmc_guitar_zoom.ui.main_window import MainWindow
+from jmc_guitar_zoom.ui.widgets import MIME_EFFECT, MIME_SLOT
 
 CATALOG_DIR = FIXTURES / "catalog"
 BACKUP = FIXTURES / "backup"
@@ -445,7 +445,7 @@ def test_live_edit_sends_param_and_on_off_when_enabled(qtbot, catalog, tmp_path)
 
 
 def test_live_slot_mapping_is_isolated():
-    from zoomstudio.ui.main_window import live_message
+    from jmc_guitar_zoom.ui.main_window import live_message
 
     # verified on a real A1 FOUR (2026-11-24): the slot is the index in the chain with fillers
     patch = parse_zptc(HB_BYTES)
@@ -454,7 +454,7 @@ def test_live_slot_mapping_is_isolated():
 
 
 def test_effect_and_parameter_texts_are_shown_in_spanish(window):
-    from zoomstudio.effects import i18n
+    from jmc_guitar_zoom.effects import i18n
 
     window.chain.select(1)  # FD DLXR in HB Jazz
     info = window.catalog[DLXR]
@@ -465,7 +465,7 @@ def test_effect_and_parameter_texts_are_shown_in_spanish(window):
 
 
 def test_catalog_detail_is_shown_in_spanish(window):
-    from zoomstudio.effects import i18n
+    from jmc_guitar_zoom.effects import i18n
 
     panel = window.catalog_panel
     panel.list.setCurrentRow(panel.row_of("Comp"))

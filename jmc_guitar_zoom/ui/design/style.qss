@@ -1,4 +1,4 @@
-/* Zoom Studio style sheet. Every dollar-prefixed word is a token of tokens.json (hyphens become underscores). */
+/* JMC Guitar Zoom style sheet. Every dollar-prefixed word is a token of tokens.json (hyphens become underscores). */
 
 QWidget { font-family: $font_sans; font-size: ${text_body_size}px; color: $text_primary; }
 QMainWindow, QDialog { background: $backdrop_base; }

@@ -1,11 +1,11 @@
 import pytest
 
 from ui_replies import FIXTURES, fake_pedal, patch_reply
-from zoomstudio.device import sysex
-from zoomstudio.device.messages import ControlChange, SysexMessage
-from zoomstudio.effects.catalog import load_catalog
-from zoomstudio.ui.main_window import MainWindow
-from zoomstudio.ui.worker import PedalWorker
+from jmc_guitar_zoom.device import sysex
+from jmc_guitar_zoom.device.messages import ControlChange, SysexMessage
+from jmc_guitar_zoom.effects.catalog import load_catalog
+from jmc_guitar_zoom.ui.main_window import MainWindow
+from jmc_guitar_zoom.ui.worker import PedalWorker
 
 BACKUP = FIXTURES / "backup"
 HB = (FIXTURES / "53-HB-Jazz.zptc").read_bytes()
@@ -176,8 +176,8 @@ def test_tuner_runs_inside_editor_mode(qtbot, pedal):
 
 
 def test_tuner_pill_says_which_way_to_tune_without_relying_on_colour(qtbot):
-    from zoomstudio.ui.glass import BackdropRoot
-    from zoomstudio.ui.tuner import TunerPanel
+    from jmc_guitar_zoom.ui.glass import BackdropRoot
+    from jmc_guitar_zoom.ui.tuner import TunerPanel
 
     root = BackdropRoot()
     qtbot.addWidget(root)

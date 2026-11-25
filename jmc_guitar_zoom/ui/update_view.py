@@ -19,8 +19,8 @@ from PySide6.QtWidgets import (
     QStyledItemDelegate, QToolButton, QVBoxLayout, QWidget,
 )
 
-from zoomstudio.library import updater as lib_updater
-from zoomstudio.library.updater import CheckResult, DownloadReport, EffectUpdate, LibraryUpdater
+from jmc_guitar_zoom.library import updater as lib_updater
+from jmc_guitar_zoom.library.updater import CheckResult, DownloadReport, EffectUpdate, LibraryUpdater
 
 from . import strings as S
 from . import tokens

@@ -8,8 +8,8 @@ from device_replies import (
     file_end_reply, file_name_reply, identity_reply, pack, patch_bytes, patch_info_reply,
     patch_reply,
 )
-from zoomstudio.device import sysex
-from zoomstudio.device.errors import ChecksumError, PedalProtocolError
+from jmc_guitar_zoom.device import sysex
+from jmc_guitar_zoom.device.errors import ChecksumError, PedalProtocolError
 
 
 def test_pack_matches_upstream_and_roundtrips():

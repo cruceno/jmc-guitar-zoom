@@ -13,13 +13,13 @@ from PySide6.QtWidgets import QApplication, QToolTip
 from test_ui_effects_manager import AFTER, BEFORE, ON_PEDAL, PedalFiles, connected_window
 from test_ui_editor import drop
 from ui_replies import FIXTURES
-from zoomstudio.effects import flst
-from zoomstudio.effects.catalog import load_catalog
-from zoomstudio.ui import strings as ST
-from zoomstudio.ui.cards import ROLE_EFFECT, badge_rects, card_badges
-from zoomstudio.ui.dialogs import ConfirmDialog
-from zoomstudio.ui.main_window import MainWindow
-from zoomstudio.ui.mime import MIME_EFFECT
+from jmc_guitar_zoom.effects import flst
+from jmc_guitar_zoom.effects.catalog import load_catalog
+from jmc_guitar_zoom.ui import strings as ST
+from jmc_guitar_zoom.ui.cards import ROLE_EFFECT, badge_rects, card_badges
+from jmc_guitar_zoom.ui.dialogs import ConfirmDialog
+from jmc_guitar_zoom.ui.main_window import MainWindow
+from jmc_guitar_zoom.ui.mime import MIME_EFFECT
 
 REAL_READ = MainWindow._load_installed_state  # the conftest stubs it out for every other module
 
@@ -166,7 +166,7 @@ def test_no_warnings_and_no_blocks_without_installed_information(qtbot, catalog,
 
 
 def test_a_failed_state_read_leaves_everything_unknown(qtbot, monkeypatch, catalog, tmp_path):
-    from zoomstudio.device import PedalClient
+    from jmc_guitar_zoom.device import PedalClient
 
     class Unreadable(PedalFiles):
         def install(self, mp) -> None:
@@ -397,8 +397,8 @@ def test_bulk_write_paths_refuse_effects_the_pedal_lacks(ed, monkeypatch):
 
 
 def test_a_bank_load_refuses_a_patch_whose_effects_the_pedal_lacks(ed, monkeypatch):
-    from zoomstudio.patches import edit
-    from zoomstudio.patches.zptc import build_zptc
+    from jmc_guitar_zoom.patches import edit
+    from jmc_guitar_zoom.patches.zptc import build_zptc
 
     w, _ = ed
     asks(monkeypatch, True)

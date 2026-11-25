@@ -1,8 +1,8 @@
 """The daily throttle of the background update check (stored with the settings, never in the real config)."""
 import json
 
-from zoomstudio.ui import settings
-from zoomstudio.ui.settings import DAY_SECONDS, UpdateStore
+from jmc_guitar_zoom.ui import settings
+from jmc_guitar_zoom.ui.settings import DAY_SECONDS, UpdateStore
 
 
 def test_a_first_run_is_due(tmp_path):

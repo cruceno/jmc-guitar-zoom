@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from zoomstudio.effects.catalog import (
+from jmc_guitar_zoom.effects.catalog import (
     a1four_effect_ids,
     load_catalog,
     load_zd2,
@@ -116,6 +116,6 @@ def test_a1four_ids_from_lst_with_trailing_garbage():
     ("COMP.ZD2", "COMP"),
 ])
 def test_effect_stem_only_strips_guitar_lab_version_suffixes(filename, stem):
-    from zoomstudio.effects.catalog import svg_stem
+    from jmc_guitar_zoom.effects.catalog import svg_stem
 
     assert svg_stem(filename) == stem

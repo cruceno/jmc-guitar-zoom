@@ -18,11 +18,11 @@ from PySide6.QtWidgets import (
     QDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget,
 )
 
-from zoomstudio.patches import bank as bank_module
-from zoomstudio.patches import edit, library
-from zoomstudio.patches.bank import BankError, PatchBank
-from zoomstudio.patches.model import NAME_MAX_LEN, Patch
-from zoomstudio.patches.zptc import build_zptc, parse_zptc
+from jmc_guitar_zoom.patches import bank as bank_module
+from jmc_guitar_zoom.patches import edit, library
+from jmc_guitar_zoom.patches.bank import BankError, PatchBank
+from jmc_guitar_zoom.patches.model import NAME_MAX_LEN, Patch
+from jmc_guitar_zoom.patches.zptc import build_zptc, parse_zptc
 
 from . import strings as S
 from . import tokens
@@ -36,7 +36,7 @@ from .icons import icon
 from .painted import SearchField, SectionLabel
 from .widgets import MIME_PATCH, PatchList
 
-MIME_BANK = "application/x-zoomstudio-bank-entry"  # payload: bank entry id (UTF-8 text)
+MIME_BANK = "application/x-jmc-guitar-zoom-bank-entry"  # payload: bank entry id (UTF-8 text)
 ROLE_ENTRY_ID = Qt.ItemDataRole.UserRole + 40
 
 

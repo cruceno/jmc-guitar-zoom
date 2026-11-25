@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from zoomstudio.__main__ import autosave_dir, offerable_effect_ids
-from zoomstudio.effects.catalog import EffectInfo
+from jmc_guitar_zoom.__main__ import autosave_dir, offerable_effect_ids
+from jmc_guitar_zoom.effects.catalog import EffectInfo
 
 
 def info(effect_id, sources):

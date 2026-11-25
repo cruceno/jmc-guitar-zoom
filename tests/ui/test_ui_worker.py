@@ -4,12 +4,12 @@ import pytest
 from PySide6.QtCore import QThread
 
 from ui_replies import FIXTURES, HDR, S, fake_pedal
-from zoomstudio.device import sysex
-from zoomstudio.device.messages import SysexMessage
-from zoomstudio.device.transport import FakeTransport
-from zoomstudio.patches.model import Patch
-from zoomstudio.ui import strings
-from zoomstudio.ui.worker import PedalWorker
+from jmc_guitar_zoom.device import sysex
+from jmc_guitar_zoom.device.messages import SysexMessage
+from jmc_guitar_zoom.device.transport import FakeTransport
+from jmc_guitar_zoom.patches.model import Patch
+from jmc_guitar_zoom.ui import strings
+from jmc_guitar_zoom.ui.worker import PedalWorker
 
 HB = (FIXTURES / "53-HB-Jazz.zptc").read_bytes()
 B1 = (FIXTURES / "backup" / "001.zptc").read_bytes()

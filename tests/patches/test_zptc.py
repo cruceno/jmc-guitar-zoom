@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 import decode_preset as d
-from zoomstudio.patches.model import EffectSlot
-from zoomstudio.patches.zptc import PATCH_BUFFER_SIZE, build_zptc, parse_zptc
+from jmc_guitar_zoom.patches.model import EffectSlot
+from jmc_guitar_zoom.patches.zptc import PATCH_BUFFER_SIZE, build_zptc, parse_zptc
 
 from fixture_files import PATCHES as FIX  # noqa: E402
 

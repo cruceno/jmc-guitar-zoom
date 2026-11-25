@@ -4,7 +4,7 @@ from pathlib import Path
 from PySide6.QtCore import QtMsgType, qInstallMessageHandler
 from PySide6.QtWidgets import QWidget
 
-from zoomstudio.ui import theme, tokens
+from jmc_guitar_zoom.ui import theme, tokens
 
 
 def luminance(c):

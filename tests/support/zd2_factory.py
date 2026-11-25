@@ -4,7 +4,7 @@ A real ``.ZD2`` is Zoom's property (it holds compiled DSP code), so the reposito
 catalog reads only the container fields below, so a file built here is enough for every test that is not about
 Zoom's own bytes (those are marked ``zoom_files`` and read the files ``scripts/fetch_test_fixtures.py`` downloads).
 
-Layout written here, matching ``zoomzt2.ZD2`` and ``zoomstudio.effects.catalog``::
+Layout written here, matching ``zoomzt2.ZD2`` and ``jmc_guitar_zoom.effects.catalog``::
 
     "ZDLF" | length u32 | checksum u32 | target u32 | 73 unknown bytes
     version (4, ASCII) | 00 00 | group u8 | effect id u32 LE | name (11, NUL padded) | group name (11)
@@ -108,7 +108,7 @@ def _p(name, maximum, default, explanation=""):
 
 # The effects the tests use. Ids, names, groups, versions and parameter ranges follow what the catalog reads from
 # the real files (they are what a patch refers to); the sentences are original text, except the ones that already
-# exist in ``zoomstudio/effects/descriptions_es.json`` so the Spanish lookup is exercised.
+# exist in ``jmc_guitar_zoom/effects/descriptions_es.json`` so the Spanish lookup is exercised.
 _VOL = "Adjusts the volume."
 EFFECTS: dict[str, Effect] = {e.name: e for e in (
     Effect(0x1000010, "Comp", "DYNAMICS", "1.40", 13.94, "A simple compressor in the style of the Dyna Comp.",

@@ -6,15 +6,15 @@ from PySide6.QtGui import QDropEvent
 from test_ui_librarian import (_close_windows, B1, HB_ONE, HB_TWO, HDR, M, S, _WINDOWS, catalog, echo, fake_pedal, queue_write, sent,
                                wire)  # noqa: F401 (catalog and _close_windows are fixtures)
 from ui_replies import FIXTURES
-from zoomstudio.device import sysex
-from zoomstudio.patches.bank import PatchBank
-from zoomstudio.patches.library import empty_patch
-from zoomstudio.patches.zptc import build_zptc, parse_zptc
-from zoomstudio.ui import strings
-from zoomstudio.ui.bank_screen import MIME_BANK
-from zoomstudio.ui.dialogs import ConfirmDialog
-from zoomstudio.ui.main_window import MainWindow
-from zoomstudio.ui.widgets import MIME_PATCH
+from jmc_guitar_zoom.device import sysex
+from jmc_guitar_zoom.patches.bank import PatchBank
+from jmc_guitar_zoom.patches.library import empty_patch
+from jmc_guitar_zoom.patches.zptc import build_zptc, parse_zptc
+from jmc_guitar_zoom.ui import strings
+from jmc_guitar_zoom.ui.bank_screen import MIME_BANK
+from jmc_guitar_zoom.ui.dialogs import ConfirmDialog
+from jmc_guitar_zoom.ui.main_window import MainWindow
+from jmc_guitar_zoom.ui.widgets import MIME_PATCH
 
 EMPTY = build_zptc(empty_patch())
 # 42 filler patches, HB One at 43, HB Two at 44, Empty at 45..47, filler after (display numbers = location + 9)
@@ -473,7 +473,7 @@ def test_rename_and_delete_are_disabled_without_a_selection_and_while_writing(qt
 
 
 def test_rename_dialog_enforces_the_editor_name_rules(qtbot):
-    from zoomstudio.ui.bank_screen import RenameDialog
+    from jmc_guitar_zoom.ui.bank_screen import RenameDialog
 
     dialog = RenameDialog(None, "Old")
     qtbot.addWidget(dialog)

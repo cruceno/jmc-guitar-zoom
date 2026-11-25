@@ -2,10 +2,10 @@ import pytest
 from PySide6.QtCore import Qt
 
 from ui_replies import FIXTURES, fake_pedal
-from zoomstudio.device.messages import SysexMessage
-from zoomstudio.effects.catalog import a1four_effect_ids, load_catalog
-from zoomstudio.ui import strings
-from zoomstudio.ui.main_window import MainWindow
+from jmc_guitar_zoom.device.messages import SysexMessage
+from jmc_guitar_zoom.effects.catalog import a1four_effect_ids, load_catalog
+from jmc_guitar_zoom.ui import strings
+from jmc_guitar_zoom.ui.main_window import MainWindow
 
 CATALOG_DIR = FIXTURES / "catalog"
 BACKUP = FIXTURES / "backup"
@@ -155,7 +155,7 @@ def test_connect_loads_patches_from_a_fake_pedal(qtbot, catalog):
 
 
 def test_worker_error_goes_to_status_bar(qtbot, catalog):
-    from zoomstudio.device.transport import FakeTransport
+    from jmc_guitar_zoom.device.transport import FakeTransport
 
     w = MainWindow(catalog, a1_ids=None, transport_factory=lambda: FakeTransport(), pedal_timeout=0.05)
     qtbot.addWidget(w)
@@ -187,7 +187,7 @@ def test_catalog_marks_the_effects_in_the_chain(window):
     window.select_location(44)
     panel = window.catalog_panel
     assert panel.target_button.text()
-    from zoomstudio.ui.cards import ROLE_EFFECT
+    from jmc_guitar_zoom.ui.cards import ROLE_EFFECT
 
     flags = {panel.list.item(i).data(ROLE_EFFECT)["name"]: panel.list.item(i).data(ROLE_EFFECT)["in_chain"]
              for i in range(panel.list.count()) if panel.list.item(i).data(ROLE_EFFECT)}

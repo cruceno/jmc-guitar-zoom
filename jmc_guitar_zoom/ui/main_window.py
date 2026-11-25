@@ -15,13 +15,13 @@ from PySide6.QtWidgets import (
     QProgressBar, QPushButton, QSpinBox, QSplitter, QStatusBar, QToolButton, QVBoxLayout, QWidget,
 )
 
-from zoomstudio.effects.catalog import EffectInfo
-from zoomstudio.effects import flst
-from zoomstudio.effects.flst import pedal_filename
-from zoomstudio.patches import edit
-from zoomstudio.patches.bank import BankError
-from zoomstudio.patches.model import NAME_MAX_LEN, VOLUME_MAX, Patch
-from zoomstudio.patches.zptc import build_zptc, parse_zptc
+from jmc_guitar_zoom.effects.catalog import EffectInfo
+from jmc_guitar_zoom.effects import flst
+from jmc_guitar_zoom.effects.flst import pedal_filename
+from jmc_guitar_zoom.patches import edit
+from jmc_guitar_zoom.patches.bank import BankError
+from jmc_guitar_zoom.patches.model import NAME_MAX_LEN, VOLUME_MAX, Patch
+from jmc_guitar_zoom.patches.zptc import build_zptc, parse_zptc
 
 from . import strings as S
 from . import tokens
@@ -38,8 +38,8 @@ from .library import LibraryMixin
 from .tuner import TunerPanel
 from .update_view import UpdateMixin
 from . import favorites as favorites_module
-from zoomstudio.effects import models as pedal_models
-from zoomstudio.effects.models import A1_FOUR, PedalModel, model_id_from_identity
+from jmc_guitar_zoom.effects import models as pedal_models
+from jmc_guitar_zoom.effects.models import A1_FOUR, PedalModel, model_id_from_identity
 
 from . import settings as settings_module
 from .favorites import FavoritesStore
@@ -160,7 +160,7 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
                  target_store: TargetStore | None = None, extra_ids: set[int] | None = None,
                  updater=None, reload_sources=None, update_store=None, online=None, update_clock=None) -> None:
         super().__init__()
-        self.setWindowTitle("Zoom Studio")
+        self.setWindowTitle("JMC Guitar Zoom · no oficial, no afiliada a Zoom Corporation")
         self.resize(1440, 900)
         self.setMinimumSize(1280, 760)
         self.catalog = catalog
@@ -736,7 +736,7 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         """Where the effect list is backed up before it changes."""
         if self.backup_dir is not None:
             return self.backup_dir / "effects"
-        from zoomstudio.__main__ import autosave_dir
+        from jmc_guitar_zoom.__main__ import autosave_dir
 
         return autosave_dir() / "effects"
 

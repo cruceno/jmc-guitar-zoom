@@ -7,12 +7,12 @@ from test_ui_editor import (B1, BACKUP, COMP, HB_BYTES, catalog, connected, ids,
                             queue_save)
 from test_ui_clipping import themed  # noqa: F401 (fixture)
 from ui_replies import FIXTURES
-from zoomstudio.device import sysex
-from zoomstudio.patches import edit
-from zoomstudio.patches.zptc import build_zptc, parse_zptc
-from zoomstudio.ui import strings as ST
-from zoomstudio.ui.dialogs import ConfirmDialog
-from zoomstudio.ui.main_window import DISCARD_SHORTCUT, MainWindow, live_restore_messages
+from jmc_guitar_zoom.device import sysex
+from jmc_guitar_zoom.patches import edit
+from jmc_guitar_zoom.patches.zptc import build_zptc, parse_zptc
+from jmc_guitar_zoom.ui import strings as ST
+from jmc_guitar_zoom.ui.dialogs import ConfirmDialog
+from jmc_guitar_zoom.ui.main_window import DISCARD_SHORTCUT, MainWindow, live_restore_messages
 
 
 @pytest.fixture

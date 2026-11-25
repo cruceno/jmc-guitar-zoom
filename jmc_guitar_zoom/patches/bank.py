@@ -39,7 +39,7 @@ class BankEntry:
 
 
 def default_dir() -> Path:
-    from zoomstudio.__main__ import workspace_root  # late: the entry point imports the UI
+    from jmc_guitar_zoom.__main__ import workspace_root  # late: the entry point imports the UI
 
     return workspace_root() / "patches" / "bank"
 

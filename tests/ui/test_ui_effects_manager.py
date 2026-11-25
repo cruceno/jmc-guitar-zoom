@@ -11,17 +11,17 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QWidget
 
 from ui_replies import FIXTURES, HDR, S, fake_pedal, patch_reply
-from zoomstudio.device import PedalClient
-from zoomstudio.device import sysex
-from zoomstudio.device.errors import PedalFileNotFound
-from zoomstudio.device.sysex import DiskUsage
-from zoomstudio.effects import flst
-from zoomstudio.effects.catalog import load_catalog
-from zoomstudio.effects.installer import MEMORY_MARGIN
-from zoomstudio.ui import strings as ST
-from zoomstudio.ui.dialogs import ConfirmDialog
-from zoomstudio.ui.effects_manager import ROLE_ENTRY
-from zoomstudio.ui.main_window import MainWindow
+from jmc_guitar_zoom.device import PedalClient
+from jmc_guitar_zoom.device import sysex
+from jmc_guitar_zoom.device.errors import PedalFileNotFound
+from jmc_guitar_zoom.device.sysex import DiskUsage
+from jmc_guitar_zoom.effects import flst
+from jmc_guitar_zoom.effects.catalog import load_catalog
+from jmc_guitar_zoom.effects.installer import MEMORY_MARGIN
+from jmc_guitar_zoom.ui import strings as ST
+from jmc_guitar_zoom.ui.dialogs import ConfirmDialog
+from jmc_guitar_zoom.ui.effects_manager import ROLE_ENTRY
+from jmc_guitar_zoom.ui.main_window import MainWindow
 
 from fixture_files import EFFECTS  # noqa: E402
 from flst_factory import AFTER, BEFORE  # noqa: E402
@@ -147,7 +147,7 @@ def test_selecting_a_card_shows_the_extended_spanish_description(screen, catalog
     panel.select_effect("HALL.ZD2")
     assert panel.detail_name.text() == "Hall"
     assert panel.detail_text.text() == panel.description_of("HALL.ZD2") != ""
-    from zoomstudio.effects.i18n import effect_description
+    from jmc_guitar_zoom.effects.i18n import effect_description
     assert panel.detail_text.text() == effect_description(catalog[0x9000030])
 
 
@@ -572,14 +572,14 @@ MDL_12ST, COMP_160 = 0x14400190, 0x1800030  # 12Strings and 160 Comp of the loca
 
 
 def pedal_registry(extra_a1=()):
-    from zoomstudio.effects.models import PedalModel
+    from jmc_guitar_zoom.effects.models import PedalModel
 
     return {A1: PedalModel(A1, "A1 FOUR", frozenset({MDL_12ST, 0x1000010, 0x1000090, 0x400002C, 0x2000054, 0x9000030, *extra_a1})),
             G5N: PedalModel(G5N, "G5n", frozenset({MDL_12ST, COMP_160}))}
 
 
 def pedal_screen(qtbot, monkeypatch, catalog, tmp_path, registry=None, files=None):
-    from zoomstudio.effects import models as pm
+    from jmc_guitar_zoom.effects import models as pm
 
     monkeypatch.setattr(pm, "SUPPORTED_MODELS", {A1})
     files = files or PedalFiles(BEFORE)

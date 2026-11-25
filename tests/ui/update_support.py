@@ -7,12 +7,12 @@ sys.path.insert(0, str(HERE.parent / "library"))
 
 from updater_support import A1, COMP, G5N, HALL, FakeFetcher, effect, make_zip, standard_routes  # noqa: E402
 
-from zoomstudio.effects.catalog import load_catalog  # noqa: E402
-from zoomstudio.effects.models import A1_FOUR, PedalModel, load_models  # noqa: E402
-from zoomstudio.library import updater as lib  # noqa: E402
-from zoomstudio.library.updater import LibraryUpdater  # noqa: E402
-from zoomstudio.ui.main_window import MainWindow  # noqa: E402
-from zoomstudio.ui.settings import UpdateStore  # noqa: E402
+from jmc_guitar_zoom.effects.catalog import load_catalog  # noqa: E402
+from jmc_guitar_zoom.effects.models import A1_FOUR, PedalModel, load_models  # noqa: E402
+from jmc_guitar_zoom.library import updater as lib  # noqa: E402
+from jmc_guitar_zoom.library.updater import LibraryUpdater  # noqa: E402
+from jmc_guitar_zoom.ui.main_window import MainWindow  # noqa: E402
+from jmc_guitar_zoom.ui.settings import UpdateStore  # noqa: E402
 
 from fixture_files import EFFECTS, UI as FIXTURES  # noqa: E402
 RACKCOMP = ("0x01000020", "RACKCOMP.zip", "1.40", EFFECTS / "RACKCOMP.ZD2")  # not in the window's catalog: new

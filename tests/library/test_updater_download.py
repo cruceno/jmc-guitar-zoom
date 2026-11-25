@@ -4,9 +4,9 @@ import zipfile
 import pytest
 from updater_support import A1, COMP, GEQ, HALL, FakeFetcher, effect, make_zip, standard_routes
 
-from zoomstudio.effects.catalog import load_zd2
-from zoomstudio.library import updater
-from zoomstudio.library.updater import EffectUpdate, LibraryUpdater
+from jmc_guitar_zoom.effects.catalog import load_zd2
+from jmc_guitar_zoom.library import updater
+from jmc_guitar_zoom.library.updater import EffectUpdate, LibraryUpdater
 
 
 def entry(spec, version=None, kind="new"):
@@ -226,4 +226,4 @@ def test_the_default_fetcher_sends_only_a_generic_user_agent_and_no_cookies(monk
 
     monkeypatch.setattr(updater, "_build_opener", lambda: Opener())
     assert updater.urllib_fetcher(updater.EFFECTS_LIST_URL, 1000) == b"ok"
-    assert sent["headers"] == {"User-agent": "ZoomStudio"} and sent["timeout"] and sent["url"] == updater.EFFECTS_LIST_URL
+    assert sent["headers"] == {"User-agent": "jmc-guitar-zoom"} and sent["timeout"] and sent["url"] == updater.EFFECTS_LIST_URL

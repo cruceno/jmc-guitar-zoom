@@ -7,8 +7,8 @@ import pytest
 
 import zd2_factory as zf
 from fixture_files import ZOOM_FILES
-from zoomstudio.effects.catalog import a1four_effect_ids, load_catalog, load_zd2
-from zoomstudio.effects.models import A1_FOUR, load_models
+from jmc_guitar_zoom.effects.catalog import a1four_effect_ids, load_catalog, load_zd2
+from jmc_guitar_zoom.effects.models import A1_FOUR, load_models
 
 pytestmark = pytest.mark.zoom_files
 FOLDER = ZOOM_FILES / "effects"

@@ -12,11 +12,11 @@ from test_ui_effects_manager import (A1, AFTER, G5N, BEFORE, MDL_12ST, PedalFile
                                      open_screen, pedal_registry, pedal_screen)
 from test_ui_install_indicators import REAL_READ
 from ui_replies import FIXTURES
-from zoomstudio.effects import flst
-from zoomstudio.effects.catalog import load_catalog
-from zoomstudio.ui import strings as ST
-from zoomstudio.ui.effects_manager import ROLE_BADGE, ROLE_MODELS
-from zoomstudio.ui.main_window import MainWindow
+from jmc_guitar_zoom.effects import flst
+from jmc_guitar_zoom.effects.catalog import load_catalog
+from jmc_guitar_zoom.ui import strings as ST
+from jmc_guitar_zoom.ui.effects_manager import ROLE_BADGE, ROLE_MODELS
+from jmc_guitar_zoom.ui.main_window import MainWindow
 
 VARIANT = 0x9A09030  # «Hall» again: another model's file and id under the same display name (real: Air / AIR88)
 UNLISTED = 0x1800099  # an A1 FOUR effect of Guitar Lab's list that this pedal's FLST_SEQ.ZT2 has no record of
@@ -37,7 +37,7 @@ def reads_the_effect_list(monkeypatch):
 
 
 def registry():
-    from zoomstudio.effects.models import PedalModel
+    from jmc_guitar_zoom.effects.models import PedalModel
 
     models = pedal_registry(extra_a1=(UNLISTED,))
     models[G5N] = PedalModel(G5N, "G5n", frozenset(models[G5N].effect_ids | {VARIANT}))  # the variant is a G5n file

@@ -4,9 +4,9 @@ from pathlib import Path
 
 import zoomzt2
 
-from zoomstudio.device import sysex
-from zoomstudio.device.messages import SysexMessage
-from zoomstudio.device.transport import FakeTransport
+from jmc_guitar_zoom.device import sysex
+from jmc_guitar_zoom.device.messages import SysexMessage
+from jmc_guitar_zoom.device.transport import FakeTransport
 
 MODEL = 0x6E
 HDR = bytes([0x52, 0x00, MODEL])

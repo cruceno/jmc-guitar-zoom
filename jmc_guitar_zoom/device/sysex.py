@@ -3,7 +3,7 @@
 Payloads are ``bytes`` without the F0/F7 framing (the mido convention), starting
 with the address ``52 00 <model>``. Nothing here touches MIDI ports.
 
-Protocol notes live in readme.md ("MIDI Operation") and in zoomzt2.py, whose
+Protocol notes live in docs/zoom-zt2-upstream-readme.md ("MIDI Operation") and in zoomzt2.py, whose
 algorithms for 7-bit packing and the CRC trailer are reproduced here.
 """
 

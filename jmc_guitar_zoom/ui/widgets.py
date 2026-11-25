@@ -10,9 +10,9 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from zoomstudio.effects.catalog import EffectInfo
-from zoomstudio.effects.i18n import effect_description, param_explanation
-from zoomstudio.patches.model import EffectSlot, Patch
+from jmc_guitar_zoom.effects.catalog import EffectInfo
+from jmc_guitar_zoom.effects.i18n import effect_description, param_explanation
+from jmc_guitar_zoom.patches.model import EffectSlot, Patch
 
 from . import strings as S
 from . import tokens

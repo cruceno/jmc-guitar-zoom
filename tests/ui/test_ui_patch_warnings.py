@@ -11,12 +11,12 @@ import test_ui_effects_manager as manager
 from test_ui_effects_manager import BEFORE, ON_PEDAL, PedalFiles, connected_window, open_screen
 from test_ui_install_indicators import REAL_READ, STRINGS, asks, ready  # noqa: F401 (REAL_READ: the fixture below)
 from ui_replies import FIXTURES
-from zoomstudio.effects.catalog import load_catalog
-from zoomstudio.patches import edit
-from zoomstudio.patches.zptc import build_zptc, parse_zptc
-from zoomstudio.ui import strings as ST
-from zoomstudio.ui.cards import ROLE_MISSING
-from zoomstudio.ui.main_window import MainWindow
+from jmc_guitar_zoom.effects.catalog import load_catalog
+from jmc_guitar_zoom.patches import edit
+from jmc_guitar_zoom.patches.zptc import build_zptc, parse_zptc
+from jmc_guitar_zoom.ui import strings as ST
+from jmc_guitar_zoom.ui.cards import ROLE_MISSING
+from jmc_guitar_zoom.ui.main_window import MainWindow
 
 COMP_160 = 0x1800030
 from fixture_files import EFFECTS  # noqa: E402

@@ -18,11 +18,11 @@ from test_ui_effects_manager import AFTER, BEFORE, PATCHES, PedalFiles, pedal_re
 from test_ui_clipping import SLACK, clipped, themed  # noqa: F401 (themed is a fixture)
 from ui_replies import FIXTURES, HDR, S, fake_pedal
 from update_support import UPDATE_STATES, update_state
-from zoomstudio.device import sysex
-from zoomstudio.effects.catalog import load_catalog
-from zoomstudio.ui.main_window import MainWindow
-from zoomstudio.ui.painted import SearchField
-from zoomstudio.ui.widgets import ParamRow
+from jmc_guitar_zoom.device import sysex
+from jmc_guitar_zoom.effects.catalog import load_catalog
+from jmc_guitar_zoom.ui.main_window import MainWindow
+from jmc_guitar_zoom.ui.painted import SearchField
+from jmc_guitar_zoom.ui.widgets import ParamRow
 
 from fixture_files import EFFECTS  # noqa: E402
 SIZES = [(1280, 760), (1440, 900), (1600, 1000)]
@@ -39,7 +39,7 @@ def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
     if state.startswith("update-"):  # the effect-library update flow (a private library, a fake channel)
         return update_state(qtbot, tmp_path, catalog, state)
     if state == "two-pedals":  # the pedal selector of the catalog shows when more than one pedal is supported
-        from zoomstudio.effects import models as pedal_models
+        from jmc_guitar_zoom.effects import models as pedal_models
 
         registry = pedal_models.load_models(FIXTURES / "AllZDL7_2.lst")
         monkeypatch.setattr(pedal_models, "SUPPORTED_MODELS", {pedal_models.A1_FOUR, 0x6E000000})
@@ -65,7 +65,7 @@ def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
         transport.on(sysex.pc_mode(True, 0x6E), S(HDR + b"\x00\x00"))
     registry = pedal_registry() if state == "effects-all-pedals" else None
     if state == "read-only-pedal":  # a G1 FOUR: the banner shows and everything stays readable
-        from zoomstudio.effects.models import PedalModel
+        from jmc_guitar_zoom.effects.models import PedalModel
 
         registry = {0x6E001100: PedalModel(0x6E001100, "A1 FOUR", frozenset(catalog)),
                     0x6E000C00: PedalModel(0x6E000C00, "G1 FOUR", frozenset(list(catalog)[:5]))}

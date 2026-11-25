@@ -13,15 +13,15 @@ from pathlib import Path
 
 from PySide6.QtCore import QMetaObject, QObject, QTimer, Qt, Signal, Slot
 
-from zoomstudio.device import PedalClient, PedalError, TunerReading
-from zoomstudio.effects import installer
-from zoomstudio.effects.flst import FLST_NAME
-from zoomstudio.device.transport import Transport
-from zoomstudio.patches import library
-from zoomstudio.patches.backup import write_backup
-from zoomstudio.patches.edit import compare_patches
-from zoomstudio.patches.model import Patch
-from zoomstudio.patches.zptc import parse_zptc
+from jmc_guitar_zoom.device import PedalClient, PedalError, TunerReading
+from jmc_guitar_zoom.effects import installer
+from jmc_guitar_zoom.effects.flst import FLST_NAME
+from jmc_guitar_zoom.device.transport import Transport
+from jmc_guitar_zoom.patches import library
+from jmc_guitar_zoom.patches.backup import write_backup
+from jmc_guitar_zoom.patches.edit import compare_patches
+from jmc_guitar_zoom.patches.model import Patch
+from jmc_guitar_zoom.patches.zptc import parse_zptc
 
 from . import strings as S
 
@@ -30,7 +30,7 @@ TransportFactory = Callable[[], Transport]
 
 def describe_error(exc: BaseException) -> str:
     """Spanish sentence for a pedal error, with the technical detail of low-level errors appended."""
-    from zoomstudio.device.errors import ChecksumError, PedalProtocolError, PedalTimeout
+    from jmc_guitar_zoom.device.errors import ChecksumError, PedalProtocolError, PedalTimeout
 
     if isinstance(exc, PedalTimeout):
         return S.with_detail(S.ERR_NO_REPLY, exc)

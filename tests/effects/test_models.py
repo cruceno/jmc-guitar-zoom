@@ -1,9 +1,9 @@
 import json
 from types import SimpleNamespace
 
-from zoomstudio.effects import models
-from zoomstudio.effects.catalog import a1four_effect_ids
-from zoomstudio.effects.models import A1_FOUR, PedalModel, load_models, model_id_from_identity
+from jmc_guitar_zoom.effects import models
+from jmc_guitar_zoom.effects.catalog import a1four_effect_ids
+from jmc_guitar_zoom.effects.models import A1_FOUR, PedalModel, load_models, model_id_from_identity
 
 LST = {"models": [
     {"modelId": "0x6E000000", "modelName": "G5n", "editor": True, "effects": [{"type": "0x1000010"}, {"type": "0x1000020"}]},

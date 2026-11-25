@@ -73,7 +73,7 @@ def _write(root: Path) -> None:
     (device / "001.zptc").write_bytes(pf.ACOUSTIC_A)
 
 
-ROOT = Path(tempfile.mkdtemp(prefix="zoomstudio-fixtures-"))
+ROOT = Path(tempfile.mkdtemp(prefix="jmc_guitar_zoom-fixtures-"))
 atexit.register(shutil.rmtree, ROOT, ignore_errors=True)
 _write(ROOT)
 EFFECTS, UI, PATCHES, DEVICE = (ROOT / n for n in ("effects", "ui", "patches", "device"))

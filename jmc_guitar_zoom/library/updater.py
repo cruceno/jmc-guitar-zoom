@@ -27,8 +27,8 @@ from io import BytesIO
 from pathlib import Path, PurePosixPath
 from typing import Callable, Iterable, Mapping
 
-from zoomstudio.effects.models import parse_models
-from zoomstudio.effects.catalog import EffectInfo, load_catalog, load_zd2
+from jmc_guitar_zoom.effects.models import parse_models
+from jmc_guitar_zoom.effects.catalog import EffectInfo, load_catalog, load_zd2
 
 BASE_URL = "https://www.zoom.co.jp/archive/GUITAR_LAB/"
 EFFECTS_LIST_NAME = "AllZDL7_2.lst"
@@ -36,7 +36,7 @@ VERSIONS_LIST_NAME = "ModelVersion7_2.lst"
 EFFECTS_LIST_URL = BASE_URL + EFFECTS_LIST_NAME
 VERSIONS_LIST_URL = BASE_URL + VERSIONS_LIST_NAME
 ZIP_BASE_URL = BASE_URL + "ZDLF3/"
-USER_AGENT = "ZoomStudio"
+USER_AGENT = "jmc-guitar-zoom"
 TIMEOUT_SECONDS = 15
 MAX_LIST_BYTES = 4_000_000  # the real effects list is about 0.5 MB
 MAX_ZIP_BYTES = 2_000_000  # real zips are about 20 KB

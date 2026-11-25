@@ -13,7 +13,7 @@ FILE_NAME = "target.json"
 def default_path() -> Path:
     """``<AppConfigLocation>/target.json`` (tests redirect this function; they never touch the real one)."""
     base = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppConfigLocation)
-    return Path(base or Path.home() / ".config" / "zoom-studio") / FILE_NAME
+    return Path(base or Path.home() / ".config" / "jmc-guitar-zoom") / FILE_NAME
 
 
 class TargetStore:

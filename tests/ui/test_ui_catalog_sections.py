@@ -5,13 +5,13 @@ from PySide6.QtGui import QDropEvent
 from PySide6.QtTest import QTest
 
 from ui_replies import FIXTURES
-from zoomstudio.effects.catalog import load_catalog
-from zoomstudio.effects.models import A1_FOUR, PedalModel
-from zoomstudio.ui import strings as ST
-from zoomstudio.ui.cards import FAVORITES_KEY, ROLE_SECTION
-from zoomstudio.ui.favorites import FavoritesStore
-from zoomstudio.ui.main_window import MainWindow
-from zoomstudio.ui.mime import MIME_EFFECT
+from jmc_guitar_zoom.effects.catalog import load_catalog
+from jmc_guitar_zoom.effects.models import A1_FOUR, PedalModel
+from jmc_guitar_zoom.ui import strings as ST
+from jmc_guitar_zoom.ui.cards import FAVORITES_KEY, ROLE_SECTION
+from jmc_guitar_zoom.ui.favorites import FavoritesStore
+from jmc_guitar_zoom.ui.main_window import MainWindow
+from jmc_guitar_zoom.ui.mime import MIME_EFFECT
 
 COMP, HALL = 16777232, 150994992
 

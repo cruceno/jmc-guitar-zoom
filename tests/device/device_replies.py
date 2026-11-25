@@ -1,4 +1,4 @@
-"""Builders for fake pedal replies, written independently of zoomstudio.device.sysex.
+"""Builders for fake pedal replies, written independently of jmc_guitar_zoom.device.sysex.
 
 They use zoomzt2's own pack() and binascii so the tests cross-check the new code
 against the upstream algorithm instead of against itself.

@@ -14,10 +14,10 @@ from PySide6.QtWidgets import (QAbstractButton, QAbstractScrollArea, QCheckBox, 
 from test_ui_effects_manager import AFTER, BEFORE, ON_PEDAL, PedalFiles, connected_window, open_screen
 from ui_replies import FIXTURES
 from update_support import UPDATE_STATES, update_state
-from zoomstudio.effects.catalog import load_catalog
-from zoomstudio.ui import strings as S
-from zoomstudio.ui.main_window import MainWindow
-from zoomstudio.ui.painted import PaintedText
+from jmc_guitar_zoom.effects.catalog import load_catalog
+from jmc_guitar_zoom.ui import strings as S
+from jmc_guitar_zoom.ui.main_window import MainWindow
+from jmc_guitar_zoom.ui.painted import PaintedText
 
 from fixture_files import EFFECTS  # noqa: E402
 SIZES = [(1440, 900), (2000, 1056)]
@@ -27,8 +27,8 @@ SLACK = 2  # px of rounding the metrics may differ from the painted text by
 
 @pytest.fixture
 def themed(qapp):
-    from zoomstudio.ui.fonts import register_fonts
-    from zoomstudio.ui.theme import apply_dark_theme
+    from jmc_guitar_zoom.ui.fonts import register_fonts
+    from jmc_guitar_zoom.ui.theme import apply_dark_theme
 
     register_fonts()
     apply_dark_theme(qapp)
@@ -149,7 +149,7 @@ def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
     w = connected_window(qtbot, monkeypatch, catalog, tmp_path, PedalFiles(BEFORE))
     if state.startswith("bank"):  # the bank screen: with cards (one long name, one unknown origin), empty, mid-drag
         if state != "bank-empty":
-            from zoomstudio.patches.zptc import build_zptc, parse_zptc
+            from jmc_guitar_zoom.patches.zptc import build_zptc, parse_zptc
             for i, origin in enumerate((20, 33, None)):
                 patch = parse_zptc((FIXTURES / "53-HB-Jazz.zptc").read_bytes())
                 patch.name = ("Bank Lead", "WWWWWWWWWW", "Clean")[i]
@@ -221,7 +221,7 @@ def test_catalog_cards_are_as_wide_as_the_viewport(qtbot, monkeypatch, catalog, 
 
 @pytest.mark.parametrize("name", ["", "Bank Lead", "WWWWWWWWWW"])
 def test_the_bank_rename_dialog_is_not_clipped(qtbot, themed, name):
-    from zoomstudio.ui.bank_screen import RenameDialog
+    from jmc_guitar_zoom.ui.bank_screen import RenameDialog
 
     dialog = RenameDialog(None, name)
     qtbot.addWidget(dialog)

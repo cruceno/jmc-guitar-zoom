@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from zoomstudio.device.errors import PedalFileNotFound, PedalTimeout
-from zoomstudio.device.sysex import DiskUsage
-from zoomstudio.effects import installer
+from jmc_guitar_zoom.device.errors import PedalFileNotFound, PedalTimeout
+from jmc_guitar_zoom.device.sysex import DiskUsage
+from jmc_guitar_zoom.effects import installer
 
 from flst_factory import AFTER, BEFORE  # noqa: E402
 ZD2 = bytes(range(256)) * 100  # stands in for MDL_12ST.ZD2

@@ -5,11 +5,11 @@ from PySide6.QtGui import QColor
 from test_ui_effects_manager import BEFORE, PedalFiles, connected_window, open_screen
 from test_ui_install_indicators import REAL_READ, asks
 from ui_replies import FIXTURES
-from zoomstudio.effects import flst
-from zoomstudio.effects.catalog import load_catalog
-from zoomstudio.ui import memory, tokens
-from zoomstudio.ui import strings as ST
-from zoomstudio.ui.main_window import MainWindow
+from jmc_guitar_zoom.effects import flst
+from jmc_guitar_zoom.effects.catalog import load_catalog
+from jmc_guitar_zoom.ui import memory, tokens
+from jmc_guitar_zoom.ui import strings as ST
+from jmc_guitar_zoom.ui.main_window import MainWindow
 
 from fixture_files import EFFECTS  # noqa: E402
 

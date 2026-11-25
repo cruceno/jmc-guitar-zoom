@@ -15,7 +15,7 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
-from zoomstudio.effects.catalog import EffectInfo, ParamInfo
+from jmc_guitar_zoom.effects.catalog import EffectInfo, ParamInfo
 
 _DATA_FILE = Path(__file__).with_name("descriptions_es.json")
 

@@ -2,11 +2,11 @@ import pytest
 from PySide6.QtWidgets import QToolButton
 
 from ui_replies import FIXTURES
-from zoomstudio.effects.catalog import load_catalog
-from zoomstudio.ui import icons, strings
-from zoomstudio.ui.dialogs import ConfirmDialog
-from zoomstudio.ui.glass import GlowHost
-from zoomstudio.ui.main_window import MainWindow
+from jmc_guitar_zoom.effects.catalog import load_catalog
+from jmc_guitar_zoom.ui import icons, strings
+from jmc_guitar_zoom.ui.dialogs import ConfirmDialog
+from jmc_guitar_zoom.ui.glass import GlowHost
+from jmc_guitar_zoom.ui.main_window import MainWindow
 
 
 @pytest.fixture

@@ -19,8 +19,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from zoomstudio.patches.model import EffectSlot, Patch
-from zoomstudio.patches.zptc import build_zptc
+from jmc_guitar_zoom.patches.model import EffectSlot, Patch
+from jmc_guitar_zoom.patches.zptc import build_zptc
 
 _PPRM = ("byte00", "byte01", "byte02", "byte03", "byte04", "byte05", "byte06", "byte07", "editSlot", "byte09",
          "byte10", "byte11")

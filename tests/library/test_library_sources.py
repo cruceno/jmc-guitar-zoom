@@ -3,10 +3,10 @@ from pathlib import Path
 
 from updater_support import A1, COMP, effect, effects_lst
 
-from zoomstudio import __main__ as entry
-from zoomstudio.effects import flst
-from zoomstudio.effects.catalog import load_catalog, load_zd2
-from zoomstudio.effects.models import load_models
+from jmc_guitar_zoom import __main__ as entry
+from jmc_guitar_zoom.effects import flst
+from jmc_guitar_zoom.effects.catalog import load_catalog, load_zd2
+from jmc_guitar_zoom.effects.models import load_models
 
 from fixture_files import EFFECTS as FIX  # noqa: E402
 

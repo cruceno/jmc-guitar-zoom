@@ -3,7 +3,7 @@
 
 Zoom's effect files (``.ZD2``) and Guitar Lab's effect list are Zoom's property, so the repository does not carry
 them. This script fetches a small set from Zoom's public Guitar Lab channel, for your own use, with the app's own
-updater (``zoomstudio.library.updater``): the same URL confinement (https, the channel host, no ``..``), the same
+updater (``jmc_guitar_zoom.library.updater``): the same URL confinement (https, the channel host, no ``..``), the same
 size limits and the same verification (the ``.ZD2`` inside each zip must parse and carry the id and version the
 list announced). Nothing is written outside the destination folder and nothing already there is overwritten.
 
@@ -24,7 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from zoomstudio.library import updater  # noqa: E402
+from jmc_guitar_zoom.library import updater  # noqa: E402
 
 DEFAULT_DEST = ROOT / "tests" / ".zoom-fixtures" / "effects"
 

@@ -4,13 +4,13 @@ from device_replies import (
     HDR, MODEL, ack, current_patch_reply, disk_reply, file_block_reply, file_end_reply,
     file_name_reply, identity_reply, pack, patch_bytes, patch_info_reply, patch_reply,
 )
-from zoomstudio.device import sysex
-from zoomstudio.device.client import PedalClient
-from zoomstudio.device.errors import (
+from jmc_guitar_zoom.device import sysex
+from jmc_guitar_zoom.device.client import PedalClient
+from jmc_guitar_zoom.device.errors import (
     ChecksumError, PedalError, PedalFileNotFound, PedalProtocolError, PedalTimeout,
 )
-from zoomstudio.device.messages import ControlChange, ProgramChange, SysexMessage, TunerReading
-from zoomstudio.device.transport import FakeTransport
+from jmc_guitar_zoom.device.messages import ControlChange, ProgramChange, SysexMessage, TunerReading
+from jmc_guitar_zoom.device.transport import FakeTransport
 
 
 def S(b):

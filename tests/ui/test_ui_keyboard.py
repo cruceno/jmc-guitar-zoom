@@ -3,8 +3,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 
 from ui_replies import FIXTURES
-from zoomstudio.effects.catalog import load_catalog
-from zoomstudio.ui.main_window import MainWindow
+from jmc_guitar_zoom.effects.catalog import load_catalog
+from jmc_guitar_zoom.ui.main_window import MainWindow
 
 
 @pytest.fixture

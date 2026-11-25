@@ -3,10 +3,10 @@
 import pytest
 
 from device_replies import HDR, crc_bytes, pack, patch_bytes
-from zoomstudio.device.client import PedalClient
-from zoomstudio.device.errors import PedalTimeout
-from zoomstudio.device.messages import SysexMessage
-from zoomstudio.device.transport import FakeTransport
+from jmc_guitar_zoom.device.client import PedalClient
+from jmc_guitar_zoom.device.errors import PedalTimeout
+from jmc_guitar_zoom.device.messages import SysexMessage
+from jmc_guitar_zoom.device.transport import FakeTransport
 
 
 def S(b):

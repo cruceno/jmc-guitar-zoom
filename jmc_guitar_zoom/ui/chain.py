@@ -6,8 +6,8 @@ from PySide6.QtCore import QByteArray, QMimeData, QPointF, QRectF, QSize, Qt, Si
 from PySide6.QtGui import QColor, QDrag, QLinearGradient, QPainter, QPainterPath, QPen, QRadialGradient
 from PySide6.QtWidgets import QAbstractButton, QApplication, QFrame, QToolButton, QVBoxLayout, QWidget
 
-from zoomstudio.effects.catalog import EffectInfo
-from zoomstudio.patches.model import EffectSlot, Patch
+from jmc_guitar_zoom.effects.catalog import EffectInfo
+from jmc_guitar_zoom.patches.model import EffectSlot, Patch
 
 from . import strings as S
 from . import tokens

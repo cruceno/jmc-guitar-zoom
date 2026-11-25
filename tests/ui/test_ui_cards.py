@@ -3,10 +3,10 @@ from PySide6.QtCore import QSize
 from PySide6.QtWidgets import QStyleOptionViewItem
 
 from ui_replies import FIXTURES
-from zoomstudio.effects.catalog import load_catalog
-from zoomstudio.ui import strings, tokens
-from zoomstudio.ui.cards import CARD_HEIGHT, ROLE_DIRTY, ROLE_NAME, ROLE_NUMBER, ROLE_STRIP, PatchCardDelegate
-from zoomstudio.ui.main_window import MainWindow
+from jmc_guitar_zoom.effects.catalog import load_catalog
+from jmc_guitar_zoom.ui import strings, tokens
+from jmc_guitar_zoom.ui.cards import CARD_HEIGHT, ROLE_DIRTY, ROLE_NAME, ROLE_NUMBER, ROLE_STRIP, PatchCardDelegate
+from jmc_guitar_zoom.ui.main_window import MainWindow
 
 
 @pytest.fixture

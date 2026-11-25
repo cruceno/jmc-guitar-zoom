@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from zoomstudio.effects import i18n
-from zoomstudio.effects.catalog import EffectInfo, ParamInfo, load_zd2
+from jmc_guitar_zoom.effects import i18n
+from jmc_guitar_zoom.effects.catalog import EffectInfo, ParamInfo, load_zd2
 
 from fixture_files import EFFECTS as FIX  # noqa: E402
 

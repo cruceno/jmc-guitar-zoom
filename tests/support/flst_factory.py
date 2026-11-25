@@ -1,7 +1,7 @@
 """A synthetic ``FLST_SEQ.ZT2``: the effect list of an A1 FOUR, built from the layout observed on the pedal.
 
 The real file belongs to the user's pedal and lists Zoom's whole catalogue, so the repository carries none. The
-layout, as ``zoomstudio/effects/flst.py`` documents it (fw 1.01):
+layout, as ``jmc_guitar_zoom/effects/flst.py`` documents it (fw 1.01):
 
 * the file is 14,784 bytes: the lists, then zero padding;
 * two sections (the pedal keeps two copies of the list), each a run of groups;

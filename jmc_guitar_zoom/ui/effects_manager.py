@@ -16,10 +16,10 @@ from PySide6.QtWidgets import (
     QSizePolicy, QStyle, QStyledItemDelegate, QVBoxLayout, QWidget,
 )
 
-from zoomstudio.effects import flst
-from zoomstudio.effects.catalog import EffectInfo
-from zoomstudio.effects.i18n import effect_description
-from zoomstudio.effects.installer import MEMORY_MARGIN
+from jmc_guitar_zoom.effects import flst
+from jmc_guitar_zoom.effects.catalog import EffectInfo
+from jmc_guitar_zoom.effects.i18n import effect_description
+from jmc_guitar_zoom.effects.installer import MEMORY_MARGIN
 
 from . import strings as S
 from . import tokens

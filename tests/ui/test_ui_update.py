@@ -14,10 +14,10 @@ from update_support import (EFFECTS, FIXTURES, HALL_ID, NOW, RACKCOMP_ID, hall_n
 from test_ui_effects_manager import (AFTER, BEFORE, ON_PEDAL, PedalFiles, connected_window)
 from updater_support import A1, COMP, FakeFetcher, effect, make_zip  # a model lists at least one effect, as the channel does
 
-from zoomstudio.effects.catalog import load_catalog
-from zoomstudio.library import updater as lib
-from zoomstudio.ui import strings as ST
-from zoomstudio.ui.settings import DAY_SECONDS, UpdateStore
+from jmc_guitar_zoom.effects.catalog import load_catalog
+from jmc_guitar_zoom.library import updater as lib
+from jmc_guitar_zoom.ui import strings as ST
+from jmc_guitar_zoom.ui.settings import DAY_SECONDS, UpdateStore
 
 
 @pytest.fixture(scope="module")
@@ -90,7 +90,7 @@ def test_a_failed_background_check_is_silent_and_is_not_recorded(qtbot, catalog,
 
 
 def test_without_an_updater_nothing_of_this_shows(qtbot, catalog):
-    from zoomstudio.ui.main_window import MainWindow
+    from jmc_guitar_zoom.ui.main_window import MainWindow
 
     w = MainWindow(dict(catalog))
     qtbot.addWidget(w)
@@ -166,7 +166,7 @@ def test_the_menu_entry_opens_the_view_with_the_new_and_the_updated_effects(qtbo
 
 
 def Qt_UserRole():
-    from zoomstudio.ui.update_view import ROLE_UPDATE
+    from jmc_guitar_zoom.ui.update_view import ROLE_UPDATE
 
     return ROLE_UPDATE
 
@@ -352,7 +352,7 @@ def test_closing_the_window_stops_the_updater_thread(qtbot, catalog, tmp_path):
 @pytest.fixture
 def gc_guard_off():
     """Leave the collector as the suite's session guard set it, whatever a test installed."""
-    from zoomstudio.ui import gc_guard
+    from jmc_guitar_zoom.ui import gc_guard
 
     yield gc_guard
     gc_guard.install(QApplication.instance())
@@ -396,9 +396,9 @@ def test_installing_twice_keeps_one_timer(qtbot, gc_guard_off):
 
 
 def test_main_installs_the_guard_right_after_the_application_exists(qapp, monkeypatch):
-    import zoomstudio.__main__ as entry
-    import zoomstudio.ui.gc_guard as gc_guard
-    import zoomstudio.ui.main_window as main_window
+    import jmc_guitar_zoom.__main__ as entry
+    import jmc_guitar_zoom.ui.gc_guard as gc_guard
+    import jmc_guitar_zoom.ui.main_window as main_window
 
     class Stop(Exception):
         pass
