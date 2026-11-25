@@ -12,7 +12,7 @@ from ui_replies import FIXTURES
 from zoomstudio.effects.catalog import load_catalog
 from zoomstudio.ui import favorites as fav_module
 from zoomstudio.ui import strings as ST
-from zoomstudio.ui.cards import ROLE_FAV, star_rect
+from zoomstudio.ui.cards import FAVORITES_KEY, ROLE_FAV, star_rect
 from zoomstudio.ui.favorites import FavoritesStore
 from zoomstudio.ui.main_window import MainWindow
 
@@ -37,15 +37,18 @@ def window(qtbot, catalog, store):
     qtbot.addWidget(w)
     w.load_offline(FIXTURES / "backup")
     w.show()
+    for group in w.catalog_panel.section_groups():  # the catalog starts folded: open every section for these tests
+        w.catalog_panel.toggle_section(group)
     return w
 
 
 def row_of(panel, name):
-    return panel.visible_names().index(name)
+    return panel.row_of(name)
 
 
 def click_star(lst, row):
     item = lst.item(row)
+    assert not item.isHidden(), "the card must be in an unfolded section to be clicked"
     QTest.mouseClick(lst.viewport(), Qt.MouseButton.LeftButton, pos=star_rect(lst.visualItemRect(item)).center().toPoint())
 
 
@@ -86,11 +89,11 @@ def test_tests_never_use_the_real_config_path(tmp_path_factory, qtbot, catalog):
 
 def test_click_on_the_star_toggles_a_favorite_and_a_filled_star_is_not_only_colour(window, store):
     panel = window.catalog_panel
-    row = row_of(panel, "Comp")
-    assert panel.list.item(row).data(ROLE_FAV) is False
-    click_star(panel.list, row)
-    assert store.is_favorite(COMP) and panel.list.item(row).data(ROLE_FAV) is True
-    click_star(panel.list, row)
+    assert panel.item_of("Comp").data(ROLE_FAV) is False
+    click_star(panel.list, row_of(panel, "Comp"))
+    assert store.is_favorite(COMP) and panel.item_of("Comp").data(ROLE_FAV) is True
+    assert panel.section_groups()[0] == FAVORITES_KEY  # it moved to the first section
+    click_star(panel.list, row_of(panel, "Comp"))
     assert not store.is_favorite(COMP)
 
 
@@ -105,12 +108,11 @@ def test_the_f_key_toggles_the_focused_card(qtbot, window, store):
 
 def test_the_context_menu_marks_and_unmarks(window, store):
     panel = window.catalog_panel
-    item = panel.list.item(row_of(panel, "Comp"))
-    menu = panel.list.context_menu_for(item)
+    menu = panel.list.context_menu_for(panel.item_of("Comp"))
     assert [a.text() for a in menu.actions()] == [ST.FAVORITE_ADD]
     menu.actions()[0].trigger()
     assert store.is_favorite(COMP)
-    assert [a.text() for a in panel.list.context_menu_for(item).actions()] == [ST.FAVORITE_REMOVE]
+    assert [a.text() for a in panel.list.context_menu_for(panel.item_of("Comp")).actions()] == [ST.FAVORITE_REMOVE]
 
 
 def test_the_favorites_filter_combines_with_search_and_group(window, store):

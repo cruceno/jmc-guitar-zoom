@@ -192,7 +192,7 @@ def test_catalog_detail_shows_dsp_after_the_replacement(window):
     window.select_tile(1)
     panel = window.catalog_panel
     panel.search.setText("Comp")
-    panel.list.setCurrentRow(panel.visible_names().index("Comp"))
+    panel.list.setCurrentRow(panel.row_of("Comp"))
     comp = next(i for i in window.catalog.values() if i.name == "Comp")
     old = window.catalog[window.current_patch.effects[1].effect_id]
     after = window.dsp_percent() - old.dsp_load_percent + comp.dsp_load_percent

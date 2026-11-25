@@ -173,6 +173,10 @@ def test_the_empty_patch_title_is_shown_in_full(qtbot, monkeypatch, catalog, tmp
 def test_catalog_cards_are_as_wide_as_the_viewport(qtbot, monkeypatch, catalog, tmp_path, themed, size):
     w = build(qtbot, monkeypatch, catalog, tmp_path, "no-patch")
     settle(qtbot, w, size)
+    for group in w.catalog_panel.section_groups():  # sections start folded; the width test needs a long list
+        if not w.catalog_panel.section_expanded(group):
+            w.catalog_panel.toggle_section(group)
+    qtbot.wait(50)
     lst = w.catalog_panel.list
     assert lst.verticalScrollBar().isVisibleTo(lst)  # the catalog is long: the scrollbar is what used to steal width
     assert not lst.horizontalScrollBar().isVisibleTo(lst)

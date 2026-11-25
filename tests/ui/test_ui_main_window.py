@@ -134,13 +134,13 @@ def test_catalog_search_and_a1_filter(window):
 def test_catalog_rows_show_dsp_load_installed_flag_and_svg(window):
     panel = window.catalog_panel
     panel.search.setText("Hall")
-    text = panel.list.item(0).text()
+    text = panel.item_of("Hall").text()
     assert "Hall" in text and "%" in text
     assert strings.BADGE_ON_PEDAL in text  # fixture directory is labelled "pedal"
-    panel.list.setCurrentRow(0)
+    panel.list.setCurrentRow(panel.row_of("Hall"))
     assert panel.preview_has_image()
     panel.search.setText("FD DLXR")  # has no SVG in the fixtures
-    panel.list.setCurrentRow(0)
+    panel.list.setCurrentRow(panel.row_of("FD DLXR"))
     assert not panel.preview_has_image()
 
 
@@ -176,7 +176,7 @@ def test_catalog_button_enter_and_double_click_all_apply_the_effect(window):
     window.select_tile(6)
     panel = window.catalog_panel
     panel.search.setText("Comp")
-    panel.list.setCurrentRow(panel.visible_names().index("Comp"))
+    panel.list.setCurrentRow(panel.row_of("Comp"))
     assert panel.target_button.text() == strings.catalog_target(6, False, False) and panel.target_button.isEnabled()
     comp = panel.list.currentItem().data(Qt.ItemDataRole.UserRole)
     panel.target_button.click()
@@ -193,5 +193,5 @@ def test_catalog_starts_without_the_a1_filter_and_marks_effects_in_the_chain(win
     from zoomstudio.ui.cards import ROLE_EFFECT
 
     flags = {panel.list.item(i).data(ROLE_EFFECT)["name"]: panel.list.item(i).data(ROLE_EFFECT)["in_chain"]
-             for i in range(panel.list.count())}
+             for i in range(panel.list.count()) if panel.list.item(i).data(ROLE_EFFECT)}
     assert flags["Hall"] is True and flags["Comp"] is False

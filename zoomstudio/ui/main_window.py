@@ -773,6 +773,8 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.catalog_panel.set_target(label, patch is not None and tile is not None)
         self.catalog_panel.set_chain_effects(
             set() if patch is None else {s.effect_id for s in patch.effects if not s.is_placeholder})
+        selected = None if patch is None or tile is None or tile.is_empty else self.catalog.get(patch.effects[slot].effect_id)
+        self.catalog_panel.set_selected_group(selected.group if selected is not None else None)
         strip, text, replaced = [], S.NO_TARGET, 0.0
         if patch is not None and tile is not None:
             strip = [(None if t.is_empty else t.group, t.span, t.slot_index == slot) for t in tiles]

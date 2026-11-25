@@ -23,7 +23,11 @@ from zoomstudio.effects.installer import MEMORY_MARGIN
 
 from . import strings as S
 from . import tokens
-from .cards import CARD_HEIGHT, ROLE_DIRTY, ROLE_FAV, ROLE_NAME, ROLE_NUMBER, ROLE_STRIP, PatchCardDelegate, STAR_ROOM, FavoriteList, card_path, paint_star, star_rect, pedal_thumbnail, svg_thumbnail, with_alpha
+from .cards import (
+    CARD_HEIGHT, FAVORITES_KEY, ROLE_DIRTY, ROLE_FAV, ROLE_NAME, ROLE_NUMBER, ROLE_SECTION, ROLE_STRIP, SECTION_HEIGHT,
+    STAR_ROOM, PatchCardDelegate, SectionList, card_path, paint_section, paint_star, pedal_thumbnail, section_label,
+    set_section_header, star_rect, svg_thumbnail, with_alpha,
+)
 from .dialogs import ConfirmDialog
 from .favorites import FavoritesStore
 from .fonts import display_font, ui_font
@@ -33,13 +37,6 @@ from .painted import SectionLabel
 from .theme import group_color, group_fill_color, group_text_color
 
 ROLE_ENTRY = Qt.ItemDataRole.UserRole + 30  # the Entry behind a card
-ROLE_SECTION = Qt.ItemDataRole.UserRole + 31  # (group, count, expanded) on the header row of a section
-SECTION_HEIGHT = 36
-FAVORITES_KEY = "\0favorites"  # the section (and the filter option) of favourites: no real group has this key
-
-
-def section_label(group: str) -> str:
-    return S.FAVORITES if group == FAVORITES_KEY else S.group_label(group)
 DETAIL_WIDTH = 360
 BYPASS = "BYPASS.ZD2"  # the list's first record: the pedal's "no effect", not an effect to manage
 
@@ -115,48 +112,10 @@ class EffectCard(QStyledItemDelegate):
     def sizeHint(self, option, index) -> QSize:  # noqa: N802 (Qt API)
         return QSize(1, SECTION_HEIGHT if index.data(ROLE_SECTION) else 60)  # the list stretches rows to its viewport
 
-    def _paint_section(self, p: QPainter, option, section: tuple[str, int, bool]) -> None:
-        group, count, expanded = section
-        hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
-        focused = bool(option.state & QStyle.StateFlag.State_Selected)
-        p.save()
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = QRectF(option.rect).adjusted(2, 3, -2, -3)
-        if hover or focused:
-            p.setPen(QPen(tokens.color("accent") if focused else tokens.color("card-rim"), 1.5 if focused else 1))
-            p.setBrush(tokens.color("card-hover") if hover else tokens.color("card-top"))
-            p.drawRoundedRect(rect, 8, 8)
-        cy, x = rect.center().y(), rect.left() + 12
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(tokens.color("text-secondary"))
-        if expanded:  # chevron pointing down, or right when collapsed
-            p.drawPolygon(QPolygonF([QPointF(x, cy - 3), QPointF(x + 9, cy - 3), QPointF(x + 4.5, cy + 3)]))
-        else:
-            p.drawPolygon(QPolygonF([QPointF(x + 1, cy - 5), QPointF(x + 1, cy + 5), QPointF(x + 7, cy)]))
-        if group == FAVORITES_KEY:
-            paint_star(p, QRectF(x + 17, cy - 7, 14, 14), True)
-        else:
-            p.setBrush(group_color(group))
-            p.drawEllipse(QPointF(x + 24, cy), 5, 5)
-        count_text = str(count)
-        font = ui_font(13, QFont.Weight.DemiBold)
-        count_w = QFontMetrics(ui_font(13)).horizontalAdvance(count_text)
-        label_rect = QRectF(x + 38, rect.top(), rect.right() - 12 - count_w - 8 - (x + 38), rect.height())
-        p.setFont(font)
-        p.setPen(tokens.color("accent") if group == FAVORITES_KEY else group_text_color(group))
-        p.drawText(label_rect, Qt.AlignmentFlag.AlignVCenter,
-                   QFontMetrics(font).elidedText(section_label(group), Qt.TextElideMode.ElideRight,
-                                                 int(label_rect.width())))
-        p.setFont(ui_font(13))
-        p.setPen(tokens.color("text-secondary"))
-        p.drawText(QRectF(rect.right() - 12 - count_w, rect.top(), count_w, rect.height()),
-                   Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, count_text)
-        p.restore()
-
     def paint(self, p: QPainter, option, index) -> None:
         section = index.data(ROLE_SECTION)
         if section:
-            self._paint_section(p, option, section)
+            paint_section(p, option, section)
             return
         entry: Entry = index.data(ROLE_ENTRY)
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
@@ -223,32 +182,16 @@ class EffectCard(QStyledItemDelegate):
         p.restore()
 
 
-class _CardList(FavoriteList):
-    """Effect cards grouped in sections; a section header is a row that folds and unfolds its cards."""
-
-    section_toggled = Signal(object)  # the header item that was activated
+class _CardList(SectionList):
+    """Effect cards grouped in sections (see ``SectionList``)."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.itemClicked.connect(self._on_clicked)
         self.setItemDelegate(EffectCard(self))
         self.setMouseTracking(True)
         self.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
         self.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-    def _on_clicked(self, item: QListWidgetItem) -> None:
-        if item.data(ROLE_SECTION):
-            self.section_toggled.emit(item)
-
-    def keyPressEvent(self, event) -> None:  # noqa: N802 (Qt API)
-        item = self.currentItem()
-        if item is not None and item.data(ROLE_SECTION) and event.key() in (
-                Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
-            self.section_toggled.emit(item)
-            event.accept()
-            return
-        super().keyPressEvent(event)
 
 
 class EffectsManager(GlassPanel):
@@ -516,22 +459,14 @@ class EffectsManager(GlassPanel):
         return next(item for item in self._headers(which) if item.data(ROLE_SECTION)[0] == group)
 
     def _toggle_item(self, which: str, header: QListWidgetItem) -> None:
-        group, count, expanded = header.data(ROLE_SECTION)
+        group, _count, expanded = header.data(ROLE_SECTION)
         collapsed = self._collapsed[which]
         collapsed.discard(group) if not expanded else collapsed.add(group)
-        self._set_section(which, header, group, count, not expanded)
-        cards = self._list(which)
-        for i in range(cards.row(header) + 1, cards.count()):
-            item = cards.item(i)
-            if item.data(ROLE_SECTION):
-                break
-            item.setHidden(expanded)  # it was expanded: now fold it
+        self._list(which).set_section_expanded(header, not expanded)
 
     @staticmethod
     def _set_section(which: str, header: QListWidgetItem, group: str, count: int, expanded: bool) -> None:
-        header.setData(ROLE_SECTION, (group, count, expanded))
-        header.setData(Qt.ItemDataRole.AccessibleTextRole, S.effects_section_name(section_label(group), count, expanded))
-        header.setToolTip(S.EFFECTS_SECTION_TIP)
+        set_section_header(header, group, count, expanded)
 
     def selected_name(self) -> str | None:
         return self._selected

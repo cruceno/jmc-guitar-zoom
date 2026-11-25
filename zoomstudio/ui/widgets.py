@@ -15,7 +15,7 @@ from zoomstudio.patches.model import EffectSlot, Patch
 
 from . import strings as S
 from . import tokens
-from .cards import ROLE_EFFECT, ROLE_FAV, EffectCardDelegate, FavoriteList, Knob, PatchCardDelegate, card_path, pedal_thumbnail, svg_thumbnail, with_alpha
+from .cards import ROLE_EFFECT, ROLE_FAV, ROLE_SECTION, FAVORITES_KEY, SectionList, set_section_header, EffectCardDelegate, Knob, PatchCardDelegate, card_path, pedal_thumbnail, svg_thumbnail, with_alpha
 from .favorites import FavoritesStore
 from .fonts import display_font, ui_font
 from .icons import icon, pixmap
@@ -360,7 +360,7 @@ class ParamPanel(QWidget):
             self._current.reset()
 
 
-class _CatalogList(FavoriteList):
+class _CatalogList(SectionList):
     """Catalog rows that can be dragged onto a chain tile (payload: the effect ID); Enter activates a row."""
 
     enter_pressed = Signal(object)
@@ -375,7 +375,8 @@ class _CatalogList(FavoriteList):
         self.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
 
     def keyPressEvent(self, event) -> None:  # noqa: N802 (Qt API)
-        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and self.currentItem() is not None:
+        if (event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and self.currentItem() is not None
+                and not self.is_header(self.currentItem())):  # on a header Enter folds it (SectionList)
             self.enter_pressed.emit(self.currentItem())
             event.accept()
             return
@@ -383,7 +384,7 @@ class _CatalogList(FavoriteList):
 
     def mimeData(self, items) -> QMimeData:  # noqa: N802 (Qt API)
         mime = QMimeData()
-        if items:
+        if items and not self.is_header(items[0]):
             mime.setData(MIME_EFFECT, QByteArray(str(items[0].data(_ID_ROLE)).encode()))
         return mime
 
@@ -453,6 +454,10 @@ class CatalogPanel(QWidget):
         self._installed_label = installed_label
         self._current_dsp = 0.0
         self._replaced_dsp = 0.0
+        self._opened: set[str] = set()  # sections the user unfolded (kept for the session)
+        self._closed: set[str] = set()  # sections the user folded
+        self._searching_folded: set[str] = set()  # folded by hand while a search or a group choice shows them all
+        self._selected_group: str | None = None  # group of the effect selected in the chain: starts open
         self._target_enabled = False
         self._has_svg = False
         self.search = QLineEdit()
@@ -565,20 +570,16 @@ class CatalogPanel(QWidget):
         self.group_combo.currentIndexChanged.connect(self.refresh)
         self.a1_check.toggled.connect(self.refresh)
         self.list.currentItemChanged.connect(self._on_current)
-        self.list.itemDoubleClicked.connect(lambda item: self.effect_activated.emit(item.data(_ID_ROLE)))
+        self.list.itemDoubleClicked.connect(
+            lambda item: None if item.data(ROLE_SECTION) else self.effect_activated.emit(item.data(_ID_ROLE)))
         self.list.enter_pressed.connect(lambda item: self.effect_activated.emit(item.data(_ID_ROLE)))
         self.list.favorite_toggled.connect(lambda item: self.favorites.toggle(item.data(_ID_ROLE)))
+        self.list.section_toggled.connect(self._on_section_toggled)
         self.favorites.changed.connect(self._on_favorites_changed)
         self.refresh()
 
     def _on_favorites_changed(self) -> None:
-        if self.group_combo.currentData() == FAVORITES_FILTER:
-            self.refresh()  # the list itself depends on them
-            return
-        for i in range(self.list.count()):
-            item = self.list.item(i)
-            item.setData(ROLE_FAV, self.favorites.is_favorite(item.data(_ID_ROLE)))
-        self.list.viewport().update()
+        self.refresh(keep=True)  # favourites live in their own section
 
     def _header(self) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -613,23 +614,120 @@ class CatalogPanel(QWidget):
         self.search.clear()
         self.group_combo.setCurrentIndex(0)
 
-    def refresh(self) -> None:
+    # -- sections
+
+    def _filtering(self) -> bool:
+        """A search or a chosen group shows every matching section unfolded."""
+        return bool(self.search.text().strip()) or self.group_combo.currentData() is not None
+
+    def _expanded(self, key: str) -> bool:
+        if self._filtering():
+            return key not in self._searching_folded
+        if key in self._opened:
+            return True
+        if key in self._closed:
+            return False
+        return key == FAVORITES_KEY or key == self._selected_group
+
+    def _on_section_toggled(self, header: QListWidgetItem) -> None:
+        key, _count, expanded = header.data(ROLE_SECTION)
+        if self._filtering():
+            self._searching_folded.discard(key) if not expanded else self._searching_folded.add(key)
+        elif expanded:
+            self._opened.discard(key)
+            self._closed.add(key)
+        else:
+            self._closed.discard(key)
+            self._opened.add(key)
+        self.list.set_section_expanded(header, not expanded)
+
+    def set_selected_group(self, group: str | None) -> None:
+        """The effect selected in the chain: its section opens unless the user folded it before."""
+        if group == self._selected_group:
+            return
+        self._selected_group = group
+        if group is not None and not self._filtering():
+            for i in range(self.list.count()):
+                header = self.list.item(i)
+                if header.data(ROLE_SECTION) and header.data(ROLE_SECTION)[0] == group:
+                    self.list.set_section_expanded(header, self._expanded(group))
+
+    def section_groups(self) -> list[str]:
+        return [h.data(ROLE_SECTION)[0] for h in self._section_items()]
+
+    def section_count(self, group: str) -> int:
+        return self._section_item(group).data(ROLE_SECTION)[1]
+
+    def section_expanded(self, group: str) -> bool:
+        return self._section_item(group).data(ROLE_SECTION)[2]
+
+    def section_header_row(self, group: str) -> int:
+        return self.list.row(self._section_item(group))
+
+    def toggle_section(self, group: str) -> None:
+        self._on_section_toggled(self._section_item(group))
+
+    def _section_items(self) -> list[QListWidgetItem]:
+        return [self.list.item(i) for i in range(self.list.count()) if self.list.item(i).data(ROLE_SECTION)]
+
+    def _section_item(self, group: str) -> QListWidgetItem:
+        return next(h for h in self._section_items() if h.data(ROLE_SECTION)[0] == group)
+
+    def item_of(self, name: str) -> QListWidgetItem:
+        """The row of the effect called ``name`` (it may be hidden inside a folded section)."""
+        return next(self.list.item(i) for i in range(self.list.count()) if self.list.item(i).data(_NAME_ROLE) == name)
+
+    def row_of(self, name: str) -> int:
+        return self.list.row(self.item_of(name))
+
+    def _effect_items(self) -> list[QListWidgetItem]:
+        return [self.list.item(i) for i in range(self.list.count()) if not self.list.item(i).data(ROLE_SECTION)]
+
+    def _current_effect(self) -> QListWidgetItem | None:
+        item = self.list.currentItem()
+        return None if item is None or item.data(ROLE_SECTION) else item
+
+    def refresh(self, keep: bool = False) -> None:
+        """Rebuild the sections. ``keep``: leave the selected effect selected when it is still listed."""
+        current = self._current_effect()
+        kept_id = current.data(_ID_ROLE) if keep and current is not None else None
+        self._searching_folded = self._searching_folded if self._filtering() else set()
+        self.list.blockSignals(True)
         self.list.clear()
-        for info in sorted(self._catalog.values(), key=lambda e: (e.group, e.name.lower())):
-            if not self._matches(info):
-                continue
-            item = QListWidgetItem(S.catalog_row(info.name, info.group, info.dsp_load_percent, self._is_installed(info)))
-            item.setData(ROLE_EFFECT, {
-                "name": info.name, "group": info.group, "dsp": info.dsp_load_percent, "wide": info.is_wide,
-                "installed": self._is_installed(info), "in_chain": info.effect_id in self._chain_ids,
-                "svg": info.svg_path,
-                "blocked": self._a1_ids is not None and info.effect_id not in self._a1_ids})
-            item.setData(_ID_ROLE, info.effect_id)
-            item.setData(ROLE_FAV, self.favorites.is_favorite(info.effect_id))
-            item.setData(_NAME_ROLE, info.name)
-            item.setForeground(group_color(info.group).lighter(150))
-            self.list.addItem(item)
-        count = self.list.count()
+        shown = [info for info in sorted(self._catalog.values(), key=lambda e: (e.group, e.name.lower()))
+                 if self._matches(info)]
+
+        def section_of(info: EffectInfo) -> str:
+            return FAVORITES_KEY if self.favorites.is_favorite(info.effect_id) else info.group
+
+        restore = None
+        for key in sorted({section_of(i) for i in shown}, key=lambda k: (k != FAVORITES_KEY, k)):
+            members = [i for i in shown if section_of(i) == key]
+            expanded = self._expanded(key)
+            header = QListWidgetItem()
+            set_section_header(header, key, len(members), expanded)
+            header.setFlags(header.flags() & ~Qt.ItemFlag.ItemIsDragEnabled)
+            self.list.addItem(header)
+            for info in members:
+                item = QListWidgetItem(S.catalog_row(info.name, info.group, info.dsp_load_percent,
+                                                     self._is_installed(info)))
+                item.setData(ROLE_EFFECT, {
+                    "name": info.name, "group": info.group, "dsp": info.dsp_load_percent, "wide": info.is_wide,
+                    "installed": self._is_installed(info), "in_chain": info.effect_id in self._chain_ids,
+                    "svg": info.svg_path,
+                    "blocked": self._a1_ids is not None and info.effect_id not in self._a1_ids})
+                item.setData(_ID_ROLE, info.effect_id)
+                item.setData(ROLE_FAV, self.favorites.is_favorite(info.effect_id))
+                item.setData(_NAME_ROLE, info.name)
+                item.setForeground(group_color(info.group).lighter(150))
+                self.list.addItem(item)
+                item.setHidden(not expanded)  # only once it belongs to the list
+                if info.effect_id == kept_id:
+                    restore = item
+        self.list.blockSignals(False)
+        if restore is not None:
+            self.list.setCurrentItem(restore)
+        count = len(shown)
         self.count_label.setText(S.visible_count(count))
         self.list.setVisible(count > 0)
         self.none_box.setVisible(count == 0)
@@ -639,11 +737,13 @@ class CatalogPanel(QWidget):
                 self.search.text().strip(), (S.FAVORITES if group == FAVORITES_FILTER else S.group_label(group)) if group else "",
                 self.a1_check.isChecked() and self._a1_ids is not None))
             self._on_current(None)
+        elif restore is None:
+            self._on_current(None)  # the list was rebuilt: nothing is selected until a card is
 
     def set_target(self, text: str, enabled: bool) -> None:
         """What the button does to the selected pedal ("Agregar al slot 3"); disabled without a patch."""
         self.target_button.setText(text)
-        self.target_button.setEnabled(enabled and self.list.currentItem() is not None)
+        self.target_button.setEnabled(enabled and self._current_effect() is not None)
         self._target_enabled = enabled
 
     def set_destination(self, text: str, strip: list[tuple[str | None, int, bool]], dsp: float,
@@ -652,24 +752,23 @@ class CatalogPanel(QWidget):
         self.destination.set_destination(text, strip)
         self.destination.setVisible(bool(strip))
         self._current_dsp, self._replaced_dsp = dsp, replaced_dsp
-        self._show_after(self.list.currentItem())
+        self._show_after(self._current_effect())
 
     def set_chain_effects(self, ids: set[int]) -> None:
         self._chain_ids = set(ids)
-        for i in range(self.list.count()):
-            item = self.list.item(i)
+        for item in self._effect_items():
             data = dict(item.data(ROLE_EFFECT))
             data["in_chain"] = item.data(_ID_ROLE) in self._chain_ids
             item.setData(ROLE_EFFECT, data)
         self.list.viewport().update()
 
     def _activate_current(self) -> None:
-        item = self.list.currentItem()
+        item = self._current_effect()
         if item is not None:
             self.effect_activated.emit(item.data(_ID_ROLE))
 
     def visible_names(self) -> list[str]:
-        return [self.list.item(i).data(_NAME_ROLE) for i in range(self.list.count())]
+        return [item.data(_NAME_ROLE) for item in self._effect_items()]
 
     def _show_after(self, item: QListWidgetItem | None) -> None:
         """«DSP después»: the load of the patch once the selected effect replaces (or fills) the target."""
@@ -688,6 +787,8 @@ class CatalogPanel(QWidget):
             widget.style().polish(widget)
 
     def _on_current(self, item: QListWidgetItem | None, _prev=None) -> None:
+        if item is not None and item.data(ROLE_SECTION):
+            item = None  # a section header has no effect to describe or add
         self.preview.clear()
         self._has_svg = False
         self.detail.setText("")

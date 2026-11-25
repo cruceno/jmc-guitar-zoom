@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (
-    QColor, QFontMetrics, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QRadialGradient,
+    QColor, QFont, QFontMetrics, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QRadialGradient,
 )
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QDial, QListWidget, QListWidgetItem, QMenu, QStyle, QStyledItemDelegate
@@ -27,6 +27,10 @@ ROLE_DIRTY = Qt.ItemDataRole.UserRole + 13    # unsaved edits (bool)
 STAR = 20  # side of the favourite star of an effect card
 STAR_ROOM = STAR + 8  # what the card text gives up at its right edge for it
 ROLE_FAV = Qt.ItemDataRole.UserRole + 21  # the effect is a favourite (bool); None: it cannot be one
+
+ROLE_SECTION = Qt.ItemDataRole.UserRole + 31  # (group, count, expanded) on the header row of a section
+SECTION_HEIGHT = 36
+FAVORITES_KEY = "\0favorites"  # the section (and the filter option) of favourites: no real group has this key
 
 CARD_HEIGHT = 56
 SLOT_WIDTH = 16
@@ -302,13 +306,105 @@ class FavoriteList(QListWidget):
         return super().viewportEvent(event)
 
 
+def section_label(group: str) -> str:
+    return S.FAVORITES if group == FAVORITES_KEY else S.group_label(group)
+
+
+def set_section_header(header: QListWidgetItem, group: str, count: int, expanded: bool) -> None:
+    header.setData(ROLE_SECTION, (group, count, expanded))
+    header.setData(Qt.ItemDataRole.AccessibleTextRole, S.effects_section_name(section_label(group), count, expanded))
+    header.setToolTip(S.EFFECTS_SECTION_TIP)
+
+
+def paint_section(p: QPainter, option, section: tuple[str, int, bool]) -> None:
+    """A collapsible section header: chevron, group colour (a star for favourites), Spanish label and count."""
+    group, count, expanded = section
+    hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
+    focused = bool(option.state & QStyle.StateFlag.State_Selected)
+    p.save()
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    rect = QRectF(option.rect).adjusted(2, 3, -2, -3)
+    if hover or focused:
+        p.setPen(QPen(tokens.color("accent") if focused else tokens.color("card-rim"), 1.5 if focused else 1))
+        p.setBrush(tokens.color("card-hover") if hover else tokens.color("card-top"))
+        p.drawRoundedRect(rect, 8, 8)
+    cy, x = rect.center().y(), rect.left() + 12
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(tokens.color("text-secondary"))
+    if expanded:  # chevron pointing down, or right when collapsed
+        p.drawPolygon(QPolygonF([QPointF(x, cy - 3), QPointF(x + 9, cy - 3), QPointF(x + 4.5, cy + 3)]))
+    else:
+        p.drawPolygon(QPolygonF([QPointF(x + 1, cy - 5), QPointF(x + 1, cy + 5), QPointF(x + 7, cy)]))
+    if group == FAVORITES_KEY:
+        paint_star(p, QRectF(x + 17, cy - 7, 14, 14), True)
+    else:
+        p.setBrush(group_color(group))
+        p.drawEllipse(QPointF(x + 24, cy), 5, 5)
+    count_text = str(count)
+    font = ui_font(13, QFont.Weight.DemiBold)
+    count_w = QFontMetrics(ui_font(13)).horizontalAdvance(count_text)
+    label_rect = QRectF(x + 38, rect.top(), rect.right() - 12 - count_w - 8 - (x + 38), rect.height())
+    p.setFont(font)
+    p.setPen(tokens.color("accent") if group == FAVORITES_KEY else group_text_color(group))
+    p.drawText(label_rect, Qt.AlignmentFlag.AlignVCenter,
+               QFontMetrics(font).elidedText(section_label(group), Qt.TextElideMode.ElideRight, int(label_rect.width())))
+    p.setFont(ui_font(13))
+    p.setPen(tokens.color("text-secondary"))
+    p.drawText(QRectF(rect.right() - 12 - count_w, rect.top(), count_w, rect.height()),
+               Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, count_text)
+    p.restore()
+
+
+class SectionList(FavoriteList):
+    """Effect cards grouped in collapsible sections: header rows fold and unfold the cards that follow them.
+
+    A header is a row carrying ``ROLE_SECTION``; click, Enter and Space on it emit ``section_toggled``.
+    Folding only hides the member rows, so selection, drag and keyboard navigation keep working.
+    """
+
+    section_toggled = Signal(object)  # the header item that was activated
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.itemClicked.connect(self._on_clicked)
+
+    def _on_clicked(self, item: QListWidgetItem) -> None:
+        if item.data(ROLE_SECTION):
+            self.section_toggled.emit(item)
+
+    def is_header(self, item: QListWidgetItem | None) -> bool:
+        return item is not None and bool(item.data(ROLE_SECTION))
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        if self.is_header(self.currentItem()) and event.key() in (
+                Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+            self.section_toggled.emit(self.currentItem())
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def set_section_expanded(self, header: QListWidgetItem, expanded: bool) -> None:
+        """Fold or unfold in place (the rows after ``header`` up to the next header)."""
+        group, count, _was = header.data(ROLE_SECTION)
+        set_section_header(header, group, count, expanded)
+        for i in range(self.row(header) + 1, self.count()):
+            item = self.item(i)
+            if item.data(ROLE_SECTION):
+                break
+            item.setHidden(not expanded)
+        self.viewport().update()
+
+
 class EffectCardDelegate(QStyledItemDelegate):
     """A catalog effect as a card: group monogram, name, group and slots, DSP and one badge."""
 
     def sizeHint(self, option, index) -> QSize:  # noqa: N802 (Qt API)
-        return QSize(1, 60)  # the list stretches a row to its viewport (a real width adds a sideways scrollbar)
+        return QSize(1, SECTION_HEIGHT if index.data(ROLE_SECTION) else 60)  # the list stretches a row to its viewport
 
     def paint(self, p: QPainter, option, index) -> None:
+        if index.data(ROLE_SECTION):
+            paint_section(p, option, index.data(ROLE_SECTION))
+            return
         d = index.data(ROLE_EFFECT)
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
         hover = bool(option.state & QStyle.StateFlag.State_MouseOver)

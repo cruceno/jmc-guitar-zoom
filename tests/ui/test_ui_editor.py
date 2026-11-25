@@ -156,9 +156,7 @@ def test_catalog_double_click_replaces_the_selected_tile(window):
     window.select_tile(6)
     panel = window.catalog_panel
     panel.search.setText("Comp")
-    names = panel.visible_names()
-    row = names.index("Comp")
-    panel.list.itemDoubleClicked.emit(panel.list.item(row))
+    panel.list.itemDoubleClicked.emit(panel.item_of("Comp"))
     assert window.current_patch.effects[6].effect_id == COMP
 
 
@@ -166,8 +164,7 @@ def test_double_click_without_selection_fills_the_first_empty_tile(window):
     window.remove_effect(6)
     window.chain.select(None)
     window.catalog_panel.search.setText("Comp")
-    item = window.catalog_panel.list.item(window.catalog_panel.visible_names().index("Comp"))
-    window.catalog_panel.list.itemDoubleClicked.emit(item)
+    window.catalog_panel.list.itemDoubleClicked.emit(window.catalog_panel.item_of("Comp"))
     assert ids(window)[6] == COMP
 
 
@@ -192,7 +189,7 @@ def test_drag_a_tile_onto_another_reorders(window):
 
 def test_catalog_list_provides_drag_data(window):
     panel = window.catalog_panel
-    mime = panel.list.mimeData([panel.list.item(0)])
+    mime = panel.list.mimeData([panel.item_of("Comp")])
     assert mime.hasFormat(MIME_EFFECT)
     assert int(bytes(mime.data(MIME_EFFECT))) in window.catalog
 
@@ -471,6 +468,6 @@ def test_catalog_detail_is_shown_in_spanish(window):
     from zoomstudio.effects import i18n
 
     panel = window.catalog_panel
-    panel.list.setCurrentRow(0)
+    panel.list.setCurrentRow(panel.row_of("Comp"))
     info = next(i for i in window.catalog.values() if i.name == panel.detail_name.text())
     assert panel.detail.text() == i18n.effect_description(info)
