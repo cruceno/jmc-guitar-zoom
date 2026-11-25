@@ -88,3 +88,8 @@ QToolButton#removeButton { min-height: 0; min-width: 0; padding: 0; border: none
 QToolButton#removeButton:hover { background: $card_hover; }
 QScrollArea { background: transparent; border: none; }
 QScrollArea > QWidget > QWidget { background: transparent; }
+
+QWidget#tunerPill { background: $input_bg; border: 1.5px solid $tuner_tick; border-radius: 22px; }
+QWidget#tunerPill[state="in_tune"] { border-color: $tuner_in_tune; }
+QWidget#tunerPill[state="near"] { border-color: $tuner_near; }
+QWidget#tunerPill[state="off"] { border-color: $tuner_off; }

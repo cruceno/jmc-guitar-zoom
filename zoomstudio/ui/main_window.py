@@ -295,7 +295,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         splitter.setSizes([260, 760, 360])
 
         self.splitter = splitter
-        self.tuner_panel = TunerPanel()
+        self.tuner_panel = TunerPanel(backdrop_root)
         self.tuner_panel.hide()
         self.header = header
         root = backdrop_root

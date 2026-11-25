@@ -173,3 +173,19 @@ def test_tuner_runs_inside_editor_mode(qtbot, pedal):
     sent = sent_sysex(t)
     assert sent.index(OFF) < sent.index(HDR + b"\x51")
     w.close()
+
+
+def test_tuner_pill_says_which_way_to_tune_without_relying_on_colour(qtbot):
+    from zoomstudio.ui.glass import BackdropRoot
+    from zoomstudio.ui.tuner import TunerPanel
+
+    root = BackdropRoot()
+    qtbot.addWidget(root)
+    panel = TunerPanel(root)
+    expected = {(None, 0): "Sin nota · tocar una cuerda", ("C", 0): "AFINADO",
+                ("C", -1): "BAJO −1 · subir afinación", ("C", 4): "ALTO +4 · bajar afinación"}
+    for (note, offset), text in expected.items():
+        panel.show_reading(note, offset)
+        assert panel.status_text() == text
+    panel.show_reading("C", -2)
+    assert panel.offset_text() == "-2" and panel.state == "near"

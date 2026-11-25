@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from . import strings as S
+from . import tokens
+from .fonts import display_font
+from .glass import BackdropRoot, GlassPanel
+from .icons import pixmap
 
 NO_NOTE = "—"
 OFFSET_RANGE = 7  # the pedal reports offsets -7..+7 (CC 99 value - 8)
-COLORS = {"in_tune": "#2ecc71", "near": "#f1c40f", "off": "#e74c3c", "none": "#8a8d93"}
+COLORS = {"in_tune": tokens.color("tuner-in-tune").name(), "near": tokens.color("tuner-near").name(),
+          "off": tokens.color("tuner-off").name(), "none": tokens.color("tuner-tick").name()}
 
 
 def tuner_state(note: str | None, offset: int) -> str:
@@ -42,12 +47,12 @@ class TunerMeter(QWidget):
         margin = 30
         span = w - 2 * margin
         mid = w / 2
-        p.setPen(QPen(QColor("#555a62"), 2))
+        p.setPen(QPen(tokens.color("tuner-baseline"), 2))
         p.drawLine(margin, h - 20, w - margin, h - 20)
         for step in range(-OFFSET_RANGE, OFFSET_RANGE + 1):
             x = mid + span * step / (2 * OFFSET_RANGE)
             tall = 22 if step == 0 else (14 if step % 7 == 0 else 8)
-            p.setPen(QPen(QColor(COLORS["in_tune"]) if step == 0 else QColor("#8a8d93"), 3 if step == 0 else 1))
+            p.setPen(QPen(QColor(COLORS["in_tune"]) if step == 0 else tokens.color("tuner-tick"), 3 if step == 0 else 1))
             p.drawLine(int(x), h - 20, int(x), h - 20 - tall)
         if self.state == "none":
             return
@@ -59,34 +64,45 @@ class TunerMeter(QWidget):
         p.drawEllipse(QRectF(x - 7, h - 27, 14, 14))
 
 
-class TunerPanel(QWidget):
+class TunerPanel(GlassPanel):
     """Shown in place of the editor while the pedal tuner is on."""
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, root: BackdropRoot) -> None:
+        super().__init__(root)
         self.state = "none"
         self._note = QLabel(NO_NOTE)
         self._note.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        font = QFont()
-        font.setPointSize(120)
-        font.setBold(True)
-        self._note.setFont(font)
+        self._note.setFont(display_font(180, 300))
+        self._pill = QWidget()
+        self._pill.setObjectName("tunerPill")
+        self._pill_icon = QLabel()
+        self._pill_text = QLabel("")
+        self._pill_text.setFont(display_font(18, 600))
+        pill_row = QHBoxLayout(self._pill)
+        pill_row.setContentsMargins(18, 6, 18, 6)
+        pill_row.addWidget(self._pill_icon)
+        pill_row.addWidget(self._pill_text)
         self._offset = QLabel("0")
         self._offset.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._offset.setStyleSheet("font-size: 28px;")
+        self._offset.setFont(display_font(28, 500))
         hint = QLabel(S.TUNER_HINT)
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint.setStyleSheet("color: #8a8d93;")
+        hint.setProperty("role", "secondary")
         self.meter = TunerMeter()
         lay = QVBoxLayout(self)
         lay.addStretch(1)
-        for w in (self._note, self.meter, self._offset, hint):
+        lay.addWidget(self._note)
+        lay.addWidget(self._pill, alignment=Qt.AlignmentFlag.AlignHCenter)
+        for w in (self.meter, self._offset, hint):
             lay.addWidget(w)
         lay.addStretch(1)
         self.show_reading(None, 0)
 
     def note_text(self) -> str:
         return self._note.text()
+
+    def status_text(self) -> str:
+        return self._pill_text.text()
 
     def offset_text(self) -> str:
         return self._offset.text()
@@ -97,4 +113,10 @@ class TunerPanel(QWidget):
         self._offset.setText(NO_NOTE if note is None else ("0" if offset == 0 else f"{offset:+d}"))
         color = COLORS[self.state]
         self._note.setStyleSheet(f"color: {color};")
+        self._pill_text.setText(S.tuner_status(note, offset))
+        icon_name = {"none": "info", "in_tune": "check"}.get(self.state, "arrowUp" if offset < 0 else "arrowDown")
+        self._pill_icon.setPixmap(pixmap(icon_name, color, 20))
+        self._pill.setProperty("state", self.state)
+        self._pill.style().unpolish(self._pill)
+        self._pill.style().polish(self._pill)
         self.meter.set_reading(offset, self.state)

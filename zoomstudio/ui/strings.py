@@ -494,3 +494,18 @@ def catalog_target(selected_index: int | None, is_empty: bool, wide: bool) -> st
     if is_empty:
         return ADD_TO_SLOT.format(n=n)
     return REPLACE_SLOTS.format(n=n, m=n + 1) if wide else REPLACE_SLOT.format(n=n)
+
+TUNER_NO_NOTE = "Sin nota · tocar una cuerda"
+TUNER_IN_TUNE = "AFINADO"
+
+
+def tuner_status(note: str | None, offset: int) -> str:
+    """Pill text of the tuner. Negative offset = flat note (tune up), positive = sharp (tune down), as the
+    user confirmed (readme.md: degree 1 = flat, 8 = perfect, 15 = sharp; the value is CC 99 minus 8)."""
+    if note is None:
+        return TUNER_NO_NOTE
+    if offset == 0:
+        return TUNER_IN_TUNE
+    if offset < 0:
+        return f"BAJO −{-offset} · subir afinación"
+    return f"ALTO +{offset} · bajar afinación"
