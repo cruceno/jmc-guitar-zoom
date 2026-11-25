@@ -145,3 +145,10 @@ def test_the_packages_are_built_with_the_python_that_has_prebuilt_rtmidi_wheels(
     # python-rtmidi 1.5.8 ships wheels for CPython 3.12 only; a source build on 3.13 picked up a module compiled on
     # a newer Ubuntu through the uv cache and failed on 22.04 ("GLIBCXX_3.4.32 not found")
     assert re.search(r"uses: astral-sh/setup-uv@v\d+\n\s+with:\n\s+python-version: \"3\.12\"", _job(job))
+
+
+def test_the_appimage_leaves_fontconfig_and_freetype_to_the_system():
+    # AppImage's excludelist: an older bundled fontconfig cannot read a newer distribution's /etc/fonts (the build
+    # from Ubuntu 22.04 printed dozens of "Fontconfig error: ... invalid attribute 'xsi:nil'" lines on Fedora 45)
+    for lib in ("libfontconfig.so", "libfreetype.so"):
+        assert re.search(rf"rm -f [^\n]*/{re.escape(lib)}\*", APPIMAGE_SCRIPT), lib

@@ -23,6 +23,9 @@ echo "==> AppDir"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/lib" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 cp -a "dist/$NAME" "$APPDIR/usr/lib/$NAME"
+# AppImage's excludelist: use the system's fontconfig and freetype. A bundled older fontconfig cannot read a newer
+# distribution's /etc/fonts and floods stderr with "Fontconfig error" lines; every desktop Linux ships both.
+rm -f "$APPDIR/usr/lib/$NAME/_internal"/libfontconfig.so* "$APPDIR/usr/lib/$NAME/_internal"/libfreetype.so*
 cp packaging/icons/app-icon.png "$APPDIR/$NAME.png"
 cp packaging/icons/app-icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/$NAME.png"
 ln -s "$NAME.png" "$APPDIR/.DirIcon"
