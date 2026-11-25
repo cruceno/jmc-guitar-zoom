@@ -65,11 +65,15 @@ def install_effect(pedal: FilePedal, zd2: bytes, name: str, backup_dir: Path) ->
                 f"{before:,} available")
         backup = write_file_backup(backup_dir, FLST_NAME, original)
 
-        pedal.write_file(name, zd2)
+        try:
+            pedal.write_file(name, zd2)
+        except PedalError as exc:
+            _quietly(pedal.delete_file, name)  # never leave a partial effect taking pedal memory
+            raise EffectInstallError(f"the upload of {name} failed ({exc}); the partial file was deleted") from exc
         if _read_back(pedal, name) != zd2:
             _quietly(pedal.delete_file, name)
             raise EffectInstallError(f"{name} failed its read-back check; the upload was deleted")
-        _write_list(pedal, new_list, original)
+        _write_list(pedal, new_list, original, backup)
         return EffectChange(name, True, backup, before, pedal.disk_usage().available)
 
 
@@ -94,7 +98,7 @@ def remove_effect(pedal: FilePedal, name: str, backup_dir: Path,
         backup = write_file_backup(backup_dir, FLST_NAME, original)
 
         if listed:
-            _write_list(pedal, new_list, original)
+            _write_list(pedal, new_list, original, backup)
         if present:
             pedal.delete_file(name)
             if name in pedal.list_files():
@@ -102,12 +106,39 @@ def remove_effect(pedal: FilePedal, name: str, backup_dir: Path,
         return EffectChange(name, False, backup, before, pedal.disk_usage().available)
 
 
-def _write_list(pedal: FilePedal, new_list: bytes, original: bytes) -> None:
-    pedal.write_file(FLST_NAME, new_list)
-    if _read_back(pedal, FLST_NAME) == new_list:
+RESTORE_ATTEMPTS = 3
+
+
+def _write_list(pedal: FilePedal, new_list: bytes, original: bytes, backup: Path) -> None:
+    """Write the new list and read it back; on any failure put the original back.
+
+    ``write_file`` deletes the old file before uploading, so a failed upload leaves the
+    pedal with a truncated list or none: the original is restored before raising, and
+    the error names the backup when even that fails.
+    """
+    try:
+        pedal.write_file(FLST_NAME, new_list)
+        problem = None if _read_back(pedal, FLST_NAME) == new_list else "failed its read-back check"
+    except PedalError as exc:
+        problem = f"upload failed ({exc})"
+    if problem is None:
         return
-    _quietly(pedal.write_file, FLST_NAME, original)
-    raise EffectInstallError(f"{FLST_NAME} failed its read-back check; the original list was written back")
+    if _restore(pedal, original):
+        raise EffectInstallError(f"{FLST_NAME} {problem}; the original list was restored")
+    raise EffectInstallError(
+        f"{FLST_NAME} {problem} and the original list could not be restored: "
+        f"upload the backup {backup} as {FLST_NAME} before using the pedal's effects")
+
+
+def _restore(pedal: FilePedal, original: bytes) -> bool:
+    for _ in range(RESTORE_ATTEMPTS):
+        try:
+            pedal.write_file(FLST_NAME, original)
+            if _read_back(pedal, FLST_NAME) == original:
+                return True
+        except PedalError:
+            continue
+    return False
 
 
 def _read_back(pedal: FilePedal, name: str) -> bytes | None:

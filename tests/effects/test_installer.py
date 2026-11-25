@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from zoomstudio.device.errors import PedalFileNotFound
+from zoomstudio.device.errors import PedalFileNotFound, PedalTimeout
 from zoomstudio.device.sysex import DiskUsage
 from zoomstudio.effects import installer
 
@@ -137,3 +137,50 @@ def test_remove_refuses_an_effect_that_is_not_installed(tmp_path):
     with pytest.raises(installer.EffectInstallError, match="not installed"):
         installer.remove_effect(pedal, NAME, tmp_path)
     assert pedal.writes == []
+
+
+class FlakyPedal(FakePedal):
+    """Times out part-way through uploading ``fail_on`` (leaving the first block), like a dropped transfer."""
+
+    def __init__(self, files, fail_on: str, failures: int = 1, **kw):
+        super().__init__(files, **kw)
+        self.fail_on, self.failures = fail_on, failures
+
+    def write_file(self, name, data):
+        if name == self.fail_on and self.failures:
+            self.failures -= 1
+            self.writes.append((name, self.pc))
+            self.files[name] = bytes(data[:512])
+            raise PedalTimeout("mid-upload")
+        super().write_file(name, data)
+
+
+def test_list_upload_timeout_restores_the_original_list(tmp_path):
+    # verifier B1: a failed FLST_SEQ upload must not leave the pedal with a truncated list
+    pedal = FlakyPedal({"FLST_SEQ.ZT2": BEFORE}, fail_on="FLST_SEQ.ZT2")
+    with pytest.raises(installer.EffectInstallError, match="restored"):
+        installer.install_effect(pedal, ZD2, NAME, tmp_path)
+    assert pedal.files["FLST_SEQ.ZT2"] == BEFORE
+
+
+def test_list_restore_failure_names_the_backup(tmp_path):
+    pedal = FlakyPedal({"FLST_SEQ.ZT2": BEFORE}, fail_on="FLST_SEQ.ZT2", failures=99)
+    with pytest.raises(installer.EffectInstallError) as caught:
+        installer.install_effect(pedal, ZD2, NAME, tmp_path)
+    backup = next(tmp_path.iterdir())
+    assert str(backup) in str(caught.value) and backup.read_bytes() == BEFORE
+
+
+def test_effect_upload_timeout_deletes_the_partial_file(tmp_path):
+    # verifier B2: a failed effect upload must not leave a partial .ZD2 taking pedal memory
+    pedal = FlakyPedal({"FLST_SEQ.ZT2": BEFORE}, fail_on=NAME)
+    with pytest.raises(installer.EffectInstallError, match="upload"):
+        installer.install_effect(pedal, ZD2, NAME, tmp_path)
+    assert NAME not in pedal.files and pedal.files["FLST_SEQ.ZT2"] == BEFORE
+
+
+def test_remove_list_upload_timeout_restores_the_original_list(tmp_path):
+    pedal = FlakyPedal({"FLST_SEQ.ZT2": AFTER, NAME: ZD2}, fail_on="FLST_SEQ.ZT2")
+    with pytest.raises(installer.EffectInstallError, match="restored"):
+        installer.remove_effect(pedal, NAME, tmp_path)
+    assert pedal.files == {"FLST_SEQ.ZT2": AFTER, NAME: ZD2}

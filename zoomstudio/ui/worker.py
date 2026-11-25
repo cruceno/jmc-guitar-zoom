@@ -492,9 +492,13 @@ class PedalWorker(QObject):
         if client is not None and was_active:
             try:
                 client.tuner(False)
-                client.editor_mode(False)
             except (PedalError, OSError) as exc:
                 self._fail(exc)
+            finally:  # the tuner only runs in editor mode: always leave it, even if tuner off failed
+                try:
+                    client.editor_mode(False)
+                except (PedalError, OSError) as exc:
+                    self._fail(exc)
 
     def _tuner_off_quietly(self) -> None:
         """Before closing the port: send tuner off if it is on; never raise."""
@@ -539,4 +543,5 @@ class PedalWorker(QObject):
         except (PedalError, OSError) as exc:
             self._stop_tuner_polling()
             self._fail(exc)
+            self._leave_editor_mode_quietly(client)
             self.tuner_state.emit(False)
