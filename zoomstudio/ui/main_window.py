@@ -552,7 +552,17 @@ class MainWindow(LibraryMixin, QMainWindow):
             self.select_tile(wanted)
         self._update_buttons()
 
+    def _update_catalog_target(self) -> None:
+        patch, slot = self.current_patch, self.chain.selected_slot
+        tile = next((t for t in self.chain.tiles() if t.slot_index == slot), None)
+        label = S.catalog_target(None if tile is None else slot, tile is not None and tile.is_empty,
+                                 tile is not None and tile.is_wide)
+        self.catalog_panel.set_target(label, patch is not None and tile is not None)
+        self.catalog_panel.set_chain_effects(
+            set() if patch is None else {s.effect_id for s in patch.effects if not s.is_placeholder})
+
     def _update_header(self) -> None:
+        self._update_catalog_target()
         location, patch = self._location, self.current_patch
         self.editor_row.setEnabled(patch is not None and not self._saving)
         if location is None:
@@ -597,6 +607,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.chain.select(slot_index)
 
     def _on_tile_selected(self, slot_index: int) -> None:
+        self._update_catalog_target()
         patch = self.current_patch
         if patch is None:
             return

@@ -10,7 +10,7 @@ from . import strings as S
 from . import tokens
 from .fonts import display_font, ui_font
 from .glass import paint_glow
-from .theme import group_color
+from .theme import group_color, group_fill_color, group_text_color
 
 ROLE_NUMBER = Qt.ItemDataRole.UserRole + 10   # display number of the location (int)
 ROLE_NAME = Qt.ItemDataRole.UserRole + 11     # patch name ("" for an empty location)
@@ -156,3 +156,70 @@ class Knob(QDial):
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.setPen(QPen(tokens.color("focus-ring"), 2))
             p.drawEllipse(c, r + 3, r + 3)
+
+
+ROLE_EFFECT = Qt.ItemDataRole.UserRole + 20  # {"name", "group", "dsp", "wide", "installed", "blocked", "in_chain"}
+
+
+class EffectCardDelegate(QStyledItemDelegate):
+    """A catalog effect as a card: group monogram, name, group and slots, DSP and one badge."""
+
+    def sizeHint(self, option, index) -> QSize:  # noqa: N802 (Qt API)
+        return QSize(option.rect.width(), 60)
+
+    def paint(self, p: QPainter, option, index) -> None:
+        d = index.data(ROLE_EFFECT)
+        selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(option.rect).adjusted(2, 3, -2, -3)
+        path = card_path(rect)
+        fill = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+        if selected:
+            fill.setColorAt(0, with_alpha(tokens.color("card-selected"), 0.28))
+            fill.setColorAt(1, with_alpha(tokens.color("card-selected"), 0.12))
+        else:
+            fill.setColorAt(0, tokens.color("card-hover" if hover else "card-top"))
+            fill.setColorAt(1, tokens.color("card-bottom"))
+        p.fillPath(path, fill)
+        p.setPen(QPen(with_alpha(tokens.color("accent"), 0.6) if selected else tokens.color("card-rim"), 1.5 if selected else 1))
+        p.drawPath(path)
+        group = d["group"]
+        mono = QRectF(rect.left() + 10, rect.center().y() - 21, 30, 42)
+        p.setBrush(group_fill_color(group))
+        p.setPen(QPen(group_color(group), 1.5))
+        p.drawRoundedRect(mono, 7, 7)
+        p.setPen(group_text_color(group))
+        p.setFont(display_font(12, 600))
+        p.drawText(mono, Qt.AlignmentFlag.AlignCenter, d["name"][:2].upper())
+        left = mono.right() + 12
+        right = rect.right() - 12
+        dsp_font = ui_font(14)
+        dsp = S.percent(d["dsp"])
+        dsp_w = QFontMetrics(dsp_font).horizontalAdvance(dsp)
+        p.setFont(ui_font(15))
+        p.setPen(tokens.color("text-primary"))
+        name_rect = QRectF(left, rect.top() + 6, right - left - dsp_w - 8, 20)
+        p.drawText(name_rect, Qt.AlignmentFlag.AlignVCenter,
+                   QFontMetrics(ui_font(15)).elidedText(d["name"], Qt.TextElideMode.ElideRight, int(name_rect.width())))
+        p.setFont(dsp_font)
+        p.setPen(tokens.color("text-secondary"))
+        p.drawText(QRectF(right - dsp_w, rect.top() + 6, dsp_w, 20), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, dsp)
+        p.setFont(ui_font(12))
+        p.setPen(group_text_color(group))
+        p.drawText(QRectF(left, rect.top() + 29, 170, 18), Qt.AlignmentFlag.AlignVCenter,
+                   f"{S.group_label(group)} · {S.slots_label(2 if d['wide'] else 1)}")
+        badge = (S.BADGE_NOT_A1, "status-danger") if d["blocked"] else (
+            (S.BADGE_IN_CHAIN, "accent") if d["in_chain"] else (
+                (S.BADGE_ON_PEDAL, "text-secondary") if d["installed"] else None))
+        if badge:
+            text, token = badge
+            w = QFontMetrics(ui_font(11)).horizontalAdvance(text) + 14
+            chip = QRectF(right - w, rect.top() + 30, w, 16)
+            p.setPen(QPen(with_alpha(tokens.color(token), 0.7), 1))
+            p.drawPath(card_path(chip, 8))
+            p.setFont(ui_font(11))
+            p.setPen(tokens.color(token))
+            p.drawText(chip, Qt.AlignmentFlag.AlignCenter, text)
+        p.restore()

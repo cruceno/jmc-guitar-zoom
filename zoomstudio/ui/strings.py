@@ -478,3 +478,19 @@ NO_PARAM_HELP = "Sin descripción para este parámetro"
 
 def param_range(maximum: int, default: int) -> str:
     return f"0–{maximum} · pred. {default}"
+
+ADD_TO_SLOT = "Agregar al slot {n}"
+REPLACE_SLOT = "Reemplazar slot {n}"
+REPLACE_SLOTS = "Reemplazar slots {n}–{m}"
+NO_TARGET = "Seleccione un patch"
+ENTER_HINT = "o Enter · doble clic"
+
+
+def catalog_target(selected_index: int | None, is_empty: bool, wide: bool) -> str:
+    """Label of the catalog button: what pressing it does to the selected pedal."""
+    if selected_index is None:
+        return NO_TARGET
+    n = selected_index + 1
+    if is_empty:
+        return ADD_TO_SLOT.format(n=n)
+    return REPLACE_SLOTS.format(n=n, m=n + 1) if wide else REPLACE_SLOT.format(n=n)

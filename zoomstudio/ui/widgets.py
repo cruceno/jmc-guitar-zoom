@@ -15,7 +15,7 @@ from zoomstudio.patches.model import EffectSlot, Patch
 
 from . import strings as S
 from . import tokens
-from .cards import Knob, PatchCardDelegate, card_path, with_alpha
+from .cards import ROLE_EFFECT, EffectCardDelegate, Knob, PatchCardDelegate, card_path, with_alpha
 from .fonts import display_font, ui_font
 from .icons import icon
 from .chain import CHAIN_MIN_TILES, ChainView, EffectTile, PedalTile  # noqa: F401  (re-exported)
@@ -224,12 +224,24 @@ class ParamPanel(QWidget):
 
 
 class _CatalogList(QListWidget):
-    """Catalog rows that can be dragged onto a chain tile (payload: the effect ID)."""
+    """Catalog rows that can be dragged onto a chain tile (payload: the effect ID); Enter activates a row."""
+
+    enter_pressed = Signal(object)
 
     def __init__(self) -> None:
         super().__init__()
         self.setDragEnabled(True)
         self.setDragDropMode(QListWidget.DragDropMode.DragOnly)
+        self.setItemDelegate(EffectCardDelegate(self))
+        self.setMouseTracking(True)
+        self.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and self.currentItem() is not None:
+            self.enter_pressed.emit(self.currentItem())
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def mimeData(self, items) -> QMimeData:  # noqa: N802 (Qt API)
         mime = QMimeData()
@@ -272,11 +284,18 @@ class CatalogPanel(QWidget):
         layout.addWidget(self.list, stretch=1)
         layout.addWidget(self.preview)
         layout.addWidget(self.detail)
+        self.target_button = QPushButton(S.NO_TARGET)
+        self.target_button.setEnabled(False)
+        self.target_button.clicked.connect(self._activate_current)
+        layout.addWidget(self.target_button)
+        layout.addWidget(self._hint_label())
+        self._chain_ids: set[int] = set()
         self.search.textChanged.connect(self.refresh)
         self.group_combo.currentIndexChanged.connect(self.refresh)
         self.a1_check.toggled.connect(self.refresh)
         self.list.currentItemChanged.connect(self._on_current)
         self.list.itemDoubleClicked.connect(lambda item: self.effect_activated.emit(item.data(_ID_ROLE)))
+        self.list.enter_pressed.connect(lambda item: self.effect_activated.emit(item.data(_ID_ROLE)))
         self.refresh()
 
     def _is_installed(self, info: EffectInfo) -> bool:
@@ -298,10 +317,40 @@ class CatalogPanel(QWidget):
             if not self._matches(info):
                 continue
             item = QListWidgetItem(S.catalog_row(info.name, info.group, info.dsp_load_percent, self._is_installed(info)))
+            item.setData(ROLE_EFFECT, {
+                "name": info.name, "group": info.group, "dsp": info.dsp_load_percent, "wide": info.is_wide,
+                "installed": self._is_installed(info), "in_chain": info.effect_id in self._chain_ids,
+                "blocked": self._a1_ids is not None and info.effect_id not in self._a1_ids})
             item.setData(_ID_ROLE, info.effect_id)
             item.setData(_NAME_ROLE, info.name)
             item.setForeground(group_color(info.group).lighter(150))
             self.list.addItem(item)
+
+    def _hint_label(self) -> QLabel:
+        hint = QLabel(S.ENTER_HINT)
+        hint.setProperty("role", "secondary")
+        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        return hint
+
+    def set_target(self, text: str, enabled: bool) -> None:
+        """What the button does to the selected pedal ("Agregar al slot 3"); disabled without a patch."""
+        self.target_button.setText(text)
+        self.target_button.setEnabled(enabled and self.list.currentItem() is not None)
+        self._target_enabled = enabled
+
+    def set_chain_effects(self, ids: set[int]) -> None:
+        self._chain_ids = set(ids)
+        for i in range(self.list.count()):
+            item = self.list.item(i)
+            data = dict(item.data(ROLE_EFFECT))
+            data["in_chain"] = item.data(_ID_ROLE) in self._chain_ids
+            item.setData(ROLE_EFFECT, data)
+        self.list.viewport().update()
+
+    def _activate_current(self) -> None:
+        item = self.list.currentItem()
+        if item is not None:
+            self.effect_activated.emit(item.data(_ID_ROLE))
 
     def visible_names(self) -> list[str]:
         return [self.list.item(i).data(_NAME_ROLE) for i in range(self.list.count())]
@@ -309,6 +358,7 @@ class CatalogPanel(QWidget):
     def _on_current(self, item: QListWidgetItem | None, _prev=None) -> None:
         self.preview.clear()
         self.detail.setText("")
+        self.target_button.setEnabled(item is not None and getattr(self, "_target_enabled", False))
         if item is None:
             return
         info = self._catalog[item.data(_ID_ROLE)]
