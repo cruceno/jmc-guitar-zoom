@@ -219,8 +219,11 @@ class ParamPanel(QWidget):
         self.param_icon.setPixmap(pixmap("info", tokens.color("text-secondary").name(), 16))
         self.param_name = QLabel("")
         self.param_name.setProperty("role", "strong")
-        self.help = QLabel("")
+        self.help = QLabel("")  # the parameter help: Spanish texts run long, so it wraps and scrolls
         self.help.setWordWrap(True)
+        self.help.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.help.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
+        self.help_scroll = _wrapping_scroll(self.help)
         self.param_facts = QLabel("")
         self.param_facts.setProperty("role", "secondary")
         self.param_facts.setWordWrap(True)
@@ -235,9 +238,8 @@ class ParamPanel(QWidget):
         left = QVBoxLayout()
         left.setSpacing(4)
         left.addLayout(name_row)
-        left.addWidget(self.help)
+        left.addWidget(self.help_scroll, stretch=1)
         left.addWidget(self.param_facts)
-        left.addStretch(1)
         left.addWidget(self.reset_button, alignment=Qt.AlignmentFlag.AlignLeft)
         self.effect_name = QLabel("")
         self.effect_name.setProperty("role", "strong")
@@ -246,12 +248,7 @@ class ParamPanel(QWidget):
         self.description.setProperty("role", "desc")
         self.description.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.description.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
-        self.description_scroll = QScrollArea()
-        self.description_scroll.setWidget(self.description)
-        self.description_scroll.setWidgetResizable(True)
-        self.description_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.description_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.description_scroll.viewport().setAutoFillBackground(False)
+        self.description_scroll = _wrapping_scroll(self.description)
         self.effect_facts = QLabel("")
         self.effect_facts.setProperty("role", "secondary")
         self.effect_facts.setWordWrap(True)
@@ -264,8 +261,8 @@ class ParamPanel(QWidget):
         card_lay = QHBoxLayout(self.card)
         card_lay.setContentsMargins(16, 12, 16, 12)
         card_lay.setSpacing(28)
-        card_lay.addLayout(left, stretch=1)
-        card_lay.addLayout(right, stretch=3)
+        card_lay.addLayout(left, stretch=1)  # equal columns, as in the prototype
+        card_lay.addLayout(right, stretch=1)
         outer.addLayout(head)
         outer.addWidget(self._grid_host)
         outer.addWidget(self._empty)
@@ -681,3 +678,14 @@ class CatalogPanel(QWidget):
     def preview_has_image(self) -> bool:
         """True when the preview is the effect's own SVG (a drawn stand-in does not count)."""
         return self._has_svg
+
+
+def _wrapping_scroll(label: QLabel) -> QScrollArea:
+    """A frameless, transparent vertical scroller for a word-wrapped label (no horizontal bar)."""
+    scroll = QScrollArea()
+    scroll.setWidget(label)
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QFrame.Shape.NoFrame)
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    scroll.viewport().setAutoFillBackground(False)
+    return scroll

@@ -362,3 +362,18 @@ def test_backdrop_lights_are_placed_like_the_prototype():
                       (1430, 60, (17, 20, 29)), (1430, 450, (9, 9, 11)), (200, 3, (22, 17, 14))]:
         c = image.pixelColor(x, y)
         assert max(abs(c.red() - rgb[0]), abs(c.green() - rgb[1]), abs(c.blue() - rgb[2])) <= 4, (x, y)
+
+
+def test_parameter_help_has_half_the_detail_card_and_is_never_clipped(window, monkeypatch, qtbot):
+    # N1 (fidelity recheck): the longer Spanish help was cut off in a narrow left column
+    long_help = " ".join(["Ajusta el umbral que determina cuándo se activa el efecto."] * 4)
+    monkeypatch.setattr("zoomstudio.ui.widgets.param_explanation", lambda param: long_help)
+    window.select_location(44)
+    window.select_tile(1)
+    p = window.params
+    qtbot.waitUntil(lambda: p.help.width() > 0)
+    assert p.help.text() == long_help
+    left, right = p.help_scroll.width(), p.description_scroll.width()
+    assert abs(left - right) <= 0.1 * max(left, right)  # the two columns share the card equally
+    assert p.help_scroll.verticalScrollBar().maximum() == 0 or p.help_scroll.verticalScrollBar().isVisible()
+    assert p.help.height() >= p.help.heightForWidth(p.help.width())  # the label is as tall as its wrapped text
