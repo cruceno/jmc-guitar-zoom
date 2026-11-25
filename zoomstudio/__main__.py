@@ -8,12 +8,19 @@ from pathlib import Path
 
 PEDAL_LABEL = "pedal"
 GUITARLAB_LABEL = "Guitar Lab"
-A1_LIST = Path("cache") / "AllZDL7_2.lst"
+LIBRARY_LABEL = "Biblioteca"  # the app's own effects, downloaded from Zoom's channel
+LIST_NAME = "AllZDL7_2.lst"
+A1_LIST = Path("cache") / LIST_NAME
 
 
 def workspace_root() -> Path:
     """The folder that holds the zoom-studio repo and its sibling data folders."""
     return Path(__file__).resolve().parents[2]
+
+
+def library_dir(root: Path | None = None) -> Path:
+    """The app's own effect library: the effects and lists the updater downloads (never Guitar Lab's folder)."""
+    return (root or workspace_root()) / "library" / "effects"
 
 
 def autosave_dir(root: Path | None = None) -> Path:
@@ -37,6 +44,9 @@ def default_catalogs(root: Path | None = None) -> list[tuple[str, Path]]:
     pedal = sorted((root / "patches").glob("pedal-files-*"))
     if pedal:
         found.append((PEDAL_LABEL, pedal[-1]))  # names embed a timestamp: last = newest
+    library = library_dir(root)
+    if library.is_dir() and any(p.suffix.lower() == ".zd2" for p in library.iterdir()):
+        found.append((LIBRARY_LABEL, library))  # before Guitar Lab: the newest version wins either way
     gl = root / "guitarlab" / "GL"
     if gl.is_dir():
         found.append((GUITARLAB_LABEL, gl))
@@ -51,7 +61,10 @@ def parse_catalog_arg(value: str) -> tuple[str, Path]:
     return Path(value).name, Path(value)
 
 
-def find_a1_list(catalogs: list[tuple[str, Path]]) -> Path | None:
+def find_a1_list(catalogs: list[tuple[str, Path]], library: Path | None = None) -> Path | None:
+    """The model list: the library's own copy when the updater saved one, else Guitar Lab's cache."""
+    if library is not None and (library / LIST_NAME).is_file():
+        return library / LIST_NAME
     for _, folder in catalogs:
         for base in (folder, folder.parent):
             if (base / A1_LIST).is_file():
