@@ -346,3 +346,13 @@ def test_a_position_dropped_on_a_position_is_not_a_bank_operation(qtbot, catalog
     before = len(wire(t))
     drop(lst, lst.visualItemRect(lst.item(7)).center(), MIME_PATCH, b"3")
     assert yes == [] and wire(t)[before:] == []
+
+
+def test_a_bank_drop_with_a_junk_payload_is_ignored(qtbot, catalog, tmp_path, yes):
+    # verifier advisory 1: a non-numeric payload must neither raise nor write
+    w, t = window(qtbot, catalog, tmp_path)
+    w.bank_button.click()
+    cards = w.bank_panel.bank_list
+    before = len(t.sent)
+    drop(cards, cards.viewport().rect().center(), MIME_PATCH, b"junk")
+    assert len(t.sent) == before and names(w) == []

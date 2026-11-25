@@ -142,7 +142,11 @@ class BankList(QListWidget):
         if not event.mimeData().hasFormat(MIME_PATCH):
             event.ignore()
             return
-        location = int(bytes(event.mimeData().data(MIME_PATCH)).decode())
+        try:
+            location = int(bytes(event.mimeData().data(MIME_PATCH)).decode())
+        except (ValueError, UnicodeDecodeError):  # not one of our patch drags
+            event.ignore()
+            return
         event.acceptProposedAction()
         self.position_dropped.emit(location)
 
