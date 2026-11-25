@@ -102,6 +102,20 @@ def firmware_tip(firmware: str) -> str:
     return f"Firmware {firmware}"
 
 
+MEMORY_LOW = "Memoria baja"
+MEMORY_CRITICAL = "Memoria crítica"
+
+
+def memory_state_tip(state: str, free: int) -> str:
+    """Tooltip and accessible name of a memory bar: the state and the exact free bytes."""
+    n = _ES.toString(free)
+    if state == "critical":
+        return f"{MEMORY_CRITICAL}: quedan {n} bytes libres; un efecto grande ya no cabe"
+    if state == "low":
+        return f"{MEMORY_LOW}: quedan {n} bytes libres; un efecto ocupa entre 11 y 55 KB más un margen de 4 KB"
+    return f"Memoria libre: {n} bytes"
+
+
 def memory_text(used_kb: float, max_kb: float, pct: float) -> str:
     return f"Memoria: {used_kb:.0f} / {max_kb:.0f} KB ({pct:.0f} %)"
 

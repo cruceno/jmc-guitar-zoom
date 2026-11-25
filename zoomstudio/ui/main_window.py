@@ -31,6 +31,7 @@ from .effects_manager import Entry, EffectsManager, build_entries
 from .fonts import display_font
 from .glass import BackdropRoot, GlassMenu, GlassPanel, GlowHost
 from .icons import icon, pixmap
+from . import memory
 from .painted import ConnectionPill, DotLabel, KeyChipButton, LiveSwitch, PaintedText, SectionLabel, StatusBar
 from .bank_screen import BankMixin, BankScreen
 from .library import LibraryMixin
@@ -227,6 +228,10 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self.memory_bar.setFixedWidth(80)
         self.memory_value = QLabel(S.NOT_AVAILABLE)
         self.memory_value.setProperty("role", "value")
+        self.memory_icon = QLabel()  # the warning icon of a low or critical memory (the word, the icon and the tooltip
+        self.memory_icon.hide()      # say it besides the colour)
+        self.memory_word = QLabel("")
+        self.memory_word.hide()
         self.connect_button = QPushButton(S.CONNECT)
         self.connect_button.setIcon(icon("plug"))
         self.disconnect_button = QPushButton(S.DISCONNECT)
@@ -273,6 +278,8 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self.memory_caption = QLabel(S.MEMORY_LABEL)
         h.addWidget(self.memory_caption)
         h.addWidget(self.memory_bar)
+        h.addWidget(self.memory_icon)
+        h.addWidget(self.memory_word)
         h.addWidget(self.memory_value)
         h.addStretch(1)
         for w in (self.bank_button, self.tuner_button, self.live_check, self.open_file_button, self.save_file_button,
@@ -1784,12 +1791,16 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
             self.memory_bar.setFormat(S.MEMORY_NA)
             self.memory_value.setText(S.NOT_AVAILABLE)
             tip = S.MEMORY_NA
+            memory.apply_state(self.memory_bar, self.memory_icon, self.memory_word, (self.memory_value,), None)
         else:
             pct = usage.used_percent
             self.memory_bar.setValue(round(pct))
             tip = S.memory_text(usage.used / 1024, usage.maximum / 1024, pct)
             self.memory_bar.setFormat(tip)
             self.memory_value.setText(f"{pct:.0f} %")
+            memory.apply_state(self.memory_bar, self.memory_icon, self.memory_word, (self.memory_value,), usage.available)
+            self._fit_header()  # the word is new content: the header may have to give a caption up
+            return
         for widget in (self.memory_bar, self.memory_value):
             widget.setToolTip(tip)
 
@@ -1810,6 +1821,7 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         """Words give way before anything overlaps: the caption, then the buttons' text (their tooltips stay)."""
         self._header_level = level
         self.memory_caption.setVisible(level < 1)
+        self.memory_word.setVisible(level < 1 and bool(self.memory_word.text()))  # icon and % stay in a compact bar
         for button, text in ((self.tuner_button, S.TUNER),
                              (self.connect_button, S.CONNECT), (self.disconnect_button, S.DISCONNECT)):
             button.setAccessibleName(text)

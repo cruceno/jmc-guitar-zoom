@@ -33,6 +33,7 @@ from .favorites import FavoritesStore
 from .fonts import display_font, ui_font
 from .glass import BackdropRoot, GlassPanel
 from .icons import icon, pixmap
+from . import memory as memory_scale
 from .painted import SearchField, SectionLabel
 from .theme import group_color, group_fill_color, group_text_color
 
@@ -311,6 +312,10 @@ class EffectsManager(GlassPanel):
         self.memory_bar.setTextVisible(False)  # the figures are their own label: text over a thin bar cannot be read
         self.memory_label = QLabel(S.NOT_AVAILABLE)
         self.memory_label.setProperty("role", "value")
+        self.memory_icon = QLabel()  # a low or critical memory: icon and word beside the colour
+        self.memory_icon.hide()
+        self.memory_flag = QLabel("")
+        self.memory_flag.hide()
         self.unused_link = QPushButton("")  # «5 efectos sin uso · 123 KB que se pueden liberar»: applies the filter
         self.unused_link.setFlat(True)
         self.unused_link.setProperty("link", True)
@@ -456,6 +461,8 @@ class EffectsManager(GlassPanel):
         memory.setSpacing(12)
         memory.addWidget(QLabel(S.MEMORY_LABEL))
         memory.addWidget(self.memory_bar, stretch=1)
+        memory.addWidget(self.memory_icon)
+        memory.addWidget(self.memory_flag)
         memory.addWidget(self.memory_label)
         memory.addWidget(self.unused_link)
 
@@ -608,6 +615,7 @@ class EffectsManager(GlassPanel):
         self._installed, self._available, self._free, self._selected = [], [], None, None
         self.memory_bar.setValue(0)
         self.memory_label.setText(S.NOT_AVAILABLE)
+        memory_scale.apply_state(self.memory_bar, self.memory_icon, self.memory_flag, (self.memory_label,), None)
         self._populate()
         self._show_message(S.EFFECTS_OFFLINE)
         self.state_shown.emit()
@@ -670,6 +678,7 @@ class EffectsManager(GlassPanel):
         self._free = usage.available
         self.memory_bar.setValue(round(usage.used_percent))
         self.memory_label.setText(S.effects_memory(usage.used, usage.maximum, usage.available))
+        memory_scale.apply_state(self.memory_bar, self.memory_icon, self.memory_flag, (self.memory_label,), usage.available)
         self.message_box.hide()
         self.content.show()
         self._refill_groups()
