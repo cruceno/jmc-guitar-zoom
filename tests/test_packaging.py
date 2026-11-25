@@ -138,3 +138,10 @@ def test_no_workflow_has_an_unquoted_value_with_a_colon(workflow):
     bad = [f"{n}: {line.strip()}" for n, line in enumerate(workflow.read_text(encoding="utf-8").splitlines(), 1)
            if plain_value_with_colon.match(line)]
     assert bad == []
+
+
+@pytest.mark.parametrize("job", ["linux", "windows"])
+def test_the_packages_are_built_with_the_python_that_has_prebuilt_rtmidi_wheels(job):
+    # python-rtmidi 1.5.8 ships wheels for CPython 3.12 only; a source build on 3.13 picked up a module compiled on
+    # a newer Ubuntu through the uv cache and failed on 22.04 ("GLIBCXX_3.4.32 not found")
+    assert re.search(r"uses: astral-sh/setup-uv@v\d+\n\s+with:\n\s+python-version: \"3\.12\"", _job(job))

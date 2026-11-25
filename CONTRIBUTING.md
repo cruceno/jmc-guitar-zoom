@@ -20,6 +20,10 @@ bash packaging/linux/build_appimage.sh          # Linux: dist/JMC_Guitar_Zoom-<v
 QT_QPA_PLATFORM=offscreen ./dist/JMC_Guitar_Zoom-*-x86_64.AppImage --self-check
 ```
 
+The release workflow builds with Python 3.12 (`UV_PYTHON=3.12`), for which python-rtmidi publishes prebuilt
+wheels: no compiler is needed and the AppImage runs on older distributions. With Python 3.13, `uv sync` compiles
+python-rtmidi (on Linux it needs the ALSA headers, `libasound2-dev` or `alsa-lib-devel`).
+
 On Windows, `uv run pyinstaller --noconfirm packaging/jmc-guitar-zoom.spec` builds `dist\jmc-guitar-zoom\`, and
 Inno Setup 6 (`ISCC /DAppVersion=<version> packaging\windows\jmc-guitar-zoom.iss`) turns it into the installer.
 The hidden `--self-check [PATH]` option prints (and writes to PATH) the version, the data folder, the fonts, the MIDI
