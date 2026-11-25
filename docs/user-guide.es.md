@@ -1,0 +1,139 @@
+# Guía de usuario de JMC Guitar Zoom
+
+JMC Guitar Zoom es un editor no oficial para la pedalera **Zoom A1 FOUR** (no afiliado a Zoom Corporation). Esta
+guía recorre cada pantalla y función. Para instalar la aplicación, véase el [README](../README.es.md).
+
+> **Antes de empezar:** haga una copia de seguridad de todos los patches (menú Biblioteca) y cierre Guitar Lab u
+> otros programas que usen el puerto MIDI de la pedalera.
+
+## 1. Conectar
+
+1. Conecte la A1 FOUR por USB y enciéndala.
+2. Pulse **Conectar** en la barra superior. La aplicación lee los patches (verá el avance en la barra de estado) y
+   la etiqueta de conexión muestra el modelo y el firmware.
+3. **Desconectar** cierra la conexión. Con otro modelo de Zoom, la aplicación lo reconoce pero lo trata como de
+   **solo lectura**: se puede ver, pero no se escribe nada y un aviso lo indica.
+
+Sin pedalera también se puede trabajar: **Abrir carpeta…** (barra superior o menú Biblioteca) abre una carpeta de copia de seguridad (archivos
+`NNN.zptc`) y se edita sin conexión; para escribir en la pedalera hay que conectar. En la línea de comandos,
+`--offline CARPETA` y `--no-connect` hacen lo mismo al arrancar.
+
+## 2. La pantalla del editor
+
+![El editor](screenshots/editor-hb-jazz.png)
+
+De izquierda a derecha:
+
+- **Lista de patches.** Los 50 patches de usuario (numerados 10 a 59 como en la pedalera) con su nombre y unas barras
+  de colores que resumen los grupos de efectos. Los patches con cambios sin guardar se marcan como «Editado».
+- **Cadena.** El patch como una cadena de efectos, de «Entrada» a «Salida». Cada ficha muestra el slot, el nombre, el
+  grupo y si está encendido; los efectos anchos ocupan dos slots. Debajo de cada ficha, un botón de encendido.
+  Seleccione una ficha con el ratón o con las flechas ←/→; reordene arrastrándola o con Ctrl+←/→; quite un efecto con la
+  × de la ficha.
+- **Parámetros.** Las perillas del efecto seleccionado: arrastre una perilla o escriba el valor; doble clic
+  la restablece al valor predeterminado. Debajo se muestran la explicación del parámetro y la descripción del efecto.
+- **Cabecera del patch.** Número y nombre (se edita), volumen, medidor de **DSP** (los patches que superan el 100 % no
+  caben en la pedalera), deshacer y rehacer (cada patch guarda su propio historial).
+- **Catálogo de efectos.** A la derecha, agrupado y con búsqueda. Para añadir o cambiar un efecto, selecciónelo y
+  use el botón, Enter o doble clic, o arrástrelo a un slot vacío. La estrella marca favoritos. El catálogo solo
+  muestra lo que la pedalera de destino puede ejecutar.
+
+Los iconos de las fichas indican si el efecto **está instalado en la pedalera** y si **está en la cadena**. Una ficha
+roja, «No funciona en la A1 FOUR», marca un efecto que esa pedalera no puede ejecutar o que no está instalado.
+
+### Guardar y descartar
+
+- **Guardar en la pedalera** (icono de guardar en la cabecera): hace copia de seguridad del slot, escribe el patch y
+  lo vuelve a leer para comprobarlo. Si el patch usa efectos que la pedalera no tiene, **no se puede guardar** hasta
+  instalarlos (la ficha ofrece una instalación rápida).
+- **Descartar cambios** (icono de actualizar, Ctrl+R): vuelve a la última versión guardada del patch.
+- **Escribir en la pedalera todo lo editado** (menú Biblioteca) guarda todos los patches modificados de una vez.
+
+## 3. Edición en vivo
+
+Con el interruptor **En vivo** en «SÍ», los cambios de parámetros y de encendido se envían a la pedalera mientras
+edita, y se oye el resultado al instante. Esto no guarda nada en la memoria de la pedalera: para conservar el
+cambio hay que guardar el patch. Si descarta los cambios, la pedalera vuelve a su valor anterior. Con «NO» solo
+cambia lo que se ve en pantalla.
+
+## 4. Afinador
+
+El botón **Afinador** (o la tecla **T**) enciende el afinador de la pedalera y abre una pantalla con la nota y el
+desvío: el centro es «AFINADO». **La pedalera queda muda mientras el afinador está encendido.** «Salir del afinador» o
+la tecla T lo apagan.
+
+## 5. Biblioteca: copias, archivos y banco
+
+El menú **Biblioteca** reúne:
+
+- **Copia de seguridad de todos los patches** y de **patches y archivos de la pedalera**: crean una carpeta con la fecha.
+- **Exportar** el patch seleccionado o todos, e **importar** un archivo `.zptc` en el slot seleccionado o una carpeta de
+  copia. Antes de escribir, la aplicación pide confirmación.
+- Copiar, pegar, intercambiar y vaciar slots (vaciar escribe el patch «Empty» de fábrica).
+- **Banco de patches…**, **Instalar o quitar efectos…** y **Actualizar biblioteca de efectos…** (secciones siguientes).
+
+Toda escritura en la pedalera sigue el mismo camino seguro: copia automática del contenido anterior, escritura y
+verificación por relectura.
+
+## 6. Banco de patches
+
+![Efectos del catálogo y cadena](screenshots/editor-reverb.png)
+
+El botón **Banco** abre una pantalla con dos listas: **En la pedalera** (las posiciones) y **En el banco** (los patches
+guardados fuera de la pedalera, con su nombre, posición de origen y fecha; hay búsqueda).
+
+- **Guardar en el banco y liberar:** guarda el patch de una posición en el banco y deja la posición vacía.
+- **Cargar en la posición…:** carga un patch del banco en la posición que elija. Si está ocupada, el patch que había
+  pasa antes al banco y solo después se escribe el nuevo; la entrada se quita del banco una vez verificada la lectura.
+- También se puede **arrastrar** en ambos sentidos entre las dos listas.
+- **Renombrar** (F2) y **Eliminar** (Supr) trabajan sobre el banco; eliminar no borra: mueve el archivo a la
+  carpeta `papelera`. Ninguna de las dos acciones toca la pedalera.
+
+Mientras haya cambios sin guardar, no haya conexión o haya una operación en curso, el banco bloquea las acciones que
+escriben. Si algo falla, queda una copia duplicada en el banco: es el lado seguro.
+
+## 7. Efectos de la pedalera
+
+**Efectos** (o Biblioteca > «Instalar o quitar efectos…») abre el administrador. Requiere conexión y bloquea la
+edición de patches mientras está abierto.
+
+- **Instalados** y **Disponibles para instalar:** las dos listas, con búsqueda y filtro por grupo. Al seleccionar un
+  efecto se ven su explicación, su tamaño, su carga de DSP y las acciones posibles.
+- **Instalar:** sube el archivo del efecto y marca su indicador en la lista de la pedalera (lo mismo que hace Guitar
+  Lab). Antes de escribir se hace copia de la lista y se comprueba que hay memoria libre suficiente.
+- **Quitar:** solo se puede quitar un efecto que ningún patch use; la pantalla muestra qué patches lo usan o que el
+  uso no está confirmado (hay que haber leído todos los patches y no tener ediciones sin guardar).
+- **Sin uso:** en el filtro de grupo, la opción «Sin uso» muestra solo los efectos instalados que ningún patch usa, y
+  permite quitar varios de una vez para liberar memoria.
+- **Reparar:** si la lista de la pedalera marca un efecto como instalado pero falta su archivo («Falta el archivo»),
+  Reparar vuelve a subir solo ese archivo, si hay una copia local.
+- **Filtro de pedalera:** el selector de pedal muestra los efectos de otro modelo (se pueden consultar, pero solo se
+  instala en los modelos compatibles).
+- La barra de **Memoria** de la parte superior avisa cuando queda poca («Memoria baja», «Memoria crítica»).
+
+## 8. Actualizador de la biblioteca de efectos
+
+**Biblioteca > Actualizar biblioteca de efectos…** consulta el canal público de Guitar Lab de Zoom y compara con los
+efectos que ya tiene:
+
+- **Nuevos** y **Actualizados**: se listan con su tamaño; marque los que quiera y pulse **Descargar**. Cada archivo se
+  verifica (que sea un efecto válido, con el identificador y la versión anunciados) antes de guardarse en la
+  biblioteca de la aplicación. Nunca se sobrescribe un archivo existente. **Cancelar** detiene la descarga tras el
+  efecto en curso.
+- **Todos los modelos** incluye los efectos de todas las pedaleras que Zoom publica, no solo de la elegida.
+- Muestra también si Zoom publica un **firmware** más reciente que el de su pedalera. El firmware no se descarga ni se
+  instala desde esta aplicación: use las herramientas de Zoom.
+- La consulta se hace al arrancar (como máximo una vez al día, solo con internet) y bajo demanda; si hay novedades,
+  aparece un aviso con «Ver».
+
+Los archivos descargados son de Zoom y se guardan solo en su equipo, para su uso personal.
+
+## 9. Problemas frecuentes
+
+- **No conecta:** cierre Guitar Lab y cualquier programa que use la pedalera; reconecte el USB; en Linux, compruebe
+  que su usuario pertenece al grupo `audio`.
+- **El catálogo está vacío:** use el actualizador, o indique carpetas con archivos `.zd2` con `--catalog`.
+- **No se puede guardar:** el mensaje indica el motivo (efectos no instalados, patch demasiado grande, modelo de solo
+  lectura, sin conexión).
+- **Algo salió mal al escribir:** las copias automáticas están en la carpeta `patches/autosave` junto al repositorio;
+  los archivos `.zptc` se pueden volver a importar.
