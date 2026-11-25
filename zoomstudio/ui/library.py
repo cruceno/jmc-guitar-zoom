@@ -22,10 +22,16 @@ from zoomstudio.patches.zptc import build_zptc, parse_zptc
 from . import strings as S
 from .dialogs import ConfirmDialog
 from .glass import GlassMenu
+from .icons import icon
 
 
 class LibraryMixin:
     """Mixed into ``MainWindow``; relies on its patch store, worker and signals."""
+
+    def open_effects_screen(self) -> None:
+        """The effects screen through the top-bar toggle, so every way in leaves the same state."""
+        if self.effects_button.isEnabled():
+            self.effects_button.setChecked(True)
 
     def _init_library(self) -> None:
         self._clipboard: Patch | None = None
@@ -56,9 +62,11 @@ class LibraryMixin:
 
         for act in (self.copy_action, self.paste_action, self.clear_action):
             self.patch_list.addAction(act)  # shortcuts act only while the patch list has focus
+        self.effects_action = action(S.LIBRARY_EFFECTS, self.open_effects_screen)
+        self.effects_action.setIcon(icon("package"))
         menu = GlassMenu(self.library_button, self.backdrop_root)
         self.library_button.setMenu(menu)
-        for act in (self.backup_action, self.backup_files_action, None, self.copy_action, self.paste_action,
+        for act in (self.effects_action, None, self.backup_action, self.backup_files_action, None, self.copy_action, self.paste_action,
                     self.clear_action, None, self.export_selected_action, self.export_all_action,
                     self.import_file_action, self.import_folder_action, None, self.write_dirty_action):
             if act is None:

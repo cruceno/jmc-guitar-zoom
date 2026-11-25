@@ -21,7 +21,7 @@ def window(qtbot):
 def test_cards_are_56_px_tall(window):
     option = QStyleOptionViewItem()
     option.rect.setSize(QSize(260, 10))
-    assert PatchCardDelegate().sizeHint(option, window.patch_list.model().index(0, 0)) == QSize(260, CARD_HEIGHT)
+    assert PatchCardDelegate().sizeHint(option, window.patch_list.model().index(0, 0)).height() == CARD_HEIGHT  # the width is the list's to give
 
 
 def test_strip_lists_one_block_per_effect_with_its_slots(window):

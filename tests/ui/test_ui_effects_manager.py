@@ -7,6 +7,7 @@ import dataclasses
 from pathlib import Path
 
 import pytest
+from PySide6.QtCore import Qt
 
 from ui_replies import FIXTURES, HDR, S, fake_pedal, patch_reply
 from zoomstudio.device import PedalClient
@@ -295,3 +296,118 @@ def test_editing_is_locked_while_the_screen_is_open(screen):
 def test_the_tuner_cannot_start_while_the_screen_is_open(screen):
     w, _panel, _files = screen
     assert not w.tuner_button.isEnabled()
+
+
+# ---------------------------------------------------------------- ways into the screen
+
+
+def test_the_library_menu_opens_the_screen_through_the_top_bar_toggle(qtbot, monkeypatch, catalog, tmp_path):
+    w = connected_window(qtbot, monkeypatch, catalog, tmp_path, PedalFiles(BEFORE))
+    action = next(a for a in w.library_button.menu().actions() if a.text() == ST.LIBRARY_EFFECTS)
+    assert action.isEnabled()
+    with qtbot.waitSignal(w.effects_panel.state_shown, timeout=5000):
+        action.trigger()
+    assert w.effects_button.isChecked() and w.effects_panel.isVisibleTo(w)
+
+
+def test_the_catalog_button_opens_the_screen_through_the_top_bar_toggle(qtbot, monkeypatch, catalog, tmp_path):
+    w = connected_window(qtbot, monkeypatch, catalog, tmp_path, PedalFiles(BEFORE))
+    button = w.catalog_panel.manage_button
+    assert button.text() == ST.CATALOG_MANAGE and not button.icon().isNull()
+    assert "instala o quita efectos" in button.toolTip().lower()
+    with qtbot.waitSignal(w.effects_panel.state_shown, timeout=5000):
+        button.click()
+    assert w.effects_button.isChecked() and w.effects_panel.isVisibleTo(w)
+    assert w.effects_button.toolTip() == ST.EFFECTS_TIP
+
+
+# ---------------------------------------------------------------- groups
+
+
+def click_header(panel, which, group):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    cards = getattr(panel, f"{which}_list")
+    item = cards.item(panel.section_header_row(which, group))
+    QTest.mouseClick(cards.viewport(), Qt.MouseButton.LeftButton, pos=cards.visualItemRect(item).center())
+
+
+def test_each_list_has_one_section_per_group_with_its_count(screen):
+    _w, panel, _files = screen
+    assert panel.section_groups("installed") == ["AMP", "CABINET", "DYNAMICS", "FILTER", "REVERB"]
+    assert [panel.section_count("installed", g) for g in panel.section_groups("installed")] == [1, 1, 2, 1, 1]
+    assert panel.section_groups("available") == ["AG MODEL", "DYNAMICS"]
+    assert all(panel.section_expanded("installed", g) for g in panel.section_groups("installed"))
+    header = panel.installed_list.item(panel.section_header_row("installed", "DYNAMICS"))
+    assert header.data(Qt.ItemDataRole.AccessibleTextRole) == ST.effects_section_name(ST.group_label("DYNAMICS"), 2, True)
+    assert panel.installed_names() == sorted(ON_PEDAL, key=lambda f: ["FDDLXR1U.ZD2", "FDDX1X12.ZD2", "COMP.ZD2",
+                                                                       "OPTCOMP.ZD2", "GTGEQ71U.ZD2", "HALL.ZD2"].index(f))
+
+
+def test_clicking_a_header_folds_and_unfolds_its_cards(screen):
+    _w, panel, _files = screen
+    row = panel.section_header_row("installed", "DYNAMICS")
+    cards = [panel.installed_list.item(row + 1), panel.installed_list.item(row + 2)]
+    click_header(panel, "installed", "DYNAMICS")
+    assert not panel.section_expanded("installed", "DYNAMICS")
+    assert all(c.isHidden() for c in cards)
+    assert panel.section_expanded("installed", "AMP")  # the others are untouched
+    click_header(panel, "installed", "DYNAMICS")
+    assert panel.section_expanded("installed", "DYNAMICS") and not any(c.isHidden() for c in cards)
+
+
+@pytest.mark.parametrize("key", [Qt.Key.Key_Return, Qt.Key.Key_Space])
+def test_a_header_toggles_from_the_keyboard(qtbot, screen, key):
+    _w, panel, _files = screen
+    panel.installed_list.setCurrentRow(panel.section_header_row("installed", "AMP"))
+    qtbot.keyClick(panel.installed_list, key)
+    assert not panel.section_expanded("installed", "AMP")
+    qtbot.keyClick(panel.installed_list, key)
+    assert panel.section_expanded("installed", "AMP")
+
+
+def test_a_folded_section_stays_folded_while_the_screen_is_open(screen):
+    _w, panel, _files = screen
+    panel.toggle_section("installed", "AMP")
+    panel.search.setText("hall")
+    panel.search.setText("")
+    assert not panel.section_expanded("installed", "AMP")
+
+
+def test_the_group_filter_limits_both_lists(screen):
+    _w, panel, _files = screen
+    assert panel.group_combo.itemText(0) == ST.ALL_GROUPS
+    panel.group_combo.setCurrentIndex(panel.group_combo.findData("DYNAMICS"))
+    assert names(panel, "installed") == ["COMP.ZD2", "OPTCOMP.ZD2"]
+    assert names(panel, "available") == ["160_COMP.ZD2"]
+    assert panel.section_groups("installed") == ["DYNAMICS"]
+    panel.group_combo.setCurrentIndex(0)
+    assert len(names(panel, "installed")) == len(ON_PEDAL)
+
+
+def test_search_hides_the_sections_without_a_match_and_counts_follow(screen):
+    _w, panel, _files = screen
+    panel.search.setText("comp")
+    assert panel.section_groups("installed") == ["DYNAMICS"]
+    assert panel.section_count("installed", "DYNAMICS") == 2
+    assert panel.section_groups("available") == ["DYNAMICS"]
+    panel.search.setText("optcomp")
+    assert panel.section_count("installed", "DYNAMICS") == 1
+    assert panel.section_groups("available") == []
+
+
+def test_install_and_remove_work_from_a_grouped_list(qtbot, monkeypatch, catalog, tmp_path):
+    pedal_files = PedalFiles(BEFORE)
+    w = connected_window(qtbot, monkeypatch, catalog, tmp_path, pedal_files)
+    panel = open_screen(qtbot, w)
+    panel.toggle_section("available", "AG MODEL")  # folded: selecting must still work
+    panel.select_effect("MDL_12ST.ZD2")
+    assert panel.selected_name() == "MDL_12ST.ZD2" and panel.section_expanded("available", "AG MODEL")
+    assert panel.install_button.isVisibleTo(panel) and panel.install_button.isEnabled()
+    with qtbot.waitSignal(panel.state_shown, timeout=8000):
+        panel.install_button.click()
+    assert "MDL_12ST.ZD2" in names(panel, "installed")
+    assert "AG MODEL" in panel.section_groups("installed")
+    panel.select_effect("HALL.ZD2")
+    assert panel.remove_button.isVisibleTo(panel)

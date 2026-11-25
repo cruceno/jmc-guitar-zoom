@@ -15,7 +15,8 @@ from zoomstudio.patches.model import EffectSlot, Patch
 
 from . import strings as S
 from . import tokens
-from .cards import ROLE_EFFECT, EffectCardDelegate, Knob, PatchCardDelegate, card_path, pedal_thumbnail, svg_thumbnail, with_alpha
+from .cards import ROLE_EFFECT, ROLE_FAV, EffectCardDelegate, FavoriteList, Knob, PatchCardDelegate, card_path, pedal_thumbnail, svg_thumbnail, with_alpha
+from .favorites import FavoritesStore
 from .fonts import display_font, ui_font
 from .icons import icon, pixmap
 from .painted import GroupChip, SectionLabel
@@ -24,6 +25,7 @@ from .mime import MIME_EFFECT, MIME_PATCH, MIME_SLOT  # noqa: F401  (re-exported
 from .theme import group_color
 
 ALL_GROUPS = S.ALL_GROUPS
+FAVORITES_FILTER = "\0favorites"  # the group combo's «Favoritos» option (no group has this key)
 _ID_ROLE = Qt.ItemDataRole.UserRole
 _NAME_ROLE = Qt.ItemDataRole.UserRole + 1
 PREVIEW_W, PREVIEW_H = 52, 74  # the preview of the detail card (the prototype's pedal thumbnail)
@@ -42,6 +44,7 @@ class PatchList(QListWidget):
         self.setDragDropMode(QListWidget.DragDropMode.DragDrop)
         self.setDefaultDropAction(Qt.DropAction.IgnoreAction)
         self.setItemDelegate(PatchCardDelegate(self))
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setMouseTracking(True)
         self.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
 
@@ -357,7 +360,7 @@ class ParamPanel(QWidget):
             self._current.reset()
 
 
-class _CatalogList(QListWidget):
+class _CatalogList(FavoriteList):
     """Catalog rows that can be dragged onto a chain tile (payload: the effect ID); Enter activates a row."""
 
     enter_pressed = Signal(object)
@@ -367,6 +370,7 @@ class _CatalogList(QListWidget):
         self.setDragEnabled(True)
         self.setDragDropMode(QListWidget.DragDropMode.DragOnly)
         self.setItemDelegate(EffectCardDelegate(self))
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setMouseTracking(True)
         self.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
 
@@ -438,9 +442,12 @@ class CatalogPanel(QWidget):
     """Searchable effect catalog: filters, effect cards, the destination of the selected effect and its detail."""
 
     effect_activated = Signal(int)  # double click on a row: catalog effect ID
+    manage_requested = Signal()  # the «Administrar» button: open the pedal's effects screen
 
-    def __init__(self, catalog: dict[int, EffectInfo], a1_ids: set[int] | None, installed_label: str) -> None:
+    def __init__(self, catalog: dict[int, EffectInfo], a1_ids: set[int] | None, installed_label: str,
+                 favorites: FavoritesStore | None = None) -> None:
         super().__init__()
+        self.favorites = favorites if favorites is not None else FavoritesStore()
         self._catalog = catalog
         self._a1_ids = a1_ids
         self._installed_label = installed_label
@@ -455,6 +462,7 @@ class CatalogPanel(QWidget):
         self.search.addAction(icon("search", "text-secondary", 17), QLineEdit.ActionPosition.LeadingPosition)
         self.group_combo = QComboBox()
         self.group_combo.addItem(ALL_GROUPS)
+        self.group_combo.addItem(S.FAVORITES, FAVORITES_FILTER)
         for group in sorted({e.group for e in catalog.values()}):
             self.group_combo.addItem(S.group_label(group), group)
         self.a1_check = QCheckBox(S.ONLY_A1)
@@ -542,7 +550,11 @@ class CatalogPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
         layout.addLayout(self._header())
-        layout.addWidget(self.search)
+        found = QHBoxLayout()  # the search field and how many effects it leaves (the header is the title and «Administrar»)
+        found.setSpacing(10)
+        found.addWidget(self.search, stretch=1)
+        found.addWidget(self.count_label)
+        layout.addLayout(found)
         layout.addLayout(filters)
         layout.addWidget(self.destination)
         layout.addWidget(self.list, stretch=1)
@@ -555,13 +567,29 @@ class CatalogPanel(QWidget):
         self.list.currentItemChanged.connect(self._on_current)
         self.list.itemDoubleClicked.connect(lambda item: self.effect_activated.emit(item.data(_ID_ROLE)))
         self.list.enter_pressed.connect(lambda item: self.effect_activated.emit(item.data(_ID_ROLE)))
+        self.list.favorite_toggled.connect(lambda item: self.favorites.toggle(item.data(_ID_ROLE)))
+        self.favorites.changed.connect(self._on_favorites_changed)
         self.refresh()
+
+    def _on_favorites_changed(self) -> None:
+        if self.group_combo.currentData() == FAVORITES_FILTER:
+            self.refresh()  # the list itself depends on them
+            return
+        for i in range(self.list.count()):
+            item = self.list.item(i)
+            item.setData(ROLE_FAV, self.favorites.is_favorite(item.data(_ID_ROLE)))
+        self.list.viewport().update()
 
     def _header(self) -> QHBoxLayout:
         row = QHBoxLayout()
         row.addWidget(SectionLabel(S.CATALOG_TITLE))
         row.addStretch(1)
-        row.addWidget(self.count_label)
+        self.manage_button = QPushButton(S.CATALOG_MANAGE)
+        self.manage_button.setIcon(icon("package"))
+        self.manage_button.setToolTip(S.EFFECTS_TIP)
+        self.manage_button.setAccessibleName(S.EFFECTS_TIP)
+        self.manage_button.clicked.connect(self.manage_requested)
+        row.addWidget(self.manage_button)
         return row
 
     def _is_installed(self, info: EffectInfo) -> bool:
@@ -572,7 +600,10 @@ class CatalogPanel(QWidget):
         if text and text not in info.name.lower() and text not in info.group.lower():
             return False
         group = self.group_combo.currentData()
-        if group is not None and info.group != group:
+        if group == FAVORITES_FILTER:
+            if not self.favorites.is_favorite(info.effect_id):
+                return False
+        elif group is not None and info.group != group:
             return False
         return not (self.a1_check.isChecked() and self._a1_ids is not None
                     and info.effect_id not in self._a1_ids)
@@ -594,6 +625,7 @@ class CatalogPanel(QWidget):
                 "svg": info.svg_path,
                 "blocked": self._a1_ids is not None and info.effect_id not in self._a1_ids})
             item.setData(_ID_ROLE, info.effect_id)
+            item.setData(ROLE_FAV, self.favorites.is_favorite(info.effect_id))
             item.setData(_NAME_ROLE, info.name)
             item.setForeground(group_color(info.group).lighter(150))
             self.list.addItem(item)
@@ -604,7 +636,7 @@ class CatalogPanel(QWidget):
         if count == 0:
             group = self.group_combo.currentData()
             self.none_label.setText(S.no_effect_matches(
-                self.search.text().strip(), S.group_label(group) if group else "",
+                self.search.text().strip(), (S.FAVORITES if group == FAVORITES_FILTER else S.group_label(group)) if group else "",
                 self.a1_check.isChecked() and self._a1_ids is not None))
             self._on_current(None)
 

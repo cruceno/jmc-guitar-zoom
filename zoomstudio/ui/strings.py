@@ -70,7 +70,7 @@ CONFIRM = "Confirmar"
 TUNER_TIP = "Enciende o apaga el afinador de la pedalera (T). La pedalera queda muda mientras está encendido"
 LIVE_TIP = "Envía también a la pedalera los cambios de parámetros y de encendido mientras se edita"
 PATCHES = "Patches"
-NO_PATCH_SELECTED = "Ningún patch seleccionado"
+NO_PATCH_SELECTED = "Ningún patch"  # shown at 40 px in the title: the longer sentence did not fit the column
 NAME = "Nombre"
 VOLUME = "Volumen"
 VOLUME_TIP = "Volumen del patch"
@@ -595,6 +595,8 @@ def tuner_status(note: str | None, offset: int) -> str:
 
 EFFECTS_BUTTON = "Efectos"
 EFFECTS_TIP = "Instala o quita efectos de la pedalera. La edición de patches queda bloqueada mientras está abierta"
+CATALOG_MANAGE = "Administrar"
+LIBRARY_EFFECTS = "Instalar o quitar efectos…"
 EFFECTS_TITLE = "Efectos de la pedalera"
 EFFECTS_CLOSE = "Cerrar"
 EFFECTS_INSTALLED = "Instalados"
@@ -679,3 +681,18 @@ def err_effect_change(name: str, installing: bool, exc: object) -> str:
     return with_detail(f"No se pudo {'instalar' if installing else 'quitar'} {name}", exc)
 EFFECTS_RETRY = "Reintentar"
 EFFECTS_LOAD_FAILED = "No se pudo leer la lista de efectos de la pedalera. El motivo figura en el mensaje de error."
+
+
+# ---- effects manager: groups
+EFFECTS_GROUP_TIP = "Mostrar solo los efectos de un grupo"
+EFFECTS_SECTION_TIP = "Clic para plegar o desplegar el grupo"
+
+
+def effects_section_name(label: str, count: int, expanded: bool) -> str:
+    noun = "efecto" if count == 1 else "efectos"
+    return f"Grupo {label}, {count} {noun}, {'desplegado' if expanded else 'plegado'}"
+
+# ---- favourites
+FAVORITE_ADD = "Marcar como favorito"
+FAVORITE_REMOVE = "Quitar de favoritos"
+FAVORITES = "Favoritos"

@@ -9,10 +9,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QFontMetrics, QLinearGradient, QPainter, QPen
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QFont, QFontMetrics, QLinearGradient, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QProgressBar, QPushButton, QScrollArea,
+    QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QProgressBar, QPushButton, QScrollArea,
     QSizePolicy, QStyle, QStyledItemDelegate, QVBoxLayout, QWidget,
 )
 
@@ -23,8 +23,9 @@ from zoomstudio.effects.installer import MEMORY_MARGIN
 
 from . import strings as S
 from . import tokens
-from .cards import card_path, pedal_thumbnail, svg_thumbnail, with_alpha
+from .cards import ROLE_FAV, STAR_ROOM, FavoriteList, card_path, paint_star, star_rect, pedal_thumbnail, svg_thumbnail, with_alpha
 from .dialogs import ConfirmDialog
+from .favorites import FavoritesStore
 from .fonts import display_font, ui_font
 from .glass import BackdropRoot, GlassPanel
 from .icons import icon
@@ -32,6 +33,13 @@ from .painted import SectionLabel
 from .theme import group_color, group_fill_color, group_text_color
 
 ROLE_ENTRY = Qt.ItemDataRole.UserRole + 30  # the Entry behind a card
+ROLE_SECTION = Qt.ItemDataRole.UserRole + 31  # (group, count, expanded) on the header row of a section
+SECTION_HEIGHT = 36
+FAVORITES_KEY = "\0favorites"  # the section (and the filter option) of favourites: no real group has this key
+
+
+def section_label(group: str) -> str:
+    return S.FAVORITES if group == FAVORITES_KEY else S.group_label(group)
 DETAIL_WIDTH = 360
 BYPASS = "BYPASS.ZD2"  # the list's first record: the pedal's "no effect", not an effect to manage
 
@@ -103,9 +111,51 @@ class EffectCard(QStyledItemDelegate):
     """An effect as a card: group monogram, name, DSP load, then group and the size of its file."""
 
     def sizeHint(self, option, index) -> QSize:  # noqa: N802 (Qt API)
-        return QSize(option.rect.width(), 60)
+        return QSize(1, SECTION_HEIGHT if index.data(ROLE_SECTION) else 60)  # the list stretches rows to its viewport
+
+    def _paint_section(self, p: QPainter, option, section: tuple[str, int, bool]) -> None:
+        group, count, expanded = section
+        hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
+        focused = bool(option.state & QStyle.StateFlag.State_Selected)
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(option.rect).adjusted(2, 3, -2, -3)
+        if hover or focused:
+            p.setPen(QPen(tokens.color("accent") if focused else tokens.color("card-rim"), 1.5 if focused else 1))
+            p.setBrush(tokens.color("card-hover") if hover else tokens.color("card-top"))
+            p.drawRoundedRect(rect, 8, 8)
+        cy, x = rect.center().y(), rect.left() + 12
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(tokens.color("text-secondary"))
+        if expanded:  # chevron pointing down, or right when collapsed
+            p.drawPolygon(QPolygonF([QPointF(x, cy - 3), QPointF(x + 9, cy - 3), QPointF(x + 4.5, cy + 3)]))
+        else:
+            p.drawPolygon(QPolygonF([QPointF(x + 1, cy - 5), QPointF(x + 1, cy + 5), QPointF(x + 7, cy)]))
+        if group == FAVORITES_KEY:
+            paint_star(p, QRectF(x + 17, cy - 7, 14, 14), True)
+        else:
+            p.setBrush(group_color(group))
+            p.drawEllipse(QPointF(x + 24, cy), 5, 5)
+        count_text = str(count)
+        font = ui_font(13, QFont.Weight.DemiBold)
+        count_w = QFontMetrics(ui_font(13)).horizontalAdvance(count_text)
+        label_rect = QRectF(x + 38, rect.top(), rect.right() - 12 - count_w - 8 - (x + 38), rect.height())
+        p.setFont(font)
+        p.setPen(tokens.color("accent") if group == FAVORITES_KEY else group_text_color(group))
+        p.drawText(label_rect, Qt.AlignmentFlag.AlignVCenter,
+                   QFontMetrics(font).elidedText(section_label(group), Qt.TextElideMode.ElideRight,
+                                                 int(label_rect.width())))
+        p.setFont(ui_font(13))
+        p.setPen(tokens.color("text-secondary"))
+        p.drawText(QRectF(rect.right() - 12 - count_w, rect.top(), count_w, rect.height()),
+                   Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, count_text)
+        p.restore()
 
     def paint(self, p: QPainter, option, index) -> None:
+        section = index.data(ROLE_SECTION)
+        if section:
+            self._paint_section(p, option, section)
+            return
         entry: Entry = index.data(ROLE_ENTRY)
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
         hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
@@ -136,7 +186,9 @@ class EffectCard(QStyledItemDelegate):
             p.setPen(group_text_color(entry.group))
             p.setFont(display_font(12, 600))
             p.drawText(mono, Qt.AlignmentFlag.AlignCenter, entry.name[:2].upper())
-        left, right = mono.right() + 12, rect.right() - 12
+        left, right = mono.right() + 12, rect.right() - 12 - STAR_ROOM
+        if index.data(ROLE_FAV) is not None:
+            paint_star(p, star_rect(option.rect), bool(index.data(ROLE_FAV)), hover)
         dsp = S.percent(entry.dsp) if entry.dsp is not None else S.EFFECTS_DSP_NA
         dsp_w = QFontMetrics(ui_font(14)).horizontalAdvance(dsp)
         p.setFont(ui_font(15))
@@ -155,13 +207,32 @@ class EffectCard(QStyledItemDelegate):
         p.restore()
 
 
-class _CardList(QListWidget):
+class _CardList(FavoriteList):
+    """Effect cards grouped in sections; a section header is a row that folds and unfolds its cards."""
+
+    section_toggled = Signal(object)  # the header item that was activated
+
     def __init__(self) -> None:
         super().__init__()
+        self.itemClicked.connect(self._on_clicked)
         self.setItemDelegate(EffectCard(self))
         self.setMouseTracking(True)
         self.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
         self.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+    def _on_clicked(self, item: QListWidgetItem) -> None:
+        if item.data(ROLE_SECTION):
+            self.section_toggled.emit(item)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        item = self.currentItem()
+        if item is not None and item.data(ROLE_SECTION) and event.key() in (
+                Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+            self.section_toggled.emit(item)
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
 
 class EffectsManager(GlassPanel):
@@ -173,8 +244,10 @@ class EffectsManager(GlassPanel):
     remove_requested = Signal(str)  # pedal file name
     close_requested = Signal()
 
-    def __init__(self, root: BackdropRoot, catalog: dict[int, EffectInfo], allowed_ids: set[int] | None) -> None:
+    def __init__(self, root: BackdropRoot, catalog: dict[int, EffectInfo], allowed_ids: set[int] | None,
+                 favorites: FavoritesStore | None = None) -> None:
         super().__init__(root)
+        self.favorites = favorites if favorites is not None else FavoritesStore()
         self._catalog = catalog
         self._allowed = allowed_ids
         self._installed: list[Entry] = []
@@ -187,6 +260,7 @@ class EffectsManager(GlassPanel):
         self._patches_complete = False
         self._unsaved = False
         self._users: dict[str, list[tuple[int, str]]] = {}
+        self._collapsed: dict[str, set[str]] = {"installed": set(), "available": set()}  # kept while the screen lives
 
         self.close_button = QPushButton(S.EFFECTS_CLOSE)
         self.close_button.setIcon(icon("x"))
@@ -209,11 +283,25 @@ class EffectsManager(GlassPanel):
         self.search.setAccessibleName(S.EFFECTS_SEARCH_TIP)
         self.search.addAction(icon("search", "text-secondary", 17), QLineEdit.ActionPosition.LeadingPosition)
         self.search.textChanged.connect(lambda _text: self._populate())
+        self.group_combo = QComboBox()
+        self.group_combo.setToolTip(S.EFFECTS_GROUP_TIP)
+        self.group_combo.setAccessibleName(S.EFFECTS_GROUP_TIP)
+        self.group_combo.setMinimumWidth(190)
+        self.group_combo.addItem(S.ALL_GROUPS, None)
+        self.group_combo.addItem(S.FAVORITES, FAVORITES_KEY)
+        self.group_combo.currentIndexChanged.connect(lambda _i: self._populate())
 
         self.installed_list, self.installed_count, self.installed_empty = _CardList(), QLabel(""), QLabel("")
         self.available_list, self.available_count, self.available_empty = _CardList(), QLabel(""), QLabel("")
         self.installed_list.itemSelectionChanged.connect(lambda: self._on_selection(self.installed_list))
         self.available_list.itemSelectionChanged.connect(lambda: self._on_selection(self.available_list))
+        self.installed_list.section_toggled.connect(lambda item: self._toggle_item("installed", item))
+        self.available_list.section_toggled.connect(lambda item: self._toggle_item("available", item))
+        for cards in (self.installed_list, self.available_list):
+            cards.favorite_toggled.connect(self._on_favorite_toggled)
+        self.favorites.changed.connect(self._populate)
+        self.installed_list.setAccessibleName(S.EFFECTS_INSTALLED)
+        self.available_list.setAccessibleName(S.EFFECTS_AVAILABLE)
 
         self.detail_name = QLabel("")
         self.detail_name.setProperty("role", "heading")
@@ -262,7 +350,11 @@ class EffectsManager(GlassPanel):
         content.setContentsMargins(0, 0, 0, 0)
         content.setSpacing(14)
         lists = QVBoxLayout()
-        lists.addWidget(self.search)
+        filters = QHBoxLayout()
+        filters.setSpacing(10)
+        filters.addWidget(self.search, stretch=1)
+        filters.addWidget(self.group_combo)
+        lists.addLayout(filters)
         columns = QHBoxLayout()
         columns.setSpacing(14)
         columns.addLayout(self._column(S.EFFECTS_INSTALLED, self.installed_count, self.installed_empty,
@@ -334,7 +426,52 @@ class EffectsManager(GlassPanel):
 
     @staticmethod
     def _file_names(cards: QListWidget) -> list[str]:
-        return [cards.item(i).data(ROLE_ENTRY).file for i in range(cards.count())]
+        return [cards.item(i).data(ROLE_ENTRY).file for i in range(cards.count())
+                if cards.item(i).data(ROLE_ENTRY) is not None]
+
+    def section_groups(self, which: str) -> list[str]:
+        """The groups of ``which`` ("installed" or "available") that have a section, in screen order."""
+        return [item.data(ROLE_SECTION)[0] for item in self._headers(which)]
+
+    def section_count(self, which: str, group: str) -> int:
+        return self._header(which, group).data(ROLE_SECTION)[1]
+
+    def section_expanded(self, which: str, group: str) -> bool:
+        return self._header(which, group).data(ROLE_SECTION)[2]
+
+    def section_header_row(self, which: str, group: str) -> int:
+        return self._list(which).row(self._header(which, group))
+
+    def toggle_section(self, which: str, group: str) -> None:
+        self._toggle_item(which, self._header(which, group))
+
+    def _list(self, which: str) -> QListWidget:
+        return self.installed_list if which == "installed" else self.available_list
+
+    def _headers(self, which: str) -> list[QListWidgetItem]:
+        cards = self._list(which)
+        return [cards.item(i) for i in range(cards.count()) if cards.item(i).data(ROLE_SECTION)]
+
+    def _header(self, which: str, group: str) -> QListWidgetItem:
+        return next(item for item in self._headers(which) if item.data(ROLE_SECTION)[0] == group)
+
+    def _toggle_item(self, which: str, header: QListWidgetItem) -> None:
+        group, count, expanded = header.data(ROLE_SECTION)
+        collapsed = self._collapsed[which]
+        collapsed.discard(group) if not expanded else collapsed.add(group)
+        self._set_section(which, header, group, count, not expanded)
+        cards = self._list(which)
+        for i in range(cards.row(header) + 1, cards.count()):
+            item = cards.item(i)
+            if item.data(ROLE_SECTION):
+                break
+            item.setHidden(expanded)  # it was expanded: now fold it
+
+    @staticmethod
+    def _set_section(which: str, header: QListWidgetItem, group: str, count: int, expanded: bool) -> None:
+        header.setData(ROLE_SECTION, (group, count, expanded))
+        header.setData(Qt.ItemDataRole.AccessibleTextRole, S.effects_section_name(section_label(group), count, expanded))
+        header.setToolTip(S.EFFECTS_SECTION_TIP)
 
     def selected_name(self) -> str | None:
         return self._selected
@@ -386,6 +523,7 @@ class EffectsManager(GlassPanel):
         self.memory_label.setText(S.effects_memory(usage.used, usage.maximum, usage.available))
         self.message_box.hide()
         self.content.show()
+        self._refill_groups()
         self._populate()
         self.state_shown.emit()
 
@@ -398,6 +536,7 @@ class EffectsManager(GlassPanel):
         self._busy = busy
         self._busy_text = text
         self.search.setEnabled(not busy)
+        self.group_combo.setEnabled(not busy)
         self.close_button.setEnabled(not busy)
         self.installed_list.setEnabled(not busy)
         self.available_list.setEnabled(not busy)
@@ -407,24 +546,55 @@ class EffectsManager(GlassPanel):
 
     def _matches(self, entry: Entry, query: str) -> bool:
         haystack = f"{entry.name} {entry.file} {entry.group} {S.group_label(entry.group)}".lower()
+        group = self.group_combo.currentData()
+        if group == FAVORITES_KEY:
+            if not self._is_favorite(entry):
+                return False
+        elif group is not None and entry.group != group:
+            return False
         return all(word in haystack for word in query.lower().split())
+
+    def _refill_groups(self) -> None:
+        """The group filter offers the groups of the pedal's effects, in the catalog's order; the choice survives."""
+        chosen = self.group_combo.currentData()
+        groups = sorted({e.group for e in self._installed + self._available})
+        self.group_combo.blockSignals(True)
+        self.group_combo.clear()
+        self.group_combo.addItem(S.ALL_GROUPS, None)
+        self.group_combo.addItem(S.FAVORITES, FAVORITES_KEY)
+        for group in groups:
+            self.group_combo.addItem(S.group_label(group), group)
+        index = self.group_combo.findData(chosen)
+        self.group_combo.setCurrentIndex(max(index, 0))
+        self.group_combo.blockSignals(False)
 
     def _populate(self) -> None:
         query = self.search.text().strip()
-        for cards, entries, count, empty, none_text in (
-                (self.installed_list, self._installed, self.installed_count, self.installed_empty,
+        for which, cards, entries, count, empty, none_text in (
+                ("installed", self.installed_list, self._installed, self.installed_count, self.installed_empty,
                  S.EFFECTS_NONE_INSTALLED),
-                (self.available_list, self._available, self.available_count, self.available_empty,
+                ("available", self.available_list, self._available, self.available_count, self.available_empty,
                  S.EFFECTS_NONE_AVAILABLE)):
             shown = [e for e in entries if self._matches(e, query)]
             cards.blockSignals(True)
             cards.clear()
-            for entry in shown:
-                item = QListWidgetItem()
-                item.setData(ROLE_ENTRY, entry)
-                cards.addItem(item)
-                if entry.file == self._selected:
-                    cards.setCurrentItem(item)
+            def section_of(e: Entry) -> str:
+                return FAVORITES_KEY if self._is_favorite(e) else e.group  # a favourite lives in its own section only
+
+            for group in sorted({section_of(e) for e in shown}, key=lambda g: (g != FAVORITES_KEY, g)):
+                section = [e for e in shown if section_of(e) == group]
+                folded = group in self._collapsed[which]
+                header = QListWidgetItem()
+                self._set_section(which, header, group, len(section), not folded)
+                cards.addItem(header)
+                for entry in section:
+                    item = QListWidgetItem()
+                    item.setData(ROLE_ENTRY, entry)
+                    item.setData(ROLE_FAV, self._is_favorite(entry) if entry.info is not None else None)
+                    item.setHidden(folded)
+                    cards.addItem(item)
+                    if entry.file == self._selected:
+                        cards.setCurrentItem(item)
             cards.blockSignals(False)
             count.setText(S.effects_count(len(shown), len(entries)))
             empty.setText(none_text)
@@ -435,15 +605,28 @@ class EffectsManager(GlassPanel):
 
     def select_effect(self, file: str) -> None:
         """Select the card of ``file`` in whichever list shows it."""
-        for cards in (self.installed_list, self.available_list):
+        for which in ("installed", "available"):
+            cards = self._list(which)
             for i in range(cards.count()):
-                if cards.item(i).data(ROLE_ENTRY).file == file:
+                entry = cards.item(i).data(ROLE_ENTRY)
+                if entry is not None and entry.file == file:
+                    section = FAVORITES_KEY if self._is_favorite(entry) else entry.group
+                    if section in self._collapsed[which]:
+                        self.toggle_section(which, section)  # a selection must be visible
                     cards.setCurrentRow(i)
                     return
 
+    def _on_favorite_toggled(self, item: QListWidgetItem) -> None:
+        entry = item.data(ROLE_ENTRY)
+        if entry is not None and entry.info is not None:
+            self.favorites.toggle(entry.info.effect_id)
+
+    def _is_favorite(self, entry: Entry) -> bool:
+        return entry.info is not None and self.favorites.is_favorite(entry.info.effect_id)
+
     def _on_selection(self, cards: QListWidget) -> None:
         item = cards.currentItem() if cards.selectedItems() else None
-        if item is None:
+        if item is None or item.data(ROLE_ENTRY) is None:  # nothing, or a section header
             return
         other = self.available_list if cards is self.installed_list else self.installed_list
         other.blockSignals(True)

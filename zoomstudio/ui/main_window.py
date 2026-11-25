@@ -32,6 +32,8 @@ from .icons import icon, pixmap
 from .painted import ConnectionPill, DotLabel, KeyChipButton, LiveSwitch, PaintedText, SectionLabel, StatusBar
 from .library import LibraryMixin
 from .tuner import TunerPanel
+from . import favorites as favorites_module
+from .favorites import FavoritesStore
 from .widgets import CatalogPanel, ChainView, EffectTile, ParamPanel, ParamRow, PatchList
 from .worker import PedalWorker, TransportFactory
 
@@ -114,12 +116,13 @@ class MainWindow(LibraryMixin, QMainWindow):
     def __init__(self, catalog: dict[int, EffectInfo], a1_ids: set[int] | None = None,
                  transport_factory: TransportFactory | None = None, installed_label: str = "pedal",
                  pedal_timeout: float = 3.0, backup_dir: Path | None = None,
-                 library_dir: Path | None = None) -> None:
+                 library_dir: Path | None = None, favorites: FavoritesStore | None = None) -> None:
         super().__init__()
         self.setWindowTitle("Zoom Studio")
         self.resize(1440, 900)
         self.setMinimumSize(1280, 760)
         self.catalog = catalog
+        self.favorites = favorites if favorites is not None else FavoritesStore(favorites_module.default_path())
         self.allowed_ids = a1_ids  # effects that run on the A1 FOUR (None: no restriction)
         self.backup_dir = Path(backup_dir) if backup_dir is not None else None
         self.library_dir = Path(library_dir) if library_dir is not None else None  # parent of backup-* folders
@@ -284,10 +287,9 @@ class MainWindow(LibraryMixin, QMainWindow):
         title_row = QHBoxLayout()
         title_row.setSpacing(6)
         title_row.addWidget(self.patch_number)
-        title_row.addWidget(self.name_edit)
+        title_row.addWidget(self.name_edit, stretch=1)
         title_row.addSpacing(10)
         title_row.addWidget(self.dirty_label, alignment=Qt.AlignmentFlag.AlignVCenter)
-        title_row.addStretch(1)
         meta_row = QHBoxLayout()
         meta_row.setSpacing(8)
         for widget in (QLabel(S.VOLUME), self.volume_spin):
@@ -350,8 +352,9 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.chain.tile_moved.connect(self.move_effect)
         self.params.param_changed.connect(self._on_param_changed)
 
-        self.catalog_panel = CatalogPanel(self.catalog, a1_ids, installed_label)
+        self.catalog_panel = CatalogPanel(self.catalog, a1_ids, installed_label, self.favorites)
         self.catalog_panel.effect_activated.connect(self._on_catalog_activated)
+        self.catalog_panel.manage_requested.connect(self.open_effects_screen)
 
         left_panel, catalog_panel = self._glass(left), self._glass(self.catalog_panel)
         left_panel.setFixedWidth(PATCHES_WIDTH)
@@ -371,7 +374,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.tuner_panel = TunerPanel(backdrop_root)
         self.tuner_panel.hide()
         self.tuner_panel.exit_requested.connect(lambda: self.tuner_button.setChecked(False))
-        self.effects_panel = EffectsManager(backdrop_root, self.catalog, a1_ids)
+        self.effects_panel = EffectsManager(backdrop_root, self.catalog, a1_ids, self.favorites)
         self.effects_panel.hide()
         self.effects_panel.close_requested.connect(lambda: self.effects_button.setChecked(False))
         self.effects_panel.refresh_requested.connect(self._request_effects_state)
@@ -434,6 +437,7 @@ class MainWindow(LibraryMixin, QMainWindow):
     def _set_connection(self, text: str, connected: bool, kind: str | None = None) -> None:
         """``kind`` is the colour of the dot: ok (connected), info (a folder is loaded) or none."""
         self.connection_label.setText(text)
+        self.connection_label.setMinimumWidth(max(190, self.connection_label.sizeHint().width()))  # the text always fits
         self.connection_label.set_kind(kind or ("ok" if connected else "none"))
         self.connection_label.setProperty("connected", connected)
         self.connection_label.style().unpolish(self.connection_label)
@@ -451,6 +455,8 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.tuner_button.setEnabled(self._is_connected and self._worker is not None and not self._saving
                                      and not self._effects_open)
         self.effects_button.setEnabled(not self._tuner_on and not self._saving and not self._effects_busy)
+        self.effects_action.setEnabled(self.effects_button.isEnabled() and not self._effects_open)
+        self.catalog_panel.manage_button.setEnabled(self.effects_action.isEnabled())
         blockers = self.save_blockers()
         dirty = self._location is not None and self.is_dirty(self._location)
         self.save_button.setEnabled(

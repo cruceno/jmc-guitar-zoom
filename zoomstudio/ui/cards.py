@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import math
 from functools import lru_cache
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt
+from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (
-    QColor, QFontMetrics, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QRadialGradient,
+    QColor, QFontMetrics, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QRadialGradient,
 )
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QDial, QStyle, QStyledItemDelegate
+from PySide6.QtWidgets import QDial, QListWidget, QListWidgetItem, QMenu, QStyle, QStyledItemDelegate
 
 from . import strings as S
 from . import tokens
@@ -22,6 +23,10 @@ ROLE_NUMBER = Qt.ItemDataRole.UserRole + 10   # display number of the location (
 ROLE_NAME = Qt.ItemDataRole.UserRole + 11     # patch name ("" for an empty location)
 ROLE_STRIP = Qt.ItemDataRole.UserRole + 12    # [(group, span, enabled)] per effect; None for an empty location
 ROLE_DIRTY = Qt.ItemDataRole.UserRole + 13    # unsaved edits (bool)
+
+STAR = 20  # side of the favourite star of an effect card
+STAR_ROOM = STAR + 8  # what the card text gives up at its right edge for it
+ROLE_FAV = Qt.ItemDataRole.UserRole + 21  # the effect is a favourite (bool); None: it cannot be one
 
 CARD_HEIGHT = 56
 SLOT_WIDTH = 16
@@ -90,7 +95,7 @@ class PatchCardDelegate(QStyledItemDelegate):
     """A patch as a card: number badge, name, a strip with one block per effect and an edited/empty chip."""
 
     def sizeHint(self, option, index) -> QSize:  # noqa: N802 (Qt API)
-        return QSize(option.rect.width(), CARD_HEIGHT)
+        return QSize(1, CARD_HEIGHT)  # the list stretches a row to its viewport; a real width would add a sideways scrollbar
 
     def paint(self, p: QPainter, option, index) -> None:
         strip = index.data(ROLE_STRIP)
@@ -222,11 +227,86 @@ class Knob(QDial):
 ROLE_EFFECT = Qt.ItemDataRole.UserRole + 20  # {"name", "group", "dsp", "wide", "installed", "blocked", "in_chain"}
 
 
+def star_rect(item_rect: QRect) -> QRectF:
+    """Where the star of an effect card sits inside the item's rectangle."""
+    card = QRectF(item_rect).adjusted(2, 3, -2, -3)
+    return QRectF(card.right() - 10 - STAR, card.center().y() - STAR / 2, STAR, STAR)
+
+
+def paint_star(p: QPainter, rect: QRectF, on: bool, hover: bool = False) -> None:
+    """A filled star for a favourite, an outline for an effect that is not (shape, not just colour)."""
+    c, outer, inner = rect.center(), rect.width() / 2 - 1, rect.width() / 4.2
+    points = []
+    for i in range(10):
+        radius = outer if i % 2 == 0 else inner
+        angle = math.radians(-90 + 36 * i)
+        points.append(QPointF(c.x() + radius * math.cos(angle), c.y() + radius * math.sin(angle)))
+    p.save()
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    color = tokens.color("accent" if on or hover else "text-secondary")
+    p.setPen(QPen(color, 1.4))
+    p.setBrush(color if on else Qt.BrushStyle.NoBrush)
+    p.drawPolygon(QPolygonF(points))
+    p.restore()
+
+
+class FavoriteList(QListWidget):
+    """A list of effect cards with a favourite star: a click on it, the F key or the context menu toggle it.
+
+    An item takes part when it carries ``ROLE_FAV`` (True or False); one without it has no star.
+    """
+
+    favorite_toggled = Signal(object)  # the item whose star was used
+
+    def _can_favorite(self, item: QListWidgetItem | None) -> bool:
+        return item is not None and item.data(ROLE_FAV) is not None
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        item = self.itemAt(event.position().toPoint())
+        if (event.button() == Qt.MouseButton.LeftButton and self._can_favorite(item)
+                and star_rect(self.visualItemRect(item)).adjusted(-4, -4, 4, 4).contains(event.position())):
+            self.favorite_toggled.emit(item)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        if event.key() == Qt.Key.Key_F and not event.modifiers() and self._can_favorite(self.currentItem()):
+            self.favorite_toggled.emit(self.currentItem())
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def context_menu_for(self, item: QListWidgetItem) -> QMenu | None:
+        if not self._can_favorite(item):
+            return None
+        menu = QMenu(self)
+        on = bool(item.data(ROLE_FAV))
+        action = menu.addAction(S.FAVORITE_REMOVE if on else S.FAVORITE_ADD)
+        action.triggered.connect(lambda: self.favorite_toggled.emit(item))
+        return menu
+
+    def contextMenuEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        menu = self.context_menu_for(self.itemAt(event.pos()))
+        if menu is not None:
+            menu.exec(event.globalPos())
+            event.accept()
+
+    def viewportEvent(self, event) -> bool:  # noqa: N802 (Qt API)
+        if event.type() == event.Type.ToolTip:
+            item = self.itemAt(event.pos())
+            if self._can_favorite(item) and star_rect(self.visualItemRect(item)).contains(event.pos()):
+                from PySide6.QtWidgets import QToolTip
+                QToolTip.showText(event.globalPos(), S.FAVORITE_REMOVE if item.data(ROLE_FAV) else S.FAVORITE_ADD, self)
+                return True
+        return super().viewportEvent(event)
+
+
 class EffectCardDelegate(QStyledItemDelegate):
     """A catalog effect as a card: group monogram, name, group and slots, DSP and one badge."""
 
     def sizeHint(self, option, index) -> QSize:  # noqa: N802 (Qt API)
-        return QSize(option.rect.width(), 60)
+        return QSize(1, 60)  # the list stretches a row to its viewport (a real width adds a sideways scrollbar)
 
     def paint(self, p: QPainter, option, index) -> None:
         d = index.data(ROLE_EFFECT)
@@ -259,7 +339,9 @@ class EffectCardDelegate(QStyledItemDelegate):
             p.setFont(display_font(12, 600))
             p.drawText(mono, Qt.AlignmentFlag.AlignCenter, d["name"][:2].upper())
         left = mono.right() + 12
-        right = rect.right() - 12
+        right = rect.right() - 12 - STAR_ROOM
+        if index.data(ROLE_FAV) is not None:
+            paint_star(p, star_rect(option.rect), bool(index.data(ROLE_FAV)), hover)
         dsp_font = ui_font(14)
         dsp = S.percent(d["dsp"])
         dsp_w = QFontMetrics(dsp_font).horizontalAdvance(dsp)
