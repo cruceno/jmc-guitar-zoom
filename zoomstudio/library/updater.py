@@ -15,9 +15,11 @@ from __future__ import annotations
 
 import json
 import os
+import posixpath
 import re
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import dataclass, field
@@ -25,6 +27,7 @@ from io import BytesIO
 from pathlib import Path, PurePosixPath
 from typing import Callable, Iterable, Mapping
 
+from zoomstudio.effects.models import parse_models
 from zoomstudio.effects.catalog import EffectInfo, load_catalog, load_zd2
 
 BASE_URL = "https://www.zoom.co.jp/archive/GUITAR_LAB/"
@@ -40,8 +43,8 @@ MAX_ZIP_BYTES = 2_000_000  # real zips are about 20 KB
 MAX_ZD2_BYTES = 1_000_000  # real effect files are 13 to 50 KB
 
 _FILE_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,100}\.zip$")
-_VERSION = re.compile(r"^\d\.\d{2}$")
-_NUMBERS = re.compile(r"\d+")
+_VERSION = re.compile(r"^[0-9]\.[0-9]{2}$")
+_NUMBERS = re.compile(r"[0-9]+")  # ASCII digits only: \d also matches other scripts
 
 Fetcher = Callable[[str, int], bytes]  # (url, max bytes) -> body; raises FetchError
 
@@ -81,16 +84,30 @@ def _build_opener():
 
     class Guard(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, req, fp, code, msg, headers, newurl):
-            if not newurl.startswith(BASE_URL):
+            if not within_channel(newurl):
                 raise urllib.error.URLError(f"redirect outside the channel: {newurl}")
             return super().redirect_request(req, fp, code, msg, headers, newurl)
 
     return urllib.request.build_opener(Guard())
 
 
+def within_channel(url: str) -> bool:
+    """True when ``url`` is https on the channel host and its decoded, normalised path stays under the base.
+
+    A plain prefix test let ``…/GUITAR_LAB/../../other`` through (the server resolves the dots)."""
+    base = urllib.parse.urlsplit(BASE_URL)
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != "https" or parts.netloc != base.netloc:
+        return False
+    path = urllib.parse.unquote(parts.path)
+    if any(segment in (".", "..") for segment in path.split("/")):
+        return False
+    return posixpath.normpath(path).startswith(base.path.rstrip("/") + "/") and path.startswith(base.path)
+
+
 def urllib_fetcher(url: str, max_bytes: int) -> bytes:
     """HTTPS GET of a channel URL: a timeout, a generic User-Agent, nothing else sent, a hard size limit."""
-    if not url.startswith(BASE_URL):
+    if not within_channel(url):
         raise FetchError(f"refused: outside the Guitar Lab channel: {url}")
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT}, method="GET")
     try:
@@ -349,6 +366,8 @@ class LibraryUpdater:
             raise
         except Exception as exc:  # noqa: BLE001
             raise UpdateError(str(exc)) from exc
+        if not parse_models(effects_raw):  # the app's own reader must take the list before it is saved
+            raise UpdateError("la lista de efectos no tiene ningún modelo utilizable")
         self._save_lists(effects_raw, versions_raw)
 
         held = dict(local) if local is not None else self.local_catalog()

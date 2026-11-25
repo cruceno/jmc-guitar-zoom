@@ -102,3 +102,18 @@ def test_catalog_sources_follow_the_defaults_and_add_the_library_to_explicit_fol
     (lib / "COMP_150.zd2").unlink()
     assert entry.catalog_sources([("mine", mine)], tmp_path) == [("mine", mine)]  # an empty library changes nothing
     assert entry.catalog_sources([("gone", tmp_path / "gone")], tmp_path) == []
+
+
+def test_a_broken_library_list_falls_back_to_guitar_lab_at_startup(tmp_path):
+    # verifier B1: a bad saved list made startup raise on every launch
+    gl, lib = workspace(tmp_path)
+    (lib / "AllZDL7_2.lst").write_bytes(b"<html>not a list</html>")
+    catalogs = entry.default_catalogs(tmp_path)
+    assert 0x6E001100 in entry.load_registry(catalogs, lib)
+
+
+def test_no_usable_list_gives_an_empty_registry_not_an_error(tmp_path):
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    (lib / "AllZDL7_2.lst").write_bytes(b"\x00\x01")
+    assert entry.load_registry([], lib) == {}

@@ -24,16 +24,36 @@ class PedalModel:
 
 def load_models(lst_path: str | Path) -> dict[int, PedalModel]:
     """Every model of the list that has effects (entries without any, such as the demo ones, are left out)."""
-    text = Path(lst_path).read_bytes().decode("utf-8", errors="replace").lstrip()
-    doc, _ = json.JSONDecoder().raw_decode(text)
+    return parse_models(Path(lst_path).read_bytes())
+
+
+def parse_models(raw: bytes) -> dict[int, PedalModel]:
+    """Models from the list's bytes (JSON plus trailing garbage).
+
+    The list comes from the network, so an unusable entry (not an object, a bad hex id, no effects array)
+    is skipped instead of failing the whole list; a document that is not JSON still raises ValueError.
+    """
+    doc, _ = json.JSONDecoder().raw_decode(raw.decode("utf-8", errors="replace").lstrip())
+    models = doc.get("models") if isinstance(doc, dict) else None
     found: dict[int, PedalModel] = {}
-    for model in doc.get("models", []):
-        ids = frozenset(int(e["type"], 16) for e in model.get("effects", []))
-        if not ids:
+    for model in models if isinstance(models, list) else []:
+        if not isinstance(model, dict):
             continue
-        model_id = int(model["modelId"], 16)
-        found[model_id] = PedalModel(model_id, str(model.get("modelName", f"0x{model_id:08X}")), ids)
+        model_id = _hex(model.get("modelId"))
+        effects = model.get("effects")
+        if model_id is None or not isinstance(effects, list):
+            continue
+        ids = frozenset(i for i in (_hex(e.get("type")) for e in effects if isinstance(e, dict)) if i is not None)
+        if ids:
+            found[model_id] = PedalModel(model_id, str(model.get("modelName") or f"0x{model_id:08X}"), ids)
     return found
+
+
+def _hex(value) -> int | None:
+    try:
+        return int(value, 16) if isinstance(value, str) else None
+    except ValueError:
+        return None
 
 
 def model_id_from_identity(identity) -> int:

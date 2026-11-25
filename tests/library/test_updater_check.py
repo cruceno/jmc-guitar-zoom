@@ -156,3 +156,44 @@ def test_the_same_version_without_the_update_flag_is_not_an_update(tmp_path):
     status = same.check(model_id=0x6E001100, firmware="1.01", local={}).firmware
     assert (status.newer, status.update) == (False, False)
     assert same.check(model_id=0x6E001100, firmware="1.01", local={}).firmware_updates == set()
+
+
+def test_a_saved_list_always_loads_even_with_malformed_entries(tmp_path):
+    # verifier B1: the updater saved a list that the startup reader could not load
+    bad = {"models": [{"modelId": "0x6E001100", "modelName": "A1 FOUR",
+                       "effects": [effect(COMP), {"type": "zz", "fileName": "a.zip", "version": "1.00"}]}]}
+    routes = standard_routes()
+    routes[updater.EFFECTS_LIST_URL] = __import__("json").dumps(bad).encode() + GARBAGE
+    up, _ = make(tmp_path, routes)
+    up.check(model_id=0x6E001100, local={})
+    assert 0x6E001100 in load_models(tmp_path / "lib" / "AllZDL7_2.lst")
+
+
+def test_a_list_with_no_usable_model_is_an_error_and_is_not_saved(tmp_path):
+    # verifier A4: an empty registry would leave the editor catalog unfiltered
+    routes = standard_routes()
+    routes[updater.EFFECTS_LIST_URL] = b'{"models": []}' + GARBAGE
+    up, _ = make(tmp_path, routes)
+    with pytest.raises(updater.UpdateError):
+        up.check(model_id=0x6E001100, local={})
+    assert list((tmp_path / "lib").glob("*.lst")) == []
+
+
+@pytest.mark.parametrize("url,ok", [
+    ("https://www.zoom.co.jp/archive/GUITAR_LAB/ZDLF3/COMP.zip", True),
+    ("https://www.zoom.co.jp/archive/GUITAR_LAB/../../other", False),  # verifier A2
+    ("https://www.zoom.co.jp/archive/GUITAR_LAB/%2e%2e/%2e%2e/other", False),
+    ("https://www.zoom.co.jp/archive/GUITAR_LAB/ZDLF3/./../../x", False),
+    ("https://www.zoom.co.jp/archive/GUITAR_LAB@evil.com/x", False),
+    ("http://www.zoom.co.jp/archive/GUITAR_LAB/x", False),
+    ("https://www.zoom.co.jp.evil.com/archive/GUITAR_LAB/x", False),
+])
+def test_only_normalised_paths_inside_the_channel_are_allowed(url, ok):
+    assert updater.within_channel(url) is ok
+
+
+def test_a_version_with_non_ascii_digits_is_skipped():
+    # verifier A3: \d accepted Arabic-Indic digits
+    lst = effects_lst({A1: [effect(COMP), {"type": "0x09000030", "fileName": "HALL.zip", "version": "١.٢٣"}]})
+    parsed = updater.parse_effect_list(lst)
+    assert [e.file_name for e in parsed[0x6E001100]] == ["COMP.zip"]

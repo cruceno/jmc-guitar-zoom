@@ -41,3 +41,25 @@ def test_the_model_id_comes_from_the_identity_member_byte():
 
 def test_only_the_a1_four_is_supported_today():
     assert models.SUPPORTED_MODELS == {0x6E001100}
+
+
+def test_unusable_entries_are_skipped_not_fatal(tmp_path):
+    # verifier B1: a list saved from the channel must never make the app's reader raise
+    doc = {"models": [
+        "not a dict",
+        {"modelId": "zz", "modelName": "Bad id", "effects": [{"type": "0x01000010"}]},
+        {"modelId": "0x6E000C00", "modelName": "G1 FOUR", "effects": None},
+        {"modelId": "0x6E001100", "modelName": "A1 FOUR",
+         "effects": [{"type": "0x01000010"}, {"type": "zz"}, {"fileName": "x.zip"}, "junk"]},
+    ]}
+    path = tmp_path / "AllZDL7_2.lst"
+    path.write_bytes(json.dumps(doc).encode() + b"\x00garbage")
+    found = load_models(path)
+    assert set(found) == {0x6E001100} and found[0x6E001100].effect_ids == {0x01000010}
+
+
+def test_a_list_without_a_models_array_gives_no_models(tmp_path):
+    for doc in ({"models": None}, {"models": 5}, [1, 2]):
+        path = tmp_path / "l.lst"
+        path.write_text(json.dumps(doc))
+        assert load_models(path) == {}

@@ -83,6 +83,22 @@ def find_a1_list(catalogs: list[tuple[str, Path]], library: Path | None = None) 
     return None
 
 
+def load_registry(catalogs: list[tuple[str, Path]], library: Path | None = None) -> dict:
+    """The model registry from the first list that loads: the library's copy, then Guitar Lab's cache.
+
+    A damaged list (a bad download, a hand-edited file) must never stop the app from starting."""
+    from zoomstudio.effects.models import load_models
+
+    for path in dict.fromkeys(p for p in (find_a1_list(catalogs, library), find_a1_list(catalogs)) if p):
+        try:
+            found = load_models(path)
+        except (OSError, ValueError):
+            continue
+        if found:
+            return found
+    return {}
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="zoomstudio", description="Zoom Studio - editor for the Zoom A1 FOUR")
     p.add_argument("--catalog", action="append", metavar="[LABEL=]DIR", default=[],
@@ -102,7 +118,6 @@ def main(argv: list[str] | None = None) -> int:
 
     from zoomstudio.device import MidoTransport
     from zoomstudio.effects.catalog import load_catalog
-    from zoomstudio.effects.models import load_models
     from zoomstudio.ui.main_window import MainWindow
     from zoomstudio.ui.fonts import install_spanish, register_fonts
     from zoomstudio.ui.theme import apply_dark_theme
@@ -113,15 +128,13 @@ def main(argv: list[str] | None = None) -> int:
     library = library_dir()
     catalogs = catalog_sources(explicit)
     catalog = load_catalog(*catalogs) if catalogs else {}
-    a1_list = find_a1_list(catalogs, library)
-    registry = load_models(a1_list) if a1_list else {}
+    registry = load_registry(catalogs, library)
     pedal_ids = {i for i, e in catalog.items() if PEDAL_LABEL in e.sources}  # the pedal ships some the list omits
 
     def reload_sources():
         """Catalog and model list after the updater saved new files (runs on the updater's thread: no widgets)."""
         sources = catalog_sources(explicit)
-        saved = find_a1_list(sources, library)
-        return (load_catalog(*sources) if sources else {}), (load_models(saved) if saved else {})
+        return (load_catalog(*sources) if sources else {}), load_registry(sources, library)
 
     updater = LibraryUpdater(library, extra_dirs=[f for label, f in catalogs if label != LIBRARY_LABEL])
 
