@@ -44,6 +44,7 @@ jobs:
           set -o pipefail
           ./dist/JMC_Guitar_Zoom-*-x86_64.AppImage --self-check | tee report.txt
           grep -Eq '^fonts registered: [1-9][0-9]*$' report.txt
+          grep -Eq '^MIDI backend: rtmidi \(.+\)$' report.txt
       - uses: actions/upload-artifact@v4
         with:
           name: appimage
@@ -81,6 +82,7 @@ jobs:
           Get-Content report.txt
           if ($p.ExitCode -ne 0) { throw "self-check exited with $($p.ExitCode)" }
           if (-not (Select-String -Path report.txt -Pattern '^fonts registered: [1-9][0-9]*$' -Quiet)) { throw "no fonts registered" }
+          if (-not (Select-String -Path report.txt -Pattern '^MIDI backend: rtmidi \(.+\)$' -Quiet)) { throw "no MIDI backend" }
       - name: Compile the installer with Inno Setup
         shell: pwsh
         run: |

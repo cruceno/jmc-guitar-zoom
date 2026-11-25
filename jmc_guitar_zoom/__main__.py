@@ -134,14 +134,24 @@ def self_check(report_path: str | None = None) -> int:
 
         fonts = register_fonts()
         import mido
+        import mido.backends.rtmidi  # noqa: F401 - the backend the app uses; mido would load it lazily
+        import rtmidi
 
-        ports = mido.get_output_names()
+        apis = [rtmidi.get_api_name(api) for api in rtmidi.get_compiled_api()]
+        if not apis:
+            raise RuntimeError("python-rtmidi has no compiled MIDI API")
+        try:
+            ports = mido.get_output_names()
+            outputs = ", ".join(ports) if ports else "none"
+        except Exception as exc:  # noqa: BLE001 - no MIDI service on this machine (no ALSA sequencer): not a bundle fault
+            outputs = f"unavailable ({type(exc).__name__}: {exc})"
         gl = paths.guitarlab_dir()
         lines = [
             f"jmc-guitar-zoom {__version__}",
             f"data folder: {paths.data_root()}",
             f"fonts registered: {len(fonts)}",
-            f"MIDI outputs: {', '.join(ports) if ports else 'none'}",
+            f"MIDI backend: rtmidi ({', '.join(apis)})",
+            f"MIDI outputs: {outputs}",
             f"Guitar Lab: {gl if gl else 'none'}",
         ]
         del app
