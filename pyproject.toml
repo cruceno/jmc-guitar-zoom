@@ -1,8 +1,11 @@
 [project]
-name = "zoom-studio"
+name = "jmc-guitar-zoom"
 version = "0.1.0"
-description = "Qt desktop editor for Zoom FOUR-series pedals (A1 FOUR), forked from mungewell/zoom-zt2"
+description = "Unofficial Qt desktop editor for the Zoom A1 FOUR guitar pedal (independent derivative of mungewell/zoom-zt2)"
+readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE", "NOTICE.md", "THIRD_PARTY_NOTICES.md"]
+keywords = ["zoom", "a1-four", "guitar", "pedal", "midi", "sysex", "pyside6"]
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "PySide6>=6.8",
@@ -12,8 +15,13 @@ dependencies = [
     "crcmod==1.7",
 ]
 
+[project.urls]
+Homepage = "https://github.com/cruceno/jmc-guitar-zoom"
+Repository = "https://github.com/cruceno/jmc-guitar-zoom"
+Issues = "https://github.com/cruceno/jmc-guitar-zoom/issues"
+
 [project.scripts]
-zoom-studio = "zoomstudio.__main__:main"
+jmc-guitar-zoom = "jmc_guitar_zoom.__main__:main"
 
 [dependency-groups]
 dev = [

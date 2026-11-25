@@ -1,4 +1,8 @@
 """Skip the tests marked ``zoom_files`` when the files from ``scripts/fetch_test_fixtures.py`` are not there."""
+import os
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # before anything imports PySide6: never open a real window
+
 import pytest
 
 from fixture_files import ZOOM_FILES, have_zoom_files
