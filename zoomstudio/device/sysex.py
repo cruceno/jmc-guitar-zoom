@@ -195,6 +195,33 @@ def file_read_block_request(model: int = DEFAULT_MODEL) -> bytes:
     return header(model) + bytes.fromhex("60 22 14 2f 60 00 0c 00 04 00 00 00".replace(" ", ""))
 
 
+FILE_BLOCK_SIZE = 512  # zoomzt2's upload chunk; Guitar Lab's own size is unknown
+
+
+def check_file_name(name: str) -> str:
+    """Pedal file names are 8.3 ASCII with no directory, at most 12 characters."""
+    if (not name or len(name) > 12 or "/" in name or "\\" in name
+            or not name.isascii() or not name.isprintable()):
+        raise ValueError(f"not a pedal file name: {name!r}")
+    return name
+
+
+def file_delete_request(name: str, model: int = DEFAULT_MODEL) -> bytes:
+    return header(model) + b"\x60\x24" + _filename(check_file_name(name))
+
+
+def file_open_write_request(name: str, model: int = DEFAULT_MODEL) -> bytes:
+    return header(model) + b"\x60\x20\x01" + bytes(9) + _filename(check_file_name(name))
+
+
+def file_write_block_request(block: bytes, model: int = DEFAULT_MODEL) -> bytes:
+    """One upload block: ``60 23 40 00 00 00 00 len(14 bit) 00 00 00`` + packed data + CRC."""
+    if not 0 < len(block) <= FILE_BLOCK_SIZE:
+        raise ValueError(f"block must hold 1..{FILE_BLOCK_SIZE} bytes, got {len(block)}")
+    return (header(model) + b"\x60\x23\x40\x00\x00\x00\x00" + _split14(len(block)) + bytes(3)
+            + pack7(block) + crc_trailer(block))
+
+
 def file_close_request(model: int = DEFAULT_MODEL) -> list[bytes]:
     """The two messages that close an open file (each gets one reply)."""
     return [header(model) + b"\x60\x21\x40\x00\x00\x00\x00", header(model) + b"\x60\x09"]

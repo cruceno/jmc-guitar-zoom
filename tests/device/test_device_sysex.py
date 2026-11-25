@@ -102,12 +102,6 @@ def test_file_request_builders():
     assert sysex.disk_usage_request(MODEL) == HDR + b"\x60\x29" + bytes(5)
 
 
-def test_no_builder_emits_upload_or_delete():
-    # S5: upload (60 23/24) and FLST_SEQ writes belong to a later task.
-    assert not hasattr(sysex, "file_upload_request")
-    assert not hasattr(sysex, "file_delete_request")
-
-
 def test_parse_identity():
     ident = sysex.parse_identity_reply(identity_reply(0x6E))
     assert (ident.manufacturer, ident.model) == (0x52, 0x6E)
