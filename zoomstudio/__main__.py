@@ -98,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
                         installed_label=PEDAL_LABEL, backup_dir=autosave_dir(),
                         library_dir=workspace_root() / "patches")
     if not catalogs:
-        window.statusBar().showMessage("No effect catalog found: pass --catalog DIR")
+        window.statusBar().showMessage("No se encontró un catálogo de efectos: indique --catalog DIR")
     if args.offline:
         window.load_offline(Path(args.offline))
     window.show()

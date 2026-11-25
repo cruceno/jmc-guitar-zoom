@@ -3,7 +3,8 @@ import json
 import pytest
 from PySide6.QtCore import QByteArray, QMimeData, QPointF, Qt
 from PySide6.QtGui import QDropEvent
-from PySide6.QtWidgets import QMessageBox
+from zoomstudio.ui import strings
+from zoomstudio.ui.dialogs import ConfirmDialog
 
 from ui_replies import FIXTURES, HDR, S, fake_pedal, patch_reply
 from zoomstudio.device import sysex
@@ -53,9 +54,9 @@ def yes(monkeypatch):
 
     def question(parent, title, text, *a, **k):
         asked.append(text)
-        return QMessageBox.StandardButton.Yes
+        return True
 
-    monkeypatch.setattr(QMessageBox, "question", staticmethod(question))
+    monkeypatch.setattr(ConfirmDialog, "ask", staticmethod(question))
     return asked
 
 
@@ -136,7 +137,7 @@ def test_backup_all_refuses_an_existing_folder(qtbot, catalog, tmp_path):
     with qtbot.waitSignal(w.backup_finished, timeout=5000) as blocker:
         w.backup_all(with_files=False, stamp="20260101-120000")
     assert blocker.args[1] is False
-    assert errors and "already exists" in errors[0]
+    assert errors and "ya existe" in errors[0]
     assert [p.name for p in existing.iterdir()] == ["keep.txt"]
     assert len(wire(t)) == before  # nothing was asked of the pedal
 
@@ -204,7 +205,7 @@ def test_swap_stops_after_a_failed_first_write_and_leaves_the_second_untouched(q
     with qtbot.waitSignal(w.queue_finished, timeout=5000) as blocker:
         w.swap_patches(43, 44)
     assert blocker.args == [[], 43]
-    assert errors and "52" in errors[0] and "stopped" in errors[0]
+    assert errors and "52" in errors[0] and "detenida" in errors[0]
     ops = wire(t)[before:]
     assert sum(d.startswith(HDR + b"\x45") for d in ops) == 1  # only slot 43 was attempted
     assert sysex.read_patch_request(44, 10, M) not in ops
@@ -260,11 +261,11 @@ def test_import_folder_with_a_non_a1_effect_blocks_save_with_the_reason(qtbot, c
     w.error_shown.connect(errors.append)
     w.import_folder(folder)
     w.select_location(44)
-    assert any("Hall" in e and "does not run on the A1 FOUR" in e for e in errors)
+    assert any("Hall" in e and edit.NOT_RUNNABLE_REASON in e for e in errors)
     assert not any(d.startswith(HDR + b"\x45") for d in wire(t)[before:])  # nothing written
     assert w.is_dirty(44) and w._patches[44].name == "HB Jazz"
     hall = [x for x in w.chain_tiles() if x.effect_name == "Hall"][0]
-    assert hall.problem == "does not run on the A1 FOUR"
+    assert hall.problem == edit.NOT_RUNNABLE_REASON
     assert not w.save_button.isEnabled() and "Hall" in w.save_button.toolTip()
     w.save_current_patch()
     assert not any(d.startswith(HDR + b"\x45") for d in wire(t)[before:])
@@ -275,12 +276,12 @@ def test_unknown_effect_blocks_save(qtbot, catalog, tmp_path):
     w.select_location(1)  # backup 001 holds effects that are not in the fixture catalog
     w.rename_patch("Edited")
     assert w.is_dirty(1) and not w.save_button.isEnabled()
-    assert "unknown effect, DSP load cannot be checked" in w.save_button.toolTip()
-    assert any(x.problem == "unknown effect, DSP load cannot be checked" for x in w.chain_tiles())
+    assert edit.UNKNOWN_EFFECT_REASON in w.save_button.toolTip()
+    assert any(x.problem == edit.UNKNOWN_EFFECT_REASON for x in w.chain_tiles())
     before, errors = len(wire(t)), []
     w.error_shown.connect(errors.append)
     w.save_current_patch()
-    assert errors and "unknown effect" in errors[0]
+    assert errors and edit.UNKNOWN_EFFECT_REASON in errors[0]
     assert len(wire(t)) == before
 
 
@@ -344,7 +345,7 @@ def test_offline_copy_paste_swap_clear_mark_dirty_without_sending(offline, yes):
 
 def test_declining_the_swap_changes_nothing(offline, monkeypatch):
     w, t = offline
-    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.StandardButton.No))
+    monkeypatch.setattr(ConfirmDialog, "ask", staticmethod(lambda *a, **k: False))
     w.swap_patches(1, 2)
     assert w._patches[1].name == "AG D-28" and not w.any_dirty()
 
@@ -366,7 +367,7 @@ def test_pasting_without_a_copy_reports_it(offline):
     errors = []
     w.error_shown.connect(errors.append)
     w.paste_patch(5)
-    assert errors and "copy" in errors[0].lower() and not w.any_dirty()
+    assert errors == [strings.ERR_NOTHING_TO_PASTE] and not w.any_dirty()
 
 
 def test_export_selected_and_all_then_import_back(offline, tmp_path, yes):
@@ -378,7 +379,7 @@ def test_export_selected_and_all_then_import_back(offline, tmp_path, yes):
     errors = []
     w.error_shown.connect(errors.append)
     w.export_selected(dest, 44)  # same file again: refused, not overwritten
-    assert errors and "exists" in errors[0].lower()
+    assert errors and "ya existe" in errors[0].lower()
     folder = w.export_all(dest)
     assert sorted(p.name for p in folder.glob("*.zptc")) == ["001.zptc", "002.zptc", "003.zptc", "044.zptc"]
     assert json.loads((folder / "manifest.json").read_text())["patches"][3]["location"] == 44

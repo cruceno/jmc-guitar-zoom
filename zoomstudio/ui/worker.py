@@ -21,7 +21,22 @@ from zoomstudio.patches.edit import compare_patches
 from zoomstudio.patches.model import Patch
 from zoomstudio.patches.zptc import parse_zptc
 
+from . import strings as S
+
 TransportFactory = Callable[[], Transport]
+
+
+def describe_error(exc: BaseException) -> str:
+    """Spanish sentence for a pedal error, with the technical detail of low-level errors appended."""
+    from zoomstudio.device.errors import ChecksumError, PedalProtocolError, PedalTimeout
+
+    if isinstance(exc, PedalTimeout):
+        return S.with_detail(S.ERR_NO_REPLY, exc)
+    if isinstance(exc, (ChecksumError, PedalProtocolError)):
+        return S.with_detail(S.ERR_BAD_REPLY, exc)
+    return str(exc) or type(exc).__name__
+
+
 TUNER_POLL_MS = 50  # how often the worker thread drains tuner traffic while the tuner is on
 
 
@@ -69,11 +84,11 @@ class PedalWorker(QObject):
         self._cancel.set()
 
     def _fail(self, exc: BaseException) -> None:
-        self.error.emit(str(exc) or type(exc).__name__)
+        self.error.emit(describe_error(exc))
 
     def _require_client(self) -> PedalClient | None:
         if self._client is None:
-            self.error.emit("Not connected to the pedal")
+            self.error.emit(S.ERR_NOT_CONNECTED)
         return self._client
 
     def _close_transport(self) -> None:
@@ -124,7 +139,7 @@ class PedalWorker(QObject):
                     try:
                         patch = parse_zptc(client.read_patch(location))
                     except ValueError as exc:  # one undecodable patch must not stop the rest
-                        self.error.emit(f"Patch {location + 9}: {exc}")
+                        self.error.emit(S.err_patch(location + 9, describe_error(exc)))
                         continue
                     self.patch_loaded.emit(location, patch)
                     self.progress.emit(location, self._count)
@@ -159,7 +174,7 @@ class PedalWorker(QObject):
             self.save_finished.emit(location, False)
             return
         if backup_dir is None:
-            self.error.emit("No backup folder configured: refusing to write to the pedal")
+            self.error.emit(S.ERR_NO_BACKUP_DIR)
             self.save_finished.emit(location, False)
             return
         readback: bytes | None = None
@@ -175,11 +190,11 @@ class PedalWorker(QObject):
             if guard_error is None:
                 guard_error = exc
         if readback is None:
-            self._fail(guard_error or RuntimeError("save failed"))
+            self._fail(guard_error or RuntimeError(S.ERR_SAVE_FAILED))
             self.save_finished.emit(location, False)
             return
         if guard_error is not None:
-            self.error.emit(f"PC mode could not be switched off cleanly: {guard_error}")
+            self.error.emit(S.err_pc_mode_off(guard_error))
         try:
             stored = self._verify(location, data, readback)
         except _ReadBackError as exc:
@@ -206,10 +221,9 @@ class PedalWorker(QObject):
             stored = parse_zptc(readback)
             diffs = compare_patches(parse_zptc(data), stored)
         except ValueError as exc:
-            raise _ReadBackError(f"Read-back of patch {location + 9} is not valid: {exc}") from exc
+            raise _ReadBackError(S.err_readback_invalid(location + 9, exc)) from exc
         if diffs:
-            raise _ReadBackError(f"Patch {location + 9} read-back differs from what was sent: "
-                                 + "; ".join(diffs[:4]))
+            raise _ReadBackError(S.err_readback_differs(location + 9, diffs))
         return stored
 
     @Slot(object, object)
@@ -225,7 +239,7 @@ class PedalWorker(QObject):
             self.queue_finished.emit([], items[0][0] if items else 0)
             return
         if backup_dir is None:
-            self.error.emit("No backup folder configured: refusing to write to the pedal")
+            self.error.emit(S.ERR_NO_BACKUP_DIR)
             self.queue_finished.emit([], items[0][0] if items else 0)
             return
         self._cancel.clear()
@@ -236,27 +250,27 @@ class PedalWorker(QObject):
                 for location, data in items:
                     if self._cancel.is_set():
                         failed = location
-                        self.error.emit(self._stopped(location, written, "cancelled"))
+                        self.error.emit(self._stopped(location, written, S.CANCELLED))
                         break
                     try:
                         readback, backup = self._read_write_read(client, location, data, backup_dir)
                         stored = self._verify(location, data, readback)
                     except (PedalError, OSError, _ReadBackError) as exc:
                         failed = location
-                        self.error.emit(self._stopped(location, written, str(exc) or type(exc).__name__))
+                        self.error.emit(self._stopped(location, written, describe_error(exc)))
                         break
                     written.append(location)
                     self.patch_saved.emit(location, stored, str(backup))
         except (PedalError, OSError) as exc:  # PC mode on/off failed
-            self.error.emit(f"PC mode could not be switched cleanly: {exc}")
+            self.error.emit(S.err_pc_mode_switch(exc))
             if not written and not failed and items:
                 failed = items[0][0]
         self.queue_finished.emit(written, failed)
 
     @staticmethod
     def _stopped(location: int, written: list[int], why: str) -> str:
-        done = ", ".join(str(n + 9) for n in written) or "none"
-        return f"Patch {location + 9}: {why}. Queue stopped; slots written: {done}"
+        done = ", ".join(str(n + 9) for n in written) or S.NONE_WRITTEN
+        return S.err_queue_stopped(location + 9, why, done)
 
     @Slot(object, bool, object)
     def backup_all(self, dest_parent, with_files: bool, stamp=None) -> None:
@@ -273,7 +287,7 @@ class PedalWorker(QObject):
         try:
             dest = library.new_folder(dest_parent, "backup", stamp)
         except FileExistsError:
-            self.error.emit(f"Backup folder backup-{stamp} already exists: nothing was written")
+            self.error.emit(S.err_backup_folder_exists(stamp))
             self.backup_finished.emit("", False)
             return
         except OSError as exc:
@@ -320,11 +334,11 @@ class PedalWorker(QObject):
             except PedalError as exc:
                 entry["status"] = f"error: {exc}"
                 ok, streak = False, streak + 1
-                self.error.emit(f"Patch {location + 9}: {exc}")
+                self.error.emit(S.err_patch(location + 9, describe_error(exc)))
             manifest["patches"].append(entry)
             self.backup_progress.emit("patches", location, self._count)
             if streak >= 3:
-                self.error.emit("Backup aborted after 3 consecutive read failures")
+                self.error.emit(S.ERR_BACKUP_ABORTED)
                 return False
         return ok
 
@@ -333,7 +347,7 @@ class PedalWorker(QObject):
         try:
             dest = library.new_folder(parent, "pedal-files", stamp)
         except FileExistsError:
-            self.error.emit(f"Folder pedal-files-{stamp} already exists: pedal files were not saved")
+            self.error.emit(S.err_files_folder_exists(stamp))
             return False
         ok = True
         files = []
@@ -347,7 +361,7 @@ class PedalWorker(QObject):
             except PedalError as exc:
                 ok = False
                 files.append({"name": name, "error": str(exc)})
-                self.error.emit(f"File {name}: {exc}")
+                self.error.emit(S.err_file(name, describe_error(exc)))
             self.backup_progress.emit("files", i, len(names))
         manifest["pedal_files_folder"] = dest.name
         manifest["pedal_files"] = files

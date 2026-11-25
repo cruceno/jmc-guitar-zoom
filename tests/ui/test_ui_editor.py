@@ -3,6 +3,9 @@ from PySide6.QtCore import QMimeData, QPointF, Qt
 from PySide6.QtGui import QDropEvent
 from PySide6.QtWidgets import QMessageBox
 
+from zoomstudio.ui import strings
+from zoomstudio.ui.dialogs import ConfirmDialog
+
 from ui_replies import FIXTURES, HDR, S, fake_pedal, patch_reply, queue_save
 from zoomstudio.device import sysex
 from zoomstudio.device.messages import SysexMessage
@@ -297,7 +300,7 @@ def test_read_back_mismatch_keeps_the_patch_dirty_and_reports(qtbot, catalog, tm
     with qtbot.waitSignal(w.save_finished, timeout=5000) as blocker:
         w.save_current_patch()
     assert blocker.args == [False]
-    assert any("differs" in e for e in errors)
+    assert any(strings.ERR_READBACK_DIFFERS in e for e in errors)
     assert w.is_dirty(44) and w.current_patch.name == "Edited"
     assert wire(t)[-1] == sysex.pc_mode(False, 0x6E)
     w.close()
@@ -333,7 +336,7 @@ def test_save_is_refused_without_a_backup_folder(qtbot, catalog):
     errors = []
     w.error_shown.connect(errors.append)
     w.save_current_patch()
-    assert errors and "backup" in errors[0].lower()
+    assert errors == [strings.ERR_NO_BACKUP_DIR]
     assert not any(m.startswith(HDR + b"\x45") for m in wire(t))
     w.close()
 
@@ -365,9 +368,9 @@ def test_open_file_reports_a_bad_file(window, tmp_path):
 def answer(monkeypatch, button, calls):
     def fake(*args, **kwargs):
         calls.append(args)
-        return button
+        return button == QMessageBox.StandardButton.Discard
 
-    monkeypatch.setattr(QMessageBox, "question", staticmethod(fake))
+    monkeypatch.setattr(ConfirmDialog, "ask", staticmethod(fake))
 
 
 def test_reload_asks_before_discarding_edits(window, monkeypatch):

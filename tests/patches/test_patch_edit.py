@@ -88,7 +88,7 @@ def test_dsp_percent_sums_catalog_loads():
 def test_compare_patches_reports_named_field_differences():
     assert edit.compare_patches(edit.sent_form(HB), HB) == []
     other = edit.set_param(HB, 1, 1, 10)
-    assert any("param" in d.lower() for d in edit.compare_patches(edit.sent_form(HB), other))
+    assert any("parámetro" in d.lower() for d in edit.compare_patches(edit.sent_form(HB), other))
     assert edit.compare_patches(HB, edit.rename(HB, "Other"))
     assert edit.compare_patches(HB, edit.set_volume(HB, 3))
     assert edit.compare_patches(HB, edit.set_enabled(HB, 0, False))

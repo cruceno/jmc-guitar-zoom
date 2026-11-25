@@ -37,8 +37,8 @@ def test_slot_problems_flag_unknown_and_non_a1_effects():
 
 def test_save_blockers_cover_unknown_dsp_and_slot_cap():
     assert edit.save_blockers(patch_with(0x10, 0x20), CATALOG, None) == []
-    assert "unknown effect" in edit.save_blockers(patch_with(0x99), CATALOG, None)[0]
-    assert "DSP load is 110%" in edit.save_blockers(patch_with(*[0x10] * 11), CATALOG, None)[0]
+    assert edit.UNKNOWN_EFFECT_REASON in edit.save_blockers(patch_with(0x99), CATALOG, None)[0]
+    assert "carga de DSP es 110 %" in edit.save_blockers(patch_with(*[0x10] * 11), CATALOG, None)[0]
     nine_wide = edit.save_blockers(patch_with(*[0x20] * 9), CATALOG, None)  # 18 slots with fillers
     assert len(nine_wide) == 1 and "18 slots" in nine_wide[0]
 

@@ -13,9 +13,10 @@ from PySide6.QtWidgets import (
 from zoomstudio.effects.catalog import EffectInfo
 from zoomstudio.patches.model import EffectSlot, Patch
 
+from . import strings as S
 from .theme import group_color
 
-ALL_GROUPS = "All groups"
+ALL_GROUPS = S.ALL_GROUPS
 MIME_EFFECT = "application/x-zoomstudio-effect"  # payload: catalog effect ID (decimal text)
 MIME_SLOT = "application/x-zoomstudio-slot"  # payload: slot index of a chain tile (decimal text)
 MIME_PATCH = "application/x-zoomstudio-patch"  # payload: location of a patch in the list (decimal text)
@@ -55,13 +56,13 @@ class EffectTile(QFrame):
         self._press_pos = None
         self._color = group_color(self.group) if info else QColor("#555a62")
         layout = QVBoxLayout(self)
-        self.name_label = QLabel(label or "empty")
+        self.name_label = QLabel(label or S.PEDAL_EMPTY)
         self.name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         font = self.name_label.font()
         font.setBold(True)
         font.setPointSize(font.pointSize() + 1)
         self.name_label.setFont(font)
-        self.group_label = QLabel(self.group.title() if not slot.is_empty else "")
+        self.group_label = QLabel(S.group_label(self.group) if not slot.is_empty else "")
         self.group_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.power = QToolButton()
         self.power.setCheckable(True)
@@ -75,7 +76,7 @@ class EffectTile(QFrame):
         layout.addWidget(self.power, alignment=Qt.AlignmentFlag.AlignHCenter)
         self.remove_button = QToolButton(self)
         self.remove_button.setText("x")
-        self.remove_button.setToolTip("Remove this effect")
+        self.remove_button.setToolTip(S.REMOVE_EFFECT)
         self.remove_button.setAutoRaise(True)
         self.remove_button.setVisible(not slot.is_empty)
         self.remove_button.clicked.connect(lambda: self.remove_requested.emit(self.slot_index))
@@ -83,16 +84,15 @@ class EffectTile(QFrame):
         self.remove_button.move(4, 4)
         self.remove_button.raise_()
         if slot.is_empty:
-            self.setToolTip("Empty slot")
+            self.setToolTip(S.SLOT_EMPTY_TIP)
         elif info:
-            self.setToolTip(f"{info.name} ({info.group}) - {info.dsp_load_percent:.1f}% DSP"
-                            + (" - occupies two slots" if self.is_wide else ""))
+            self.setToolTip(S.tile_tip(info.name, S.group_label(info.group), info.dsp_load_percent, self.is_wide))
         if problem:
-            self.setToolTip(f"Cannot be written to the pedal: {problem}\n" + self.toolTip())
+            self.setToolTip(S.tile_problem_tip(problem) + self.toolTip())
         self.set_selected(False)
 
     def _sync_power_text(self) -> None:
-        self.power.setText("ON" if self.power.isChecked() else "OFF")
+        self.power.setText(S.POWER_ON if self.power.isChecked() else S.POWER_OFF)
 
     def _on_power(self, on: bool) -> None:
         self.is_enabled_effect = on
@@ -301,7 +301,7 @@ class ParamPanel(QWidget):
         super().__init__()
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        self.title = QLabel("Select an effect in the chain")
+        self.title = QLabel(S.SELECT_EFFECT)
         self.title.setStyleSheet("font-weight: bold;")
         self.description = QLabel("")
         self.description.setWordWrap(True)
@@ -318,7 +318,7 @@ class ParamPanel(QWidget):
     def rows(self) -> list[ParamRow]:
         return list(self._rows)
 
-    def clear(self, message: str = "Select an effect in the chain") -> None:
+    def clear(self, message: str = S.SELECT_EFFECT) -> None:
         for row in self._rows:
             self._grid.removeWidget(row)
             row.setParent(None)
@@ -330,9 +330,9 @@ class ParamPanel(QWidget):
     def show_effect(self, slot: EffectSlot, info: EffectInfo | None) -> None:
         self.clear()
         if info is None:
-            self.title.setText(f"Effect 0x{slot.effect_id:08X} is not in the catalog (no parameter ranges)")
+            self.title.setText(S.unknown_effect_title(slot.effect_id))
             return
-        self.title.setText(f"{info.name}  -  {info.group.title()}")
+        self.title.setText(f"{info.name}  -  {S.group_label(info.group)}")
         self.description.setText(info.description)
         for i, param in enumerate(info.params[: len(slot.params)]):
             row = ParamRow(i, param.name, param.max, param.default, slot.params[i], param.explanation)
@@ -367,12 +367,13 @@ class CatalogPanel(QWidget):
         self._a1_ids = a1_ids
         self._installed_label = installed_label
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search effects...")
+        self.search.setPlaceholderText(S.SEARCH_EFFECTS)
         self.search.setClearButtonEnabled(True)
         self.group_combo = QComboBox()
         self.group_combo.addItem(ALL_GROUPS)
-        self.group_combo.addItems(sorted({e.group for e in catalog.values()}))
-        self.a1_check = QCheckBox("A1 FOUR compatible")
+        for group in sorted({e.group for e in catalog.values()}):
+            self.group_combo.addItem(S.group_label(group), group)
+        self.a1_check = QCheckBox(S.ONLY_A1)
         self.a1_check.setEnabled(a1_ids is not None)
         self.list = _CatalogList()
         self.preview = QLabel()
@@ -382,7 +383,7 @@ class CatalogPanel(QWidget):
         self.detail.setWordWrap(True)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(QLabel("Effect catalog"))
+        layout.addWidget(QLabel(S.CATALOG_TITLE))
         layout.addWidget(self.search)
         layout.addWidget(self.group_combo)
         layout.addWidget(self.a1_check)
@@ -390,7 +391,7 @@ class CatalogPanel(QWidget):
         layout.addWidget(self.preview)
         layout.addWidget(self.detail)
         self.search.textChanged.connect(self.refresh)
-        self.group_combo.currentTextChanged.connect(self.refresh)
+        self.group_combo.currentIndexChanged.connect(self.refresh)
         self.a1_check.toggled.connect(self.refresh)
         self.list.currentItemChanged.connect(self._on_current)
         self.list.itemDoubleClicked.connect(lambda item: self.effect_activated.emit(item.data(_ID_ROLE)))
@@ -403,8 +404,8 @@ class CatalogPanel(QWidget):
         text = self.search.text().strip().lower()
         if text and text not in info.name.lower() and text not in info.group.lower():
             return False
-        group = self.group_combo.currentText()
-        if group != ALL_GROUPS and info.group != group:
+        group = self.group_combo.currentData()
+        if group is not None and info.group != group:
             return False
         return not (self.a1_check.isChecked() and self._a1_ids is not None
                     and info.effect_id not in self._a1_ids)
@@ -414,8 +415,7 @@ class CatalogPanel(QWidget):
         for info in sorted(self._catalog.values(), key=lambda e: (e.group, e.name.lower())):
             if not self._matches(info):
                 continue
-            flag = "  [on pedal]" if self._is_installed(info) else ""
-            item = QListWidgetItem(f"{info.name}   {info.group.title()}   {info.dsp_load_percent:.1f}%{flag}")
+            item = QListWidgetItem(S.catalog_row(info.name, info.group, info.dsp_load_percent, self._is_installed(info)))
             item.setData(_ID_ROLE, info.effect_id)
             item.setData(_NAME_ROLE, info.name)
             item.setForeground(group_color(info.group).lighter(150))
@@ -434,9 +434,8 @@ class CatalogPanel(QWidget):
             pixmap = render_svg(info.svg_path, 220)
             if pixmap is not None:
                 self.preview.setPixmap(pixmap)
-        slots = "2 slots" if info.is_wide else "1 slot"
         where = ", ".join(info.sources) or "-"
-        self.detail.setText(f"{info.description}\n{info.dsp_load_percent:.1f}% DSP, {slots}. In: {where}")
+        self.detail.setText(S.catalog_detail(info.description, info.dsp_load_percent, info.is_wide, where))
 
     def preview_has_image(self) -> bool:
         pixmap = self.preview.pixmap()

@@ -83,13 +83,13 @@ def rename(patch: Patch, name: str) -> Patch:
     out = copy.deepcopy(patch)
     out.name = name
     if len(name) > NAME_MAX_LEN or not all(32 <= ord(c) < 127 for c in name):
-        raise ValueError(f"name must be at most {NAME_MAX_LEN} printable ASCII characters")
+        raise ValueError(f"el nombre admite hasta {NAME_MAX_LEN} caracteres ASCII imprimibles")
     return out
 
 
 def set_volume(patch: Patch, volume: int) -> Patch:
     if not 0 <= volume <= VOLUME_MAX:
-        raise ValueError(f"volume must be 0..{VOLUME_MAX}")
+        raise ValueError(f"el volumen debe estar entre 0 y {VOLUME_MAX}")
     out = copy.deepcopy(patch)
     out.volume = volume
     return out
@@ -97,7 +97,7 @@ def set_volume(patch: Patch, volume: int) -> Patch:
 
 def set_param(patch: Patch, slot_index: int, index: int, value: int) -> Patch:
     if not 0 <= index < PARAM_COUNT or not 0 <= value <= PARAM_MAX[index]:
-        raise ValueError(f"parameter {index} must be 0..{PARAM_MAX[index] if 0 <= index < PARAM_COUNT else '?'}")
+        raise ValueError(f"el parámetro {index} debe estar entre 0 y {PARAM_MAX[index] if 0 <= index < PARAM_COUNT else '?'}")
     out = copy.deepcopy(patch)
     out.effects[slot_index].params[index] = value
     return out
@@ -147,7 +147,7 @@ def _pad(logical: list[EffectSlot], length: int) -> None:
 def replace_effect(patch: Patch, slot_index: int, effect_id: int, catalog: Mapping[int, Any]) -> Patch:
     info = catalog.get(effect_id)
     if info is None:
-        raise ValueError(f"effect 0x{effect_id:08X} is not in the catalog")
+        raise ValueError(f"el efecto 0x{effect_id:08X} no está en el catálogo")
     logical = copy.deepcopy(logical_slots(patch))
     pos = logical_index(patch.effects, slot_index)
     _pad(logical, pos + 1)
@@ -168,7 +168,7 @@ def move_effect(patch: Patch, from_slot: int, to_slot: int, catalog: Mapping[int
     src = logical_index(patch.effects, from_slot)
     dst = logical_index(patch.effects, to_slot)
     if src >= len(logical):
-        raise ValueError("nothing to move")
+        raise ValueError("no hay nada que mover")
     _pad(logical, dst + 1)
     logical.insert(dst, logical.pop(src))
     return _assemble(patch, logical, catalog)
@@ -201,26 +201,26 @@ def compare_patches(sent: Patch, got: Patch) -> list[str]:
     (n1, v1, s1), (n2, v2, s2) = _comparable(sent), _comparable(got)
     diffs: list[str] = []
     if n1 != n2:
-        diffs.append(f"name {n1!r} != {n2!r}")
+        diffs.append(f"nombre {n1!r} != {n2!r}")
     if v1 != v2:
-        diffs.append(f"volume {v1} != {v2}")
+        diffs.append(f"volumen {v1} != {v2}")
     if [s[0] for s in s1] != [s[0] for s in s2]:
-        diffs.append("effects " + ",".join(f"{s[0]:08X}" for s in s1) + " != "
+        diffs.append("efectos " + ",".join(f"{s[0]:08X}" for s in s1) + " != "
                      + ",".join(f"{s[0]:08X}" for s in s2))
         return diffs
     for i, (a, b) in enumerate(zip(s1, s2)):
         if a[1] != b[1]:
-            diffs.append(f"effect {i}: enabled {a[1]} != {b[1]}")
+            diffs.append(f"efecto {i}: encendido {a[1]} != {b[1]}")
         if a[2] != b[2]:
-            changed = [f"param{k + 1} {x} != {y}" for k, (x, y) in enumerate(zip(a[2] or (), b[2] or ())) if x != y]
-            diffs.append(f"effect {i}: " + ", ".join(changed))
+            changed = [f"parámetro{k + 1} {x} != {y}" for k, (x, y) in enumerate(zip(a[2] or (), b[2] or ())) if x != y]
+            diffs.append(f"efecto {i}: " + ", ".join(changed))
     return diffs
 
 
 # ------------------------------------------------------- save eligibility
 
-UNKNOWN_EFFECT_REASON = "unknown effect, DSP load cannot be checked"
-NOT_RUNNABLE_REASON = "does not run on the A1 FOUR"
+UNKNOWN_EFFECT_REASON = "efecto desconocido: no se puede comprobar la carga de DSP"
+NOT_RUNNABLE_REASON = "no funciona en la A1 FOUR"
 
 
 def slot_problems(patch: Patch, catalog: Mapping[int, Any], allowed_ids: set[int] | None) -> dict[int, str]:
@@ -249,12 +249,12 @@ def save_blockers(patch: Patch, catalog: Mapping[int, Any], allowed_ids: set[int
         reasons.append(f"{info.name if info else '0x%08X' % patch.effects[i].effect_id}: {why}")
     dsp = dsp_percent(patch, catalog)
     if dsp > DSP_LIMIT_PERCENT + 1e-9:
-        reasons.append(f"DSP load is {dsp:.0f}%: it must be 100% or less to save")
+        reasons.append(f"la carga de DSP es {dsp:.0f} %: debe ser 100 % o menos para guardar")
     try:
         chain = len(with_fillers(patch, catalog).effects)
     except Exception:  # a malformed chain is reported by the other checks
         chain = len(patch.effects)
     if chain > MAX_EFFECT_SLOTS:
-        reasons.append(f"the chain needs {chain} slots with the wide-effect fillers; the maximum is "
+        reasons.append(f"la cadena necesita {chain} slots con los rellenos de los efectos anchos; el máximo es "
                        f"{MAX_EFFECT_SLOTS}")
     return reasons

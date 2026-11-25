@@ -8,6 +8,7 @@ from zoomstudio.device import sysex
 from zoomstudio.device.messages import SysexMessage
 from zoomstudio.device.transport import FakeTransport
 from zoomstudio.patches.model import Patch
+from zoomstudio.ui import strings
 from zoomstudio.ui.worker import PedalWorker
 
 HB = (FIXTURES / "53-HB-Jazz.zptc").read_bytes()
@@ -50,7 +51,7 @@ def test_timeout_becomes_error_signal_not_exception(qapp):
     events = record(worker)
     worker.connect_pedal()  # must not raise
     assert events and events[0][0] == "error"
-    assert "reply" in events[0][1].lower() or "timeout" in events[0][1].lower()
+    assert strings.ERR_NO_REPLY in events[0][1]
     worker.load_all_patches()  # not connected: also an error, not an exception
     assert [e[0] for e in events] == ["error", "error"]
 

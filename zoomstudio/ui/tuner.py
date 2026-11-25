@@ -6,6 +6,8 @@ from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
+from . import strings as S
+
 NO_NOTE = "—"
 OFFSET_RANGE = 7  # the pedal reports offsets -7..+7 (CC 99 value - 8)
 COLORS = {"in_tune": "#2ecc71", "near": "#f1c40f", "off": "#e74c3c", "none": "#8a8d93"}
@@ -72,7 +74,7 @@ class TunerPanel(QWidget):
         self._offset = QLabel("0")
         self._offset.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._offset.setStyleSheet("font-size: 28px;")
-        hint = QLabel("Offset in pedal steps (0 = in tune). The pedal is muted while the tuner is on; press T to leave.")
+        hint = QLabel(S.TUNER_HINT)
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint.setStyleSheet("color: #8a8d93;")
         self.meter = TunerMeter()

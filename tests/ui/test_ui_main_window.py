@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt
 from ui_replies import FIXTURES, fake_pedal
 from zoomstudio.device.messages import SysexMessage
 from zoomstudio.effects.catalog import a1four_effect_ids, load_catalog
+from zoomstudio.ui import strings
 from zoomstudio.ui.main_window import MainWindow
 
 CATALOG_DIR = FIXTURES / "catalog"
@@ -38,7 +39,8 @@ def test_offline_folder_lists_fifty_slots_with_display_numbers(window):
     # slots without a file are greyed
     assert window.is_empty_slot(5) and not window.is_empty_slot(1)
     assert window.patch_list.item(4).foreground().color() != window.patch_list.item(0).foreground().color()
-    assert "offline" in window.connection_label.text().lower()
+    assert strings.NOT_CONNECTED.lower() in window.connection_label.text().lower()
+    assert "backup" in window.connection_label.text()
 
 
 def test_selecting_hb_jazz_shows_five_tiles_two_wide(window):
@@ -122,10 +124,10 @@ def test_catalog_search_and_a1_filter(window):
     panel.search.setText("")
     panel.a1_check.setChecked(True)  # FD-DX1x12 and OptComp are not in the A1 FOUR list
     assert set(panel.visible_names()) == {"Comp", "FD DLXR", "Gt GEQ 7", "Hall"}
-    panel.group_combo.setCurrentText("AMP")
+    panel.group_combo.setCurrentText(strings.group_label("AMP"))
     assert panel.visible_names() == ["FD DLXR"]
     panel.a1_check.setChecked(False)
-    panel.group_combo.setCurrentText("All groups")
+    panel.group_combo.setCurrentText(strings.ALL_GROUPS)
     assert len(panel.visible_names()) == 6
 
 
@@ -134,7 +136,7 @@ def test_catalog_rows_show_dsp_load_installed_flag_and_svg(window):
     panel.search.setText("Hall")
     text = panel.list.item(0).text()
     assert "Hall" in text and "%" in text
-    assert "on pedal" in text  # fixture directory is labelled "pedal"
+    assert strings.BADGE_ON_PEDAL in text  # fixture directory is labelled "pedal"
     panel.list.setCurrentRow(0)
     assert panel.preview_has_image()
     panel.search.setText("FD DLXR")  # has no SVG in the fixtures
@@ -149,7 +151,7 @@ def test_connect_loads_patches_from_a_fake_pedal(qtbot, catalog):
     with qtbot.waitSignal(w.patches_loaded, timeout=5000):
         w.connect_button.click()
     assert w.patch_list.item(1).text().split()[1:3] == ["HB", "Jazz"]
-    assert "A1 FOUR" in w.connection_label.text() and "1.00" in w.connection_label.text()
+    assert "A1 FOUR" in w.connection_label.text() and "1.00" in w.connection_label.toolTip()
     qtbot.waitUntil(lambda: w.memory_bar.value() == 75, timeout=3000)
     assert not w.connect_button.isEnabled() and w.disconnect_button.isEnabled()
     w.close()

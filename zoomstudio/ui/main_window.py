@@ -12,7 +12,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QCheckBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidgetItem, QMainWindow,
-    QMessageBox, QProgressBar, QPushButton, QSpinBox, QSplitter, QToolButton, QVBoxLayout, QWidget,
+    QProgressBar, QPushButton, QSpinBox, QSplitter, QToolButton, QVBoxLayout, QWidget,
 )
 
 from zoomstudio.effects.catalog import EffectInfo
@@ -20,6 +20,8 @@ from zoomstudio.patches import edit
 from zoomstudio.patches.model import NAME_MAX_LEN, VOLUME_MAX, Patch
 from zoomstudio.patches.zptc import build_zptc, parse_zptc
 
+from . import strings as S
+from .dialogs import ConfirmDialog
 from .library import LibraryMixin
 from .tuner import TunerPanel
 from .widgets import CatalogPanel, ChainView, EffectTile, ParamPanel, ParamRow, PatchList
@@ -136,25 +138,25 @@ class MainWindow(LibraryMixin, QMainWindow):
         header = QFrame()
         header.setFrameShape(QFrame.Shape.StyledPanel)
         h = QHBoxLayout(header)
-        self.connection_label = QLabel("Not connected")
+        self.connection_label = QLabel(S.NOT_CONNECTED)
         self.connection_label.setMinimumWidth(260)
         self.memory_bar = QProgressBar()
         self.memory_bar.setRange(0, 100)
         self.memory_bar.setValue(0)
-        self.memory_bar.setFormat("Memory: n/a")
+        self.memory_bar.setFormat(S.MEMORY_NA)
         self.memory_bar.setMinimumWidth(240)
-        self.connect_button = QPushButton("Connect")
-        self.disconnect_button = QPushButton("Disconnect")
-        self.open_button = QPushButton("Open folder...")
-        self.reload_button = QPushButton("Reload")
-        self.open_file_button = QPushButton("Open file...")
-        self.save_file_button = QPushButton("Save as file...")
-        self.save_button = QPushButton("Save to pedal")
-        self.tuner_button = QPushButton("Tuner")
+        self.connect_button = QPushButton(S.CONNECT)
+        self.disconnect_button = QPushButton(S.DISCONNECT)
+        self.open_button = QPushButton(S.OPEN_FOLDER)
+        self.reload_button = QPushButton(S.RELOAD)
+        self.open_file_button = QPushButton(S.OPEN_FILE)
+        self.save_file_button = QPushButton(S.SAVE_FILE)
+        self.save_button = QPushButton(S.SAVE_TO_PEDAL)
+        self.tuner_button = QPushButton(S.TUNER)
         self.tuner_button.setCheckable(True)
-        self.tuner_button.setToolTip("Turn the pedal tuner on or off (T). The pedal is muted while it is on")
-        self.live_check = QCheckBox("Live")
-        self.live_check.setToolTip("Also send parameter and on/off changes to the pedal while editing")
+        self.tuner_button.setToolTip(S.TUNER_TIP)
+        self.live_check = QCheckBox(S.LIVE)
+        self.live_check.setToolTip(S.LIVE_TIP)
         h.addWidget(self.connection_label)
         h.addWidget(self.memory_bar)
         h.addStretch(1)
@@ -173,11 +175,11 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.tuner_shortcut = QShortcut(QKeySequence("T"), self)
         self.tuner_shortcut.activated.connect(self._on_tuner_shortcut)
 
-        self.undo_action = self.undo_group.createUndoAction(self, "Undo")
+        self.undo_action = self.undo_group.createUndoAction(self, S.UNDO)
         self.undo_action.setShortcut(QKeySequence("Ctrl+Z"))
-        self.redo_action = self.undo_group.createRedoAction(self, "Redo")
+        self.redo_action = self.undo_group.createRedoAction(self, S.REDO)
         self.redo_action.setShortcuts([QKeySequence("Ctrl+Shift+Z"), QKeySequence("Ctrl+Y")])
-        edit_menu = self.menuBar().addMenu("&Edit")
+        edit_menu = self.menuBar().addMenu(S.EDIT_MENU)
         edit_menu.addAction(self.undo_action)
         edit_menu.addAction(self.redo_action)
 
@@ -186,23 +188,23 @@ class MainWindow(LibraryMixin, QMainWindow):
         left = QWidget()
         lv = QVBoxLayout(left)
         lv.setContentsMargins(0, 0, 0, 0)
-        lv.addWidget(QLabel("Patches"))
+        lv.addWidget(QLabel(S.PATCHES))
         lv.addWidget(self.patch_list)
         self.patch_panel = left
 
-        self.patch_title = QLabel("No patch selected")
+        self.patch_title = QLabel(S.NO_PATCH_SELECTED)
         self.patch_title.setStyleSheet("font-size: 16px; font-weight: bold;")
         self.name_edit = QLineEdit()
         self.name_edit.setMaxLength(NAME_MAX_LEN)
         self.name_edit.setValidator(QRegularExpressionValidator(QRegularExpression(r"[ -~]*")))
         self.name_edit.setFixedWidth(130)
-        self.name_edit.setToolTip(f"Patch name: up to {NAME_MAX_LEN} printable ASCII characters")
+        self.name_edit.setToolTip(S.name_tip(NAME_MAX_LEN))
         self.volume_spin = QSpinBox()
         self.volume_spin.setRange(0, VOLUME_MAX)
-        self.volume_spin.setToolTip("Patch volume")
+        self.volume_spin.setToolTip(S.VOLUME_TIP)
         self.dsp_bar = QProgressBar()
         self.dsp_bar.setRange(0, 100)
-        self.dsp_bar.setFormat("DSP: n/a")
+        self.dsp_bar.setFormat(S.DSP_NA)
         self.dsp_bar.setMinimumWidth(180)
         undo_button, redo_button = QToolButton(), QToolButton()
         undo_button.setDefaultAction(self.undo_action)
@@ -210,7 +212,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.editor_row = QWidget()
         er = QHBoxLayout(self.editor_row)
         er.setContentsMargins(0, 0, 0, 0)
-        for widget in (QLabel("Name"), self.name_edit, QLabel("Volume"), self.volume_spin, self.dsp_bar,
+        for widget in (QLabel(S.NAME), self.name_edit, QLabel(S.VOLUME), self.volume_spin, self.dsp_bar,
                        undo_button, redo_button):
             er.addWidget(widget)
         er.addStretch(1)
@@ -257,7 +259,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         rv.addWidget(self.tuner_panel, stretch=1)
         self.setCentralWidget(root)
         self._build_library_ui()
-        self.statusBar().showMessage("Ready")
+        self.statusBar().showMessage(S.READY)
 
     def _update_buttons(self) -> None:
         can_connect = self._worker is not None
@@ -274,13 +276,13 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.save_button.setEnabled(
             self._is_connected and patch is not None and dirty and not blockers and not self._saving)
         if blockers:
-            tip = "Cannot save: " + "; ".join(blockers[:3])
+            tip = S.cannot_save(blockers[:3])
         elif not self._is_connected:
-            tip = "Connect to the pedal to save"
+            tip = S.SAVE_NEEDS_CONNECTION
         elif not dirty:
-            tip = "No unsaved edits in this patch"
+            tip = S.SAVE_NO_EDITS
         else:
-            tip = "Back up the slot, write this patch to the pedal and verify it by reading it back"
+            tip = S.SAVE_TIP
         self.save_button.setToolTip(tip)
         self._update_library_actions()
         if self._tuner_on:  # nothing but the tuner and Disconnect may be used while the pedal is muted
@@ -344,7 +346,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.undo_group.setActiveStack(None)
         self.chain.clear()
         self.params.clear()
-        self.patch_title.setText("No patch selected")
+        self.patch_title.setText(S.NO_PATCH_SELECTED)
         self._update_header()
 
     def is_empty_slot(self, location: int) -> bool:
@@ -378,7 +380,7 @@ class MainWindow(LibraryMixin, QMainWindow):
             item.setText(f"{number}  -")
             item.setForeground(QBrush(_EMPTY_COLOR))
         else:
-            name = patch.name or "(unnamed)"
+            name = patch.name or S.UNNAMED
             item.setText(f"{number}  {name}{' *' if self.is_dirty(location) else ''}")
             item.setForeground(QBrush(self.palette().text().color()))
 
@@ -452,14 +454,14 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.editor_row.setEnabled(patch is not None and not self._saving)
         if location is None:
             self.dsp_bar.setValue(0)
-            self.dsp_bar.setFormat("DSP: n/a")
+            self.dsp_bar.setFormat(S.DSP_NA)
             return
         if patch is None:
-            self.patch_title.setText(f"{self._display(location)}  -  empty")
+            self.patch_title.setText(S.empty_patch_title(self._display(location)))
             self.dsp_bar.setValue(0)
-            self.dsp_bar.setFormat("DSP: n/a")
+            self.dsp_bar.setFormat(S.DSP_NA)
             return
-        self.patch_title.setText(f"{self._display(location)}  {patch.name}  (volume {patch.volume})")
+        self.patch_title.setText(S.patch_title(self._display(location), patch.name, patch.volume))
         for widget, setter, value in ((self.name_edit, self.name_edit.setText, patch.name),
                                       (self.volume_spin, self.volume_spin.setValue, patch.volume)):
             if (widget.text() if widget is self.name_edit else widget.value()) != value:
@@ -468,7 +470,7 @@ class MainWindow(LibraryMixin, QMainWindow):
                 widget.blockSignals(False)
         dsp = self.dsp_percent()
         self.dsp_bar.setValue(min(100, round(dsp)))
-        self.dsp_bar.setFormat(f"DSP: {dsp:.0f}%" + ("  (over the limit)" if dsp > 100 else ""))
+        self.dsp_bar.setFormat(S.dsp_text(dsp))
         self.dsp_bar.setStyleSheet("QProgressBar::chunk { background: #c0392b; }" if dsp > 100 else "")
 
     def save_blockers(self) -> list[str]:
@@ -496,7 +498,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         if patch is None:
             return
         if slot_index >= len(patch.effects) or patch.effects[slot_index].is_placeholder:
-            self.params.clear("Empty slot: double-click an effect in the catalog or drop one here")
+            self.params.clear(S.EMPTY_SLOT_HINT)
             return
         slot = patch.effects[slot_index]
         self.params.show_effect(slot, self.catalog.get(slot.effect_id))
@@ -533,7 +535,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         """Run ``operation(patch)``, push the result as an undo step; report errors."""
         patch = self.current_patch
         if patch is None:
-            self.statusBar().showMessage("Select a patch to edit")
+            self.statusBar().showMessage(S.SELECT_PATCH_TO_EDIT)
             return False
         if self._saving:
             return False
@@ -552,35 +554,35 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.undo_group.redo()
 
     def rename_patch(self, name: str, widget: bool = False) -> None:
-        self._edit(lambda p: edit.rename(p, name), "Rename patch", key=("name",), widget=widget)
+        self._edit(lambda p: edit.rename(p, name), S.UNDO_RENAME, key=("name",), widget=widget)
 
     def set_patch_volume(self, volume: int, widget: bool = False) -> None:
-        self._edit(lambda p: edit.set_volume(p, volume), "Change volume", key=("volume",), widget=widget)
+        self._edit(lambda p: edit.set_volume(p, volume), S.UNDO_VOLUME, key=("volume",), widget=widget)
 
     def set_param(self, slot_index: int, index: int, value: int, widget: bool = False) -> None:
-        self._edit(lambda p: edit.set_param(p, slot_index, index, value), "Change parameter",
+        self._edit(lambda p: edit.set_param(p, slot_index, index, value), S.UNDO_PARAM,
                    key=("param", slot_index, index), widget=widget)
 
     def set_effect_enabled(self, slot_index: int, enabled: bool, widget: bool = False) -> None:
         self._edit(lambda p: edit.set_enabled(p, slot_index, enabled),
-                   "Switch effect " + ("on" if enabled else "off"), widget=widget)
+                   S.undo_power(enabled), widget=widget)
 
     def replace_effect(self, slot_index: int, effect_id: int) -> None:
         if self.allowed_ids is not None and effect_id not in self.allowed_ids:
             info = self.catalog.get(effect_id)
-            self._report_error(f"{info.name if info else hex(effect_id)} does not run on the A1 FOUR")
+            self._report_error(S.not_runnable(info.name if info else hex(effect_id)))
             return
-        self._edit(lambda p: edit.replace_effect(p, slot_index, effect_id, self.catalog), "Replace effect",
+        self._edit(lambda p: edit.replace_effect(p, slot_index, effect_id, self.catalog), S.UNDO_REPLACE,
                    select=lambda after: edit.slot_index_of(
                        after, edit.logical_index(self.current_patch.effects, slot_index)))
 
     def remove_effect(self, slot_index: int) -> None:
-        self._edit(lambda p: edit.remove_effect(p, slot_index, self.catalog), "Remove effect")
+        self._edit(lambda p: edit.remove_effect(p, slot_index, self.catalog), S.UNDO_REMOVE)
 
     def move_effect(self, from_slot: int, to_slot: int) -> None:
         if from_slot == to_slot:
             return
-        self._edit(lambda p: edit.move_effect(p, from_slot, to_slot, self.catalog), "Move effect",
+        self._edit(lambda p: edit.move_effect(p, from_slot, to_slot, self.catalog), S.UNDO_MOVE,
                    select=lambda after: edit.slot_index_of(
                        after, edit.logical_index(self.current_patch.effects, to_slot)))
 
@@ -605,13 +607,13 @@ class MainWindow(LibraryMixin, QMainWindow):
 
     def _on_catalog_activated(self, effect_id: int) -> None:
         if self.current_patch is None:
-            self.statusBar().showMessage("Select a patch first")
+            self.statusBar().showMessage(S.SELECT_PATCH_FIRST)
             return
         slot = self.chain.selected_slot
         if slot is None:
             empty = [t for t in self.chain.tiles() if t.is_empty]
             if not empty:
-                self._report_error("Select the tile to replace first")
+                self._report_error(S.SELECT_PEDAL_TO_REPLACE)
                 return
             slot = empty[0].slot_index
         self.replace_effect(slot, effect_id)
@@ -644,43 +646,43 @@ class MainWindow(LibraryMixin, QMainWindow):
         if patch is None or self._location is None:
             return
         suggestion = f"{self._display(self._location)}-{patch.name or 'patch'}.zptc"
-        path, _ = QFileDialog.getSaveFileName(self, "Save patch as file", suggestion, "Zoom patch (*.zptc)")
+        path, _ = QFileDialog.getSaveFileName(self, S.SAVE_PATCH_FILE, suggestion, S.PATCH_FILTER)
         if path:
             self.save_file(Path(path))
 
     def _choose_open_file(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Open patch file", str(Path.home()), "Zoom patch (*.zptc)")
+        path, _ = QFileDialog.getOpenFileName(self, S.OPEN_PATCH_FILE, str(Path.home()), S.PATCH_FILTER)
         if path:
             self.open_file(Path(path))
 
     def save_file(self, path: Path) -> None:
         patch = self.current_patch
         if patch is None:
-            self.statusBar().showMessage("Select a patch to save")
+            self.statusBar().showMessage(S.SELECT_PATCH_TO_SAVE)
             return
         try:
             Path(path).write_bytes(build_zptc(patch))
         except (ValueError, OSError) as exc:
-            self._report_error(f"Cannot save {path}: {exc}")
+            self._report_error(S.cannot_save_file(path, exc))
             return
-        self.statusBar().showMessage(f"Saved {path}")
+        self.statusBar().showMessage(S.saved_file(path))
 
     def open_file(self, path: Path) -> None:
         """Load a ``.zptc`` file into the selected location as an undoable edit."""
         if self._location is None:
-            self.statusBar().showMessage("Select a location to open the file into")
+            self.statusBar().showMessage(S.SELECT_LOCATION_FOR_FILE)
             return
         try:
             loaded = parse_zptc(Path(path).read_bytes())
         except (ValueError, OSError) as exc:
-            self._report_error(f"Cannot open {path}: {exc}")
+            self._report_error(S.cannot_open_file(path, exc))
             return
-        self._push(edit.with_fillers(loaded, self.catalog), "Open file")
+        self._push(edit.with_fillers(loaded, self.catalog), S.UNDO_OPEN_FILE)
         blockers = self.save_blockers()
         if blockers:
-            self._report_error("This patch cannot be written to the pedal as it is: " + "; ".join(blockers[:3]))
+            self._report_error(S.patch_not_writable(blockers[:3]))
             return
-        self.statusBar().showMessage(f"Opened {Path(path).name} into {self._display(self._location)}")
+        self.statusBar().showMessage(S.opened_into(Path(path).name, self._display(self._location)))
 
     # ------------------------------------------------------- save to pedal
 
@@ -690,22 +692,22 @@ class MainWindow(LibraryMixin, QMainWindow):
         if self._saving or location is None or patch is None:
             return
         if not self._is_connected or self._worker is None:
-            self._report_error("Connect to the pedal to save")
+            self._report_error(S.SAVE_NEEDS_CONNECTION)
             return
         blockers = self.save_blockers()
         if blockers:
-            self._report_error("Cannot save: " + "; ".join(blockers))
+            self._report_error(S.cannot_save(blockers))
             return
         if self.backup_dir is None:
-            self._report_error("No backup folder configured: refusing to write to the pedal")
+            self._report_error(S.ERR_NO_BACKUP_DIR)
             return
         try:
             data = build_zptc(edit.sent_form(patch))
         except ValueError as exc:
-            self._report_error(f"Cannot build the patch: {exc}")
+            self._report_error(S.build_failed(exc))
             return
         self._set_saving(True)
-        self.statusBar().showMessage(f"Saving patch {self._display(location)}...")
+        self.statusBar().showMessage(S.saving(self._display(location)))
         self._save_requested.emit(location, data, self.backup_dir)
 
     def _set_saving(self, saving: bool) -> None:
@@ -717,7 +719,7 @@ class MainWindow(LibraryMixin, QMainWindow):
     @Slot(int, object, str)
     def _on_patch_saved(self, location: int, patch: Patch, backup: str) -> None:
         self._set_patch(location, patch)
-        self.statusBar().showMessage(f"Saved patch {self._display(location)} (previous content: {backup})")
+        self.statusBar().showMessage(S.saved(self._display(location), backup))
 
     @Slot(int, bool)
     def _on_save_finished(self, _location: int, ok: bool) -> None:
@@ -731,16 +733,12 @@ class MainWindow(LibraryMixin, QMainWindow):
         if not self.any_dirty():
             return True
         count = sum(1 for loc in self._stacks if self.is_dirty(loc))
-        reply = QMessageBox.question(
-            self, "Unsaved edits", f"{count} patch(es) have unsaved edits.\n{action} and discard them?",
-            QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Cancel)
-        return reply == QMessageBox.StandardButton.Discard
+        return ConfirmDialog.ask(self, S.DISCARD_TITLE, S.discard_text(count, action), S.DISCARD_ACCEPT, danger=True)
 
     def _choose_folder(self) -> None:
         start = str(self._offline_dir or Path.home())
-        folder = QFileDialog.getExistingDirectory(self, "Open patch backup folder", start)
-        if folder and self.confirm_discard("Opening another folder"):
+        folder = QFileDialog.getExistingDirectory(self, S.OPEN_BACKUP_FOLDER, start)
+        if folder and self.confirm_discard(S.DISCARD_OPEN_FOLDER):
             self.load_offline(Path(folder))
 
     def load_offline(self, folder: Path) -> None:
@@ -758,7 +756,7 @@ class MainWindow(LibraryMixin, QMainWindow):
             except (ValueError, OSError) as exc:
                 problems.append(f"{path.name}: {exc}")
         if not folder.is_dir():
-            self._report_error(f"Not a folder: {folder}")
+            self._report_error(S.not_a_folder(folder))
             return
         self._offline_dir = folder
         self._patch_count = max(DEFAULT_PATCH_COUNT, max(found, default=0))
@@ -766,10 +764,10 @@ class MainWindow(LibraryMixin, QMainWindow):
         self._reset_edits()
         self._patches.update(found)
         self._rebuild_patch_list()
-        self.connection_label.setText(f"Offline: {folder.name}")
+        self.connection_label.setText(S.offline(folder.name))
         self.memory_bar.setValue(0)
-        self.memory_bar.setFormat("Memory: n/a")
-        self.statusBar().showMessage(f"Loaded {len(found)} patches from {folder}")
+        self.memory_bar.setFormat(S.MEMORY_NA)
+        self.statusBar().showMessage(S.loaded_from_folder(len(found), folder))
         if problems:
             self._report_error("; ".join(problems[:3]))
         self._update_buttons()
@@ -777,9 +775,9 @@ class MainWindow(LibraryMixin, QMainWindow):
 
     def reload(self) -> None:
         if not (self._is_connected and self._worker is not None) and self._offline_dir is None:
-            self.statusBar().showMessage("Nothing to reload: connect or open a folder first")
+            self.statusBar().showMessage(S.NOTHING_TO_RELOAD)
             return
-        if not self.confirm_discard("Reloading"):
+        if not self.confirm_discard(S.DISCARD_RELOAD):
             return
         if self._is_connected and self._worker is not None:
             self._begin_pedal_read()
@@ -819,10 +817,10 @@ class MainWindow(LibraryMixin, QMainWindow):
         """Begin connecting to the pedal (no-op without a transport factory)."""
         if self._worker is None or self._is_connected:
             return
-        if not self.confirm_discard("Connecting reloads every patch from the pedal"):
+        if not self.confirm_discard(S.DISCARD_CONNECT):
             return
         self.connect_button.setEnabled(False)
-        self.statusBar().showMessage("Connecting...")
+        self.statusBar().showMessage(S.CONNECTING)
         self._worker.request("connect_pedal")
 
     def _on_connect_clicked(self) -> None:
@@ -838,7 +836,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         self._patches = {}
         self._reset_edits()
         self._rebuild_patch_list()
-        self.statusBar().showMessage("Reading patches...")
+        self.statusBar().showMessage(S.READING_PATCHES)
         self._worker.request("load_all_patches")
         self._worker.request("refresh_disk_usage")
 
@@ -847,9 +845,10 @@ class MainWindow(LibraryMixin, QMainWindow):
         self._is_connected = True
         self._offline_dir = None
         self._patch_count = info.count
-        model = MODEL_NAMES.get(identity.model, f"model 0x{identity.model:02X}")
+        model = MODEL_NAMES.get(identity.model, S.unknown_model(identity.model))
         firmware = bytes(identity.version).decode("ascii", "replace").strip("\x00 ")
-        self.connection_label.setText(f"ZOOM {model}  -  firmware {firmware or '?'}")
+        self.connection_label.setText(S.connected(model))
+        self.connection_label.setToolTip(S.firmware_tip(firmware or "?"))
         self._update_buttons()
         self._begin_pedal_read()
 
@@ -859,10 +858,11 @@ class MainWindow(LibraryMixin, QMainWindow):
         self._apply_tuner_state(False)
         self._live_location = None
         self.live_check.setChecked(False)
-        self.connection_label.setText("Not connected")
+        self.connection_label.setText(S.NOT_CONNECTED)
+        self.connection_label.setToolTip("")
         self.memory_bar.setValue(0)
-        self.memory_bar.setFormat("Memory: n/a")
-        self.statusBar().showMessage("Disconnected")
+        self.memory_bar.setFormat(S.MEMORY_NA)
+        self.statusBar().showMessage(S.DISCONNECTED)
         self._update_buttons()
 
     @Slot(int, object)
@@ -871,22 +871,22 @@ class MainWindow(LibraryMixin, QMainWindow):
 
     @Slot(int, int)
     def _on_progress(self, done: int, total: int) -> None:
-        self.statusBar().showMessage(f"Reading patches {done}/{total}")
+        self.statusBar().showMessage(S.reading_progress(done, total))
 
     @Slot()
     def _on_loading_finished(self) -> None:
-        self.statusBar().showMessage(f"Loaded {len(self._patches)} patches from the pedal")
+        self.statusBar().showMessage(S.loaded_from_pedal(len(self._patches)))
         self.patches_loaded.emit()
 
     @Slot(object)
     def _on_disk_usage(self, usage) -> None:
         pct = usage.used_percent
         self.memory_bar.setValue(round(pct))
-        self.memory_bar.setFormat(f"Memory: {usage.used / 1024:.0f} / {usage.maximum / 1024:.0f} KB ({pct:.0f}%)")
+        self.memory_bar.setFormat(S.memory_text(usage.used / 1024, usage.maximum / 1024, pct))
 
     @Slot(str)
     def _report_error(self, message: str) -> None:
-        self.statusBar().showMessage(f"Error: {message}", 15000)
+        self.statusBar().showMessage(S.error(message), 15000)
         if self._worker is not None and not self._is_connected:
             self.connect_button.setEnabled(True)
         self.error_shown.emit(message)
@@ -895,7 +895,7 @@ class MainWindow(LibraryMixin, QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt API)
         if not self._closed:
-            if not self.confirm_discard("Closing"):
+            if not self.confirm_discard(S.DISCARD_CLOSE):
                 event.ignore()
                 return
             self._closed = True
