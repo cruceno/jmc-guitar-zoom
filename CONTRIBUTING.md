@@ -30,8 +30,10 @@ ports and the Guitar Lab folder, and exits non-zero when Qt or the MIDI backend 
 1. Set the new version in `pyproject.toml` and `jmc_guitar_zoom/__init__.py` (a test checks they match).
 2. Commit, then tag and push the tag: `git tag v0.2.0 && git push origin v0.2.0`.
 3. The `release` workflow runs the tests on Linux and Windows, checks the tag against the version, builds the
-   AppImage and the installer, and publishes a GitHub Release with both (a prerelease when the tag has a `-`, such
-   as `v0.2.0-rc1`). Pull requests and manual runs build the same packages as workflow artifacts only.
+   AppImage and the installer, and publishes a GitHub Release with both. The tag must be `v` plus the exact version
+   string, so a prerelease spells its version with a `-` too: version `0.2.0-rc1`, tag `v0.2.0-rc1` (a tag with a
+   `-` is published as a prerelease). Pull requests and manual runs build the same packages as workflow artifacts
+   only.
 
 ## Safety rules
 

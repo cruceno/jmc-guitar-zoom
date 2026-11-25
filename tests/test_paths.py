@@ -106,3 +106,22 @@ def test_default_catalogs_with_a_root_keep_the_source_layout(tmp_path):
     (tmp_path / "guitarlab" / "GL").mkdir(parents=True)
     assert default_catalogs(tmp_path) == [("pedal", tmp_path / "patches" / "pedal-files-1"),
                                          ("Guitar Lab", tmp_path / "guitarlab" / "GL")]
+
+
+def test_the_packaged_app_loads_guitar_lab_from_a_wine_prefix(monkeypatch, tmp_path):
+    # what main() calls: no root, so the machine-wide Guitar Lab search must run (it once never did when frozen)
+    from jmc_guitar_zoom.__main__ import catalog_sources
+
+    home = _isolate(monkeypatch, tmp_path)
+    wine = _zd2(home / ".wine/drive_c/users/u/AppData/Roaming/GL")
+    _frozen(monkeypatch, tmp_path)
+    assert catalog_sources() == [("Guitar Lab", wine)]
+    assert catalog_sources([("extra", tmp_path)]) == [("extra", tmp_path)]  # --catalog folders replace the defaults
+
+
+def test_catalog_sources_with_a_root_keep_the_source_layout(tmp_path):
+    from jmc_guitar_zoom.__main__ import catalog_sources
+
+    (tmp_path / "patches" / "pedal-files-1").mkdir(parents=True)
+    gl = _zd2(tmp_path / "guitarlab" / "GL")
+    assert catalog_sources(None, tmp_path) == [("pedal", tmp_path / "patches" / "pedal-files-1"), ("Guitar Lab", gl)]

@@ -59,10 +59,12 @@ def default_catalogs(root: Path | None = None) -> list[tuple[str, Path]]:
 
 def catalog_sources(explicit: list[tuple[str, Path]] | None = None, root: Path | None = None) -> list[tuple[str, Path]]:
     """The catalog folders in use now: the ``--catalog`` ones or the defaults, with the app library first when the
-    command line named folders (the defaults already include it). Read again after a download."""
-    root = root or paths.data_root()
+    command line named folders (the defaults already include it). Read again after a download.
+
+    ``root`` goes to ``default_catalogs`` only when the caller gave one: without it the defaults also search the
+    machine for Guitar Lab (``%APPDATA%\\GL``, Wine, Bottles), which is how the packaged app finds it."""
     found = list(explicit) if explicit else default_catalogs(root)
-    library = library_dir(root)
+    library = library_dir(root or paths.data_root())
     if explicit and library.is_dir() and any(p.suffix.lower() == ".zd2" for p in library.iterdir()):
         found.insert(0, (LIBRARY_LABEL, library))
     return [(label, folder) for label, folder in found if folder.is_dir()]
