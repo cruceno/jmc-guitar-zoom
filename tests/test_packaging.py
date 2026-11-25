@@ -88,6 +88,7 @@ def test_the_workflow_has_the_three_triggers_and_the_three_jobs():
     for trigger in ("push:", "pull_request:", "workflow_dispatch:"):
         assert re.search(rf"(?m)^  {trigger}", head)
     assert re.search(r"tags:\s*\n\s*- 'v\*'", head)
+    assert re.search(r"branches:\s*\n\s*- main", head)  # direct pushes to main also build both packages
     jobs = re.findall(r"(?m)^  (\w+):\n", WORKFLOW.split("\njobs:\n", 1)[1])
     assert jobs == ["linux", "windows", "release"]
     assert re.search(r"(?m)^permissions:\n  contents: read$", head)

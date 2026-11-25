@@ -32,8 +32,8 @@ ports and the Guitar Lab folder, and exits non-zero when Qt or the MIDI backend 
 3. The `release` workflow runs the tests on Linux and Windows, checks the tag against the version, builds the
    AppImage and the installer, and publishes a GitHub Release with both. The tag must be `v` plus the exact version
    string, so a prerelease spells its version with a `-` too: version `0.2.0-rc1`, tag `v0.2.0-rc1` (a tag with a
-   `-` is published as a prerelease). Pull requests and manual runs build the same packages as workflow artifacts
-   only.
+   `-` is published as a prerelease). Pushes to `main`, pull requests and manual runs build the same packages as
+   workflow artifacts only.
 
 ## Safety rules
 
