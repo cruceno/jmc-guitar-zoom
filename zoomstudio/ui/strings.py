@@ -712,9 +712,53 @@ def effects_confirm_remove_title(name: str) -> str:
     return f"Quitar {name}"
 
 
-def effects_confirm_remove(name: str, file: str) -> str:
+def effects_confirm_remove(name: str, file: str, bank_uses: int = 0) -> str:
     return (f"Se desmarcará {name} en la lista de efectos y se borrará {file} de la pedalera. "
-            f"Ningún patch lo usa. {EFFECTS_BACKUP_NOTE}")
+            f"Ningún patch lo usa." + (f" {unused_bank_note(bank_uses)}." if bank_uses else "") + f" {EFFECTS_BACKUP_NOTE}")
+
+
+# --- «Sin uso»: installed effects that no patch of the pedal uses
+UNUSED = "Sin uso"
+UNUSED_KEY = "\0unused"  # the filter option (no group has this key)
+UNUSED_TIP = "Ningún patch de la pedalera usa este efecto"
+UNUSED_UNKNOWN = "Lea todos los patches y guarde o descarte las ediciones para saber qué efectos no se usan"
+UNUSED_VIEW_NOTE = "Esta vista solo muestra efectos instalados sin uso."
+SELECT_ALL = "Seleccionar todos"
+REMOVE_MANY_STOPPED = "Se detuvo la eliminación."
+REMOVE_NOT_REMOVED = " No se quitaron: "
+EFFECTS_BUSY_REMOVE_MANY = "Quitando efectos de la pedalera…"
+
+
+def unused_bank_note(count: int) -> str:
+    return "Lo usa 1 patch del banco" if count == 1 else f"Lo usan {count} patches del banco"
+
+
+def unused_summary(count: int, size: int) -> str:
+    return (f"{count} efecto sin uso · {effects_size(size)} que se puede liberar" if count == 1
+            else f"{count} efectos sin uso · {effects_size(size)} que se pueden liberar")
+
+
+def remove_selected(count: int, size: int) -> str:
+    return f"Quitar seleccionados ({count} · {effects_size(size)})"
+
+
+def effects_confirm_remove_many(lines: list[str], size: int) -> str:
+    return (f"Se quitarán {len(lines)} efectos de la pedalera y se liberarán {effects_size(size)}. Ningún patch de la "
+            f"pedalera los usa.\n" + "\n".join(f"· {line}" for line in lines) + f"\n{EFFECTS_BACKUP_NOTE} "
+            "Se quitan de uno en uno y se para al primer fallo.")
+
+
+def remove_many_title(count: int) -> str:
+    return f"Quitar {count} efectos"
+
+
+def remove_many_stopped(removed: list[str], not_removed: list[str]) -> str:
+    done = ", ".join(removed) if removed else "ninguno"
+    return f"{REMOVE_MANY_STOPPED} Se quitaron: {done}.{REMOVE_NOT_REMOVED}{', '.join(not_removed)}."
+
+
+def remove_many_done(count: int) -> str:
+    return f"{count} efectos quitados de la pedalera"
 
 
 def effects_installed_ok(name: str) -> str:

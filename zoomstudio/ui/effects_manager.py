@@ -24,20 +24,21 @@ from zoomstudio.effects.installer import MEMORY_MARGIN
 from . import strings as S
 from . import tokens
 from .cards import (
-    CARD_HEIGHT, FAVORITES_KEY, ROLE_DIRTY, ROLE_FAV, ROLE_MISSING, ROLE_NAME, ROLE_NUMBER, ROLE_SECTION, ROLE_STRIP, SECTION_HEIGHT,
-    STAR_ROOM, PatchCardDelegate, SectionList, card_path, paint_section, paint_star, pedal_thumbnail, section_label,
+    CARD_HEIGHT, FAVORITES_KEY, ROLE_DIRTY, ROLE_FAV, CHECK_ROOM, ROLE_CHECK, ROLE_MISSING, ROLE_NAME, ROLE_NUMBER, ROLE_SECTION, ROLE_STRIP, SECTION_HEIGHT,
+    STAR_ROOM, PatchCardDelegate, check_rect, paint_check, SectionList, card_path, paint_section, paint_star, pedal_thumbnail, section_label,
     set_section_header, star_rect, svg_thumbnail, with_alpha,
 )
 from .dialogs import ConfirmDialog
 from .favorites import FavoritesStore
 from .fonts import display_font, ui_font
 from .glass import BackdropRoot, GlassPanel
-from .icons import icon
+from .icons import icon, pixmap
 from .painted import SearchField, SectionLabel
 from .theme import group_color, group_fill_color, group_text_color
 
 ROLE_ENTRY = Qt.ItemDataRole.UserRole + 30  # the Entry behind a card
 ROLE_BADGE = Qt.ItemDataRole.UserRole + 32  # text of the badge on a card the pedal cannot install
+ROLE_UNUSED = Qt.ItemDataRole.UserRole + 34  # tooltip of the «Sin uso» marker; None: the effect is in use or unknown
 ROLE_MODELS = Qt.ItemDataRole.UserRole + 33  # «Para G11 · G6»: the models that can run this file (all-pedals views)
 DETAIL_WIDTH = 360
 BYPASS = "BYPASS.ZD2"  # the list's first record: the pedal's "no effect", not an effect to manage
@@ -151,7 +152,11 @@ class EffectCard(QStyledItemDelegate):
         p.setPen(QPen(with_alpha(tokens.color("accent"), 0.6) if selected else tokens.color("card-rim"),
                       1.5 if selected else 1))
         p.drawPath(path)
-        mono = QRectF(rect.left() + 10, rect.center().y() - 21, 30, 42)
+        ticked = index.data(ROLE_CHECK)
+        shift = CHECK_ROOM if ticked is not None else 0
+        if ticked is not None:
+            paint_check(p, check_rect(option.rect), bool(ticked))
+        mono = QRectF(rect.left() + 10 + shift, rect.center().y() - 21, 30, 42)
         p.setBrush(group_fill_color(entry.group))
         p.setPen(QPen(group_color(entry.group), 1.5))
         p.drawRoundedRect(mono, 7, 7)
@@ -192,6 +197,20 @@ class EffectCard(QStyledItemDelegate):
             p.setFont(ui_font(12))
             p.setPen(group_text_color(entry.group))
             line.setRight(chip.left() - 8)
+        if index.data(ROLE_UNUSED):  # icon + «Sin uso»: shape and colour that no other chip or icon of the app has
+            chip_w = QFontMetrics(ui_font(11)).horizontalAdvance(S.UNUSED) + 14 + 16
+            chip = QRectF(right - chip_w, rect.top() + 30, chip_w, 16)
+            color = tokens.color("status-ok")
+            p.setPen(QPen(with_alpha(color, 0.8), 1))
+            p.drawPath(card_path(chip, 8))
+            p.drawPixmap(QPointF(chip.left() + 6, chip.top() + 2), pixmap("unused", color.name(), 12,
+                                                                           p.device().devicePixelRatioF()))
+            p.setFont(ui_font(11))
+            p.setPen(color)
+            p.drawText(chip.adjusted(18, 0, 0, 0), Qt.AlignmentFlag.AlignCenter, S.UNUSED)
+            p.setFont(ui_font(12))
+            p.setPen(group_text_color(entry.group))
+            line.setRight(chip.left() - 8)
         badge = index.data(ROLE_BADGE)
         if badge:  # not installable on the connected pedal: a chip with the words, not only a colour
             chip_w = QFontMetrics(ui_font(11)).horizontalAdvance(badge) + 14
@@ -213,7 +232,27 @@ class EffectCard(QStyledItemDelegate):
 
 
 class _CardList(SectionList):
-    """Effect cards grouped in sections (see ``SectionList``)."""
+    """Effect cards grouped in sections (see ``SectionList``). A card with ``ROLE_CHECK`` has a tick box: a click on
+    it, or Space, emits ``check_toggled``."""
+
+    check_toggled = Signal(object)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        item = self.itemAt(event.position().toPoint())
+        if (event.button() == Qt.MouseButton.LeftButton and item is not None and item.data(ROLE_CHECK) is not None
+                and check_rect(self.visualItemRect(item)).adjusted(-4, -4, 4, 4).contains(event.position())):
+            self.check_toggled.emit(item)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        item = self.currentItem()
+        if event.key() == Qt.Key.Key_Space and item is not None and item.data(ROLE_CHECK) is not None:
+            self.check_toggled.emit(item)
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def __init__(self) -> None:
         super().__init__()
@@ -231,6 +270,7 @@ class EffectsManager(GlassPanel):
     refresh_requested = Signal()  # read the pedal's state again
     install_requested = Signal(str, object)  # pedal file name, local .zd2 path
     remove_requested = Signal(str)  # pedal file name
+    remove_many_requested = Signal(object)  # «Quitar seleccionados»: the pedal file names, in removal order
     patch_requested = Signal(int)  # a patch card of «Usado en»: location to open in the editor
     repair_requested = Signal(str, object)  # pedal file name, local .zd2 path: upload only the missing file
     close_requested = Signal()
@@ -252,6 +292,8 @@ class EffectsManager(GlassPanel):
         self._patches_complete = False
         self._unsaved = False
         self._missing: dict[int, list[str]] = {}  # location -> effects the pedal lacks
+        self._bank_uses: dict[str, int] = {}  # pedal file -> bank patches that use it
+        self._checked: set[str] = set()  # unused effects ticked for «Quitar seleccionados»
         self._users: dict[str, list[tuple]] = {}  # file -> (display number, name, location, chain strip)
         self._collapsed: dict[str, set[str]] = {"installed": set(), "available": set()}  # kept while the screen lives
 
@@ -269,6 +311,29 @@ class EffectsManager(GlassPanel):
         self.memory_bar.setTextVisible(False)  # the figures are their own label: text over a thin bar cannot be read
         self.memory_label = QLabel(S.NOT_AVAILABLE)
         self.memory_label.setProperty("role", "value")
+        self.unused_link = QPushButton("")  # «5 efectos sin uso · 123 KB que se pueden liberar»: applies the filter
+        self.unused_link.setFlat(True)
+        self.unused_link.setProperty("link", True)
+        self.unused_link.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.unused_link.setIcon(icon("unused", "status-ok", 14))
+        self.unused_link.clicked.connect(self.show_unused)
+        self.unused_link.hide()
+        self.unused_summary = QLabel("")
+        self.unused_summary.setProperty("role", "secondary")
+        self.select_all_button = QPushButton(S.SELECT_ALL)
+        self.select_all_button.clicked.connect(self._on_select_all)
+        self.remove_selected_button = QPushButton(S.remove_selected(0, 0))
+        self.remove_selected_button.setProperty("danger", True)
+        self.remove_selected_button.setIcon(icon("x", "status-danger"))
+        self.remove_selected_button.clicked.connect(self._on_remove_selected)
+        self.unused_bar = QWidget()
+        bar = QHBoxLayout(self.unused_bar)
+        bar.setContentsMargins(0, 0, 0, 0)
+        bar.setSpacing(10)
+        bar.addWidget(self.unused_summary, stretch=1)
+        bar.addWidget(self.select_all_button)
+        bar.addWidget(self.remove_selected_button)
+        self.unused_bar.hide()
         self.message_label = QLabel("")
         self.message_label.setProperty("role", "offline")
         self.message_label.setWordWrap(True)
@@ -283,6 +348,7 @@ class EffectsManager(GlassPanel):
         self.group_combo.setMinimumWidth(190)
         self.group_combo.addItem(S.ALL_GROUPS, None)
         self.group_combo.addItem(S.FAVORITES, FAVORITES_KEY)
+        self.group_combo.addItem(S.UNUSED, S.UNUSED_KEY)
         self.group_combo.currentIndexChanged.connect(lambda _i: self._populate())
         self.pedal_combo = QComboBox()  # which pedal's effects the right column lists (default: the connected one)
         self.pedal_combo.setToolTip(S.EFFECTS_PEDAL_TIP)
@@ -378,6 +444,8 @@ class EffectsManager(GlassPanel):
         self.usage_box.hide()
         self.install_button.clicked.connect(self._on_install)
         self.remove_button.clicked.connect(self._on_remove)
+        self.installed_list.check_toggled.connect(lambda item: self.set_checked(
+            item.data(ROLE_ENTRY).file, not item.data(ROLE_CHECK)))
 
         title = QHBoxLayout()
         title.addWidget(SectionLabel(S.EFFECTS_TITLE))
@@ -389,6 +457,7 @@ class EffectsManager(GlassPanel):
         memory.addWidget(QLabel(S.MEMORY_LABEL))
         memory.addWidget(self.memory_bar, stretch=1)
         memory.addWidget(self.memory_label)
+        memory.addWidget(self.unused_link)
 
         self.content = QWidget()
         content = QHBoxLayout(self.content)
@@ -401,6 +470,7 @@ class EffectsManager(GlassPanel):
         filters.addWidget(self.group_combo)
         filters.addWidget(self.pedal_combo)
         lists.addLayout(filters)
+        lists.addWidget(self.unused_bar)
         columns = QHBoxLayout()
         columns.setSpacing(14)
         columns.addLayout(self._column(S.EFFECTS_INSTALLED, self.installed_count, self.installed_empty,
@@ -607,13 +677,17 @@ class EffectsManager(GlassPanel):
         self.state_shown.emit()
 
     def set_patch_usage(self, complete: bool, unsaved: bool, users: dict[str, list[tuple]],
-                        missing: dict[int, list[str]] | None = None) -> None:
+                        missing: dict[int, list[str]] | None = None, bank_uses: dict[str, int] | None = None) -> None:
         """What the editor knows: every patch read, any unsaved edit, and the patches (number, name) using each file.
 
         ``missing``: location -> the effects of that patch the pedal lacks (its card carries the amber warning)."""
         self._patches_complete, self._unsaved, self._users = complete, unsaved, users
         self._missing = dict(missing or {})
-        self._update_actions()
+        self._bank_uses = dict(bank_uses or {})
+        if self._loaded:
+            self._populate()  # the «Sin uso» markers follow what the patches use
+        else:
+            self._update_actions()
 
     def set_write_block(self, reason: str | None) -> None:
         """A pedal the app cannot edit yet: browse and read, but install, remove and repair stay off."""
@@ -678,9 +752,94 @@ class EffectsManager(GlassPanel):
         if group == FAVORITES_KEY:
             if not self._is_favorite(entry):
                 return False
+        elif group == S.UNUSED_KEY:
+            if not self._is_unused(entry):
+                return False
         elif group is not None and entry.group != group:
             return False
         return all(word in haystack for word in query.lower().split())
+
+    # ------------------------------------------------------------ «Sin uso»
+
+    def _usage_confirmed(self) -> bool:
+        """What Quitar already requires: every patch read and no unsaved edit."""
+        return self._loaded and self._patches_complete and not self._unsaved
+
+    def _is_unused(self, entry: Entry) -> bool:
+        """Installed, its file on the pedal, known to the catalog, and no patch of the pedal uses it (never a guess)."""
+        return (self._usage_confirmed() and entry.info is not None and not entry.missing
+                and entry in self._installed and not self._users.get(entry.file))
+
+    def _unused_view(self) -> bool:
+        return self.group_combo.currentData() == S.UNUSED_KEY
+
+    def show_unused(self) -> None:
+        self.group_combo.setCurrentIndex(self.group_combo.findData(S.UNUSED_KEY))
+
+    def _unused_tip(self, entry: Entry) -> str:
+        uses = self._bank_uses.get(entry.file, 0)
+        return S.UNUSED_TIP + (f". {S.unused_bank_note(uses)}" if uses else "")
+
+    def checked_names(self) -> list[str]:
+        """The ticked unused effects (pedal file names) in the order the list shows them."""
+        return [f for f in self.installed_names() if f in self._checked]
+
+    def set_checked(self, file: str, on: bool) -> bool:
+        """Tick or untick an unused effect; an effect in use (or one nothing is known about) can never be ticked."""
+        entry = self._entry(file)
+        if entry is None or not self._is_unused(entry):
+            return False
+        (self._checked.add if on else self._checked.discard)(file)
+        for i in range(self.installed_list.count()):
+            item = self.installed_list.item(i)
+            if item.data(ROLE_ENTRY) is not None and item.data(ROLE_ENTRY).file == file and item.data(ROLE_CHECK) is not None:
+                item.setData(ROLE_CHECK, on)
+        self.installed_list.viewport().update()
+        self._update_unused_ui()
+        return True
+
+    def _shown_unused(self) -> list[Entry]:
+        return [self.installed_list.item(i).data(ROLE_ENTRY) for i in range(self.installed_list.count())
+                if self.installed_list.item(i).data(ROLE_ENTRY) is not None
+                and self._is_unused(self.installed_list.item(i).data(ROLE_ENTRY))]
+
+    def _on_select_all(self) -> None:
+        shown = self._shown_unused()
+        everything = all(e.file in self._checked for e in shown)
+        for entry in shown:
+            self.set_checked(entry.file, not everything)
+
+    def _update_unused_ui(self) -> None:
+        """The link in the default view, and the summary and the two buttons of the «Sin uso» view."""
+        unused = [e for e in self._installed if self._is_unused(e)]
+        in_view = self._unused_view()
+        self.unused_link.setVisible(bool(unused) and not in_view and self._usage_confirmed())
+        self.unused_link.setText(S.unused_summary(len(unused), sum(e.size or 0 for e in unused)))
+        self.unused_bar.setVisible(in_view)
+        if not in_view:
+            return
+        shown = self._shown_unused()
+        self.unused_summary.setText(S.unused_summary(len(shown), sum(e.size or 0 for e in shown))
+                                    if self._usage_confirmed() else S.UNUSED_UNKNOWN)
+        ticked = [e for e in shown if e.file in self._checked]
+        self.remove_selected_button.setText(S.remove_selected(len(ticked), sum(e.size or 0 for e in ticked)))
+        reason = self._write_block or (S.UNUSED_UNKNOWN if not self._usage_confirmed() else "")
+        self.remove_selected_button.setEnabled(bool(ticked) and not reason and not self._busy)
+        self.remove_selected_button.setToolTip(reason)
+        self.select_all_button.setEnabled(bool(shown) and not self._busy)
+
+    def _on_remove_selected(self) -> None:
+        ticked = [e for e in self._shown_unused() if e.file in self._checked]
+        if not ticked or not self.remove_selected_button.isEnabled():
+            return
+        lines = []
+        for e in ticked:
+            uses = self._bank_uses.get(e.file, 0)
+            lines.append(f"{e.name} ({e.file}, {S.effects_size(e.size)})" + (f" · {S.unused_bank_note(uses)}" if uses else ""))
+        if ConfirmDialog.ask(self, S.remove_many_title(len(ticked)),
+                             S.effects_confirm_remove_many(lines, sum(e.size or 0 for e in ticked)),
+                             S.EFFECTS_REMOVE, danger=True):
+            self.remove_many_requested.emit([e.file for e in ticked])
 
     def _refill_groups(self) -> None:
         """The group filter offers the groups of the pedal's effects, in the catalog's order; the choice survives."""
@@ -690,6 +849,7 @@ class EffectsManager(GlassPanel):
         self.group_combo.clear()
         self.group_combo.addItem(S.ALL_GROUPS, None)
         self.group_combo.addItem(S.FAVORITES, FAVORITES_KEY)
+        self.group_combo.addItem(S.UNUSED, S.UNUSED_KEY)
         for group in groups:
             self.group_combo.addItem(S.group_label(group), group)
         index = self.group_combo.findData(chosen)
@@ -704,18 +864,26 @@ class EffectsManager(GlassPanel):
                 ("available", self.available_list, self._available, self.available_count, self.available_empty,
                  S.EFFECTS_NONE_AVAILABLE)):
             shown = [e for e in entries if self._matches(e, query, apply_pedal=which == "available")]
+            flat = self._unused_view() and which == "installed"  # the «Sin uso» view: one list, the largest first
+            if self._unused_view() and which == "available":
+                shown = []
+            if flat:
+                shown.sort(key=lambda e: (-(e.size or 0), e.name.lower()))
             total = len([e for e in entries if which == "installed" or self._in_pedal_filter(e)])
             cards.blockSignals(True)
             cards.clear()
             def section_of(e: Entry) -> str:
                 return FAVORITES_KEY if self._is_favorite(e) else e.group  # a favourite lives in its own section only
 
-            for group in sorted({section_of(e) for e in shown}, key=lambda g: (g != FAVORITES_KEY, g)):
-                section = [e for e in shown if section_of(e) == group]
-                folded = group in self._collapsed[which]
-                header = QListWidgetItem()
-                self._set_section(which, header, group, len(section), not folded)
-                cards.addItem(header)
+            sections = ([(None, shown)] if flat else
+                        [(g, [e for e in shown if section_of(e) == g])
+                         for g in sorted({section_of(e) for e in shown}, key=lambda g: (g != FAVORITES_KEY, g))])
+            for group, section in sections:
+                folded = group is not None and group in self._collapsed[which]
+                if group is not None:
+                    header = QListWidgetItem()
+                    self._set_section(which, header, group, len(section), not folded)
+                    cards.addItem(header)
                 for entry in section:
                     item = QListWidgetItem()
                     item.setData(ROLE_ENTRY, entry)
@@ -737,17 +905,26 @@ class EffectsManager(GlassPanel):
                     if entry.missing:
                         item.setToolTip(S.EFFECTS_MISSING_TIP)
                         item.setData(Qt.ItemDataRole.AccessibleTextRole, f"{entry.name}, {S.EFFECTS_MISSING_TIP}")
+                    if which == "installed" and self._is_unused(entry):
+                        tip = self._unused_tip(entry)
+                        item.setData(ROLE_UNUSED, tip)
+                        item.setToolTip(tip)
+                        item.setData(Qt.ItemDataRole.AccessibleTextRole, f"{entry.name}, {S.UNUSED}. {tip}")
+                    if flat:
+                        item.setData(ROLE_CHECK, entry.file in self._checked)
                     item.setHidden(folded)
                     cards.addItem(item)
                     if entry.file == self._selected:
                         cards.setCurrentItem(item)
             cards.blockSignals(False)
             count.setText(S.effects_count(len(shown), total))
-            empty.setText(none_text)
+            empty.setText(S.UNUSED_VIEW_NOTE if self._unused_view() and which == "available" else none_text)
             empty.setVisible(not shown)
+        self._checked &= {e.file for e in self._installed if self._is_unused(e)}  # only unused ones stay ticked
         if self._entry(self._selected) is None:
             self._selected = None
         self._show_detail()
+        self._update_unused_ui()
 
     def select_effect(self, file: str) -> None:
         """Select the card of ``file`` in whichever list shows it."""
@@ -900,6 +1077,7 @@ class EffectsManager(GlassPanel):
         self.install_button.setToolTip(tip)
         self.remove_button.setToolTip(tip)
         self.repair_button.setToolTip(tip)
+        self._update_unused_ui()
 
     def _on_install(self) -> None:
         entry = self._entry(self._selected)
@@ -931,5 +1109,6 @@ class EffectsManager(GlassPanel):
         if entry is None or not self.remove_button.isEnabled():
             return
         if ConfirmDialog.ask(self, S.effects_confirm_remove_title(entry.name),
-                             S.effects_confirm_remove(entry.name, entry.file), S.EFFECTS_REMOVE, danger=True):
+                             S.effects_confirm_remove(entry.name, entry.file, self._bank_uses.get(entry.file, 0)),
+                             S.EFFECTS_REMOVE, danger=True):
             self.remove_requested.emit(entry.file)

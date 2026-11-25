@@ -19,6 +19,7 @@ from zoomstudio.effects.catalog import EffectInfo
 from zoomstudio.effects import flst
 from zoomstudio.effects.flst import pedal_filename
 from zoomstudio.patches import edit
+from zoomstudio.patches.bank import BankError
 from zoomstudio.patches.model import NAME_MAX_LEN, VOLUME_MAX, Patch
 from zoomstudio.patches.zptc import build_zptc, parse_zptc
 
@@ -193,6 +194,7 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self._effects_busy = False
         self._installed_files: set[str] | None = None  # pedal files installed and present; None: not read (nothing guessed)
         self._installed_ids: set[int] | None = None  # the catalog effects those files are
+        self._removal: dict | None = None  # the «Quitar seleccionados» run in progress
         self._pedal_state: tuple[bytes, list[str]] | None = None  # the last list and file names the pedal reported
         self._pedal_entries: list[Entry] = []  # the installed and available entries of the last read
         self._pending_add: tuple[int, int, int] | None = None  # (location, slot, effect ID) waiting for its install
@@ -473,6 +475,7 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self.effects_panel.hide()
         self.effects_panel.close_requested.connect(lambda: self.effects_toggle.setChecked(False))
         self.effects_panel.refresh_requested.connect(self._request_effects_state)
+        self.effects_panel.remove_many_requested.connect(self._on_effects_remove_many)
         self.effects_panel.update_requested.connect(self.open_update_view)
         self.effects_panel.set_update_available(self._updater is not None)
         self.effects_panel.install_requested.connect(self._on_effect_install)
@@ -671,7 +674,55 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
 
     def _refresh_effects_context(self) -> None:
         self.effects_panel.set_patch_usage(self._patches_complete and self._is_connected, self.any_dirty(),
-                                           self.effects_usage(), self._missing_by_location())
+                                           self.effects_usage(), self._missing_by_location(), self._bank_uses())
+
+    def _bank_uses(self) -> dict[str, int]:
+        """Pedal file -> how many bank patches use it (the bank is not the pedal: it never makes an effect «in use»)."""
+        uses: dict[str, int] = {}
+        for entry in self.bank_store.list():
+            key = f"{entry.id}:{entry.sha256}"
+            if key not in self._bank_patches:
+                try:
+                    self._bank_patches[key] = parse_zptc(self.bank_store.read(entry.id))
+                except (BankError, ValueError):
+                    self._bank_patches[key] = None
+            patch = self._bank_patches[key]
+            files = set() if patch is None else {pedal_filename(info.filename) for slot in patch.effects
+                                                 if (info := self.catalog.get(slot.effect_id)) is not None}
+            for file in files:
+                uses[file] = uses.get(file, 0) + 1
+        return uses
+
+    # --- «Quitar seleccionados»: one confirmation (the screen's), then one verified removal per call
+
+    def _on_effects_remove_many(self, files: list[str]) -> None:
+        reason = self.write_block_reason()
+        if reason is not None:  # a pedal the app cannot edit yet: reading only
+            self._report_error(reason)
+            return
+        if self._worker is None or not self._is_connected or self._effects_busy or not files:
+            return
+        names = {e.file: e.name for e in self._pedal_entries}
+        self._removal = {"queue": list(files), "done": [], "names": names, "total": len(files)}
+        self._remove_next()
+
+    def _remove_next(self) -> None:
+        job = self._removal
+        name = job["queue"][0]
+        self._set_effects_busy(True, S.EFFECTS_BUSY_REMOVE_MANY)
+        self.statusBar().showMessage(S.EFFECTS_BUSY_REMOVE_MANY)
+        in_use = {file: [user[0] for user in patches] for file, patches in self.effects_usage().items()}
+        self._effect_remove_requested.emit(name, self.effects_backup_dir, in_use)
+
+    def _finish_removal(self, failed: bool) -> None:
+        job, self._removal = self._removal, None
+        if job is None:
+            return
+        label = lambda files: [job["names"].get(f, f) for f in files]  # noqa: E731
+        if failed:
+            self._report_error(S.remove_many_stopped(label(job["done"]), label(job["queue"])))
+        else:
+            self.statusBar().showMessage(S.remove_many_done(len(job["done"])))
 
     @property
     def effects_backup_dir(self) -> Path:
@@ -726,6 +777,11 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self.effects_panel.set_state(flst_bytes, files, usage)
         self._set_installed_state(flst_bytes, files)
         self._resume_pending_add()
+        if self._removal is not None:  # the state was read again after the removal: on to the next, or done
+            if self._removal["queue"]:
+                self._remove_next()
+            else:
+                self._finish_removal(failed=False)
 
     def _load_installed_state(self) -> None:
         """After the patches were read: the editor needs what is installed (icons, warnings, Live, Save), a read."""
@@ -736,6 +792,8 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
     def _on_effects_state_failed(self) -> None:
         self._clear_installed_state()
         self._pending_add = None
+        if self._removal is not None:
+            self._finish_removal(failed=True)
 
     # ----------------------------------------------- what is installed (icons, warnings, Live, save, quick install)
 
@@ -858,6 +916,8 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
 
     @Slot(str, bool)
     def _on_effect_changed(self, name: str, installed: bool) -> None:
+        if self._removal is not None and not installed and self._removal["queue"][:1] == [name]:
+            self._removal["done"].append(self._removal["queue"].pop(0))
         if getattr(self, "_effects_repairing", False):
             message = S.effects_repaired_ok
         else:
@@ -869,6 +929,8 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self._effects_repairing = False
         if not success:
             self._pending_add = None
+            if self._removal is not None:
+                self._finish_removal(failed=True)
         self._set_effects_busy(False)
         self._request_effects_state()  # the lists and the memory always reflect the pedal, whatever happened
 

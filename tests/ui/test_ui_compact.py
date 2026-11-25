@@ -26,7 +26,7 @@ from zoomstudio.ui.widgets import ParamRow
 
 EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
 SIZES = [(1280, 760), (1440, 900), (1600, 1000)]
-STATES = ["two-pedals", "no-patch", "gt-geq-7", "not-installed", "patch-warnings", "effects-manager", "effects-all-pedals", "read-only-pedal", "bank", "tuner", "offline", *UPDATE_STATES]
+STATES = ["two-pedals", "no-patch", "gt-geq-7", "not-installed", "patch-warnings", "unused-view", "effects-manager", "effects-all-pedals", "read-only-pedal", "bank", "tuner", "offline", *UPDATE_STATES]
 SQUEEZE_SLACK = 1
 
 
@@ -52,6 +52,10 @@ def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
         qtbot.addWidget(w)
         w.load_offline(FIXTURES / "backup")
         return w
+    if state == "unused-view":  # the «Sin uso» view with two effects ticked
+        from test_ui_unused_effects import unused_view
+
+        return unused_view(qtbot, monkeypatch, catalog, tmp_path)
     PedalFiles(BEFORE).install(monkeypatch)
     patches = PATCHES * 3 if state == "patch-warnings" else PATCHES  # six patches: 2, 4 and 6 are HB Jazz
     transport = fake_pedal(patches, member=0x0C if state == "read-only-pedal" else 0x11)

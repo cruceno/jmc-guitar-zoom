@@ -29,6 +29,30 @@ ROLE_DROP = Qt.ItemDataRole.UserRole + 14     # a drag is over this card and may
 ROLE_META = Qt.ItemDataRole.UserRole + 15     # second line of a bank card: origin and date
 ROLE_MISSING = Qt.ItemDataRole.UserRole + 16  # names of the effects the pedal lacks (list); None or empty: none
 WARN = 16  # side of the warning triangle of a patch card
+ROLE_CHECK = Qt.ItemDataRole.UserRole + 17    # a card with a tick box: checked (bool); None: it has none
+CHECK = 16  # side of the tick box
+CHECK_ROOM = CHECK + 10  # what the card content gives up at its left edge for it
+
+
+def check_rect(item_rect: QRect) -> QRectF:
+    """Where the tick box of an effect card sits inside the item's rectangle."""
+    card = QRectF(item_rect).adjusted(2, 3, -2, -3)
+    return QRectF(card.left() + 8, card.center().y() - CHECK / 2, CHECK, CHECK)
+
+
+def paint_check(p: QPainter, rect: QRectF, on: bool) -> None:
+    """A square tick box: filled with a check mark when ``on`` (the mark, not only the colour, says it)."""
+    p.save()
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setPen(QPen(tokens.color("accent" if on else "border-strong"), 1.6))
+    p.setBrush(tokens.color("accent") if on else Qt.BrushStyle.NoBrush)
+    p.drawRoundedRect(rect, 4, 4)
+    if on:
+        p.setPen(QPen(tokens.color("on-accent"), 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        p.drawPolyline(QPolygonF([QPointF(rect.left() + 3.5, rect.center().y()),
+                                  QPointF(rect.left() + 7, rect.bottom() - 4.5),
+                                  QPointF(rect.right() - 3.5, rect.top() + 4.5)]))
+    p.restore()
 
 STAR = 20  # side of the favourite star of an effect card
 STAR_ROOM = STAR + 8  # what the card text gives up at its right edge for it
