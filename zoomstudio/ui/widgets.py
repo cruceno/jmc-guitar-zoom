@@ -464,9 +464,10 @@ class _CatalogList(SectionList):
         if item is None or self.is_header(item) or (item.data(ROLE_EFFECT) or {}).get("installed") is not False:
             return menu
         menu = menu if menu is not None else QMenu(self)
-        action = menu.addAction(icon("chip"), S.INSTALL_ON_PEDAL)
-        action.setEnabled(self.install_block is None)
-        action.setToolTip(self.install_block or "")
+        installable = (item.data(ROLE_EFFECT) or {}).get("installable", True)
+        action = menu.addAction(icon("chip"), S.INSTALL_ON_PEDAL if installable else S.CANNOT_INSTALL_HERE)
+        action.setEnabled(installable and self.install_block is None)
+        action.setToolTip(S.EFFECTS_NOT_IN_PEDAL_LIST if not installable else (self.install_block or ""))
         action.triggered.connect(lambda: self.install_requested.emit(item))
         return menu
 
@@ -507,11 +508,14 @@ class DestinationCard(QFrame):
         self.text, self.strip = text, strip
         self.update()
 
-    def set_install(self, offered: bool, block: str | None = None) -> None:
-        """Show «Instalar en la pedalera» under the sentence (disabled, with the reason, while ``block``)."""
+    def set_install(self, offered: bool, block: str | None = None, installable: bool = True) -> None:
+        """Show «Instalar en la pedalera» under the sentence (disabled, with the reason, while ``block``).
+
+        ``installable`` False: the pedal's list has no record of the effect, so it says so instead of offering it."""
         self.install_button.setVisible(offered)
-        self.install_button.setEnabled(offered and block is None)
-        self.install_button.setToolTip(block or "")
+        self.install_button.setText(S.INSTALL_ON_PEDAL if installable else S.CANNOT_INSTALL_HERE)
+        self.install_button.setEnabled(offered and installable and block is None)
+        self.install_button.setToolTip(block or "" if installable else S.EFFECTS_NOT_IN_PEDAL_LIST)
         self.setFixedHeight(self.BASE_HEIGHT + (self.INSTALL_HEIGHT + 6 if offered else 0))
         self._place_install()
 
@@ -578,6 +582,7 @@ class CatalogPanel(QWidget):
         self._pedal_name = pedal_name
         self._installed_label = installed_label
         self._installed_ids: set[int] | None = None  # None: the pedal's effect list is not known (nothing is guessed)
+        self._installable_ids: set[int] | None = None  # what the pedal's list can take; None: not known (offer it)
         self._install_block: str | None = None
         self._current_dsp = 0.0
         self._replaced_dsp = 0.0
@@ -728,6 +733,9 @@ class CatalogPanel(QWidget):
         """Installed on the connected pedal: True or False, None while its effect list is not known."""
         return None if self._installed_ids is None else effect_id in self._installed_ids
 
+    def _installable_state(self, effect_id: int) -> bool:
+        return self._installable_ids is None or effect_id in self._installable_ids
+
     def _badge_names(self, data: dict) -> list[str]:
         return [b.text for b in card_badges(data)]
 
@@ -854,7 +862,7 @@ class CatalogPanel(QWidget):
             for info in members:
                 data = {"name": info.name, "group": info.group, "dsp": info.dsp_load_percent, "wide": info.is_wide,
                         "installed": self._installed_state(info.effect_id), "in_chain": info.effect_id in self._chain_ids,
-                        "svg": info.svg_path}
+                        "installable": self._installable_state(info.effect_id), "svg": info.svg_path}
                 item = QListWidgetItem(S.catalog_row(info.name, info.group, info.dsp_load_percent,
                                                      self._badge_names(data)))
                 item.setData(Qt.ItemDataRole.AccessibleTextRole, item.text())
@@ -902,12 +910,14 @@ class CatalogPanel(QWidget):
         self._chain_ids = set(ids)
         self._refresh_badges()
 
-    def set_installed(self, ids: set[int] | None) -> None:
-        """The effects installed on the connected pedal (``None``: not known, so no icon claims anything)."""
+    def set_installed(self, ids: set[int] | None, installable: set[int] | None = None) -> None:
+        """The effects installed on the connected pedal (``None``: not known, so no icon claims anything), and the
+        ones its list can take (``installable``; ``None``: not known)."""
         ids = None if ids is None else set(ids)
-        if ids == self._installed_ids:
+        installable = None if installable is None else set(installable)
+        if ids == self._installed_ids and installable == self._installable_ids:
             return
-        self._installed_ids = ids
+        self._installed_ids, self._installable_ids = ids, installable
         self._refresh_badges()
 
     def set_install_block(self, reason: str | None) -> None:
@@ -921,6 +931,7 @@ class CatalogPanel(QWidget):
             data = dict(item.data(ROLE_EFFECT))
             data["in_chain"] = item.data(_ID_ROLE) in self._chain_ids
             data["installed"] = self._installed_state(item.data(_ID_ROLE))
+            data["installable"] = self._installable_state(item.data(_ID_ROLE))
             item.setData(ROLE_EFFECT, data)
             item.setText(S.catalog_row(data["name"], data["group"], data["dsp"], self._badge_names(data)))
             item.setData(Qt.ItemDataRole.AccessibleTextRole, item.text())
@@ -929,8 +940,8 @@ class CatalogPanel(QWidget):
 
     def _sync_install(self) -> None:
         item = self._current_effect()
-        offered = item is not None and (item.data(ROLE_EFFECT) or {}).get("installed") is False
-        self.destination.set_install(offered, self._install_block)
+        data = item.data(ROLE_EFFECT) or {} if item is not None else {}
+        self.destination.set_install(data.get("installed") is False, self._install_block, data.get("installable", True))
 
     def _install_current(self) -> None:
         item = self._current_effect()

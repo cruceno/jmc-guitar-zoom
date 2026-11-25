@@ -975,11 +975,23 @@ EFFECTS_ALL_PEDALS = "Todos los pedales"
 EFFECTS_PEDAL_TIP = "Pedal cuyos efectos se muestran"
 EFFECTS_THIS_PEDAL = "este pedal"
 EFFECTS_NOT_INSTALLABLE = "No compatible con este pedal"
-EFFECTS_NOT_IN_PEDAL_LIST = "La lista de la pedalera no incluye este efecto: no se puede instalar"
+EFFECTS_NOT_IN_PEDAL_LIST = "No figura en la lista de efectos de esta pedalera"
+EFFECTS_LIST_BADGE = "No figura en la lista"  # the chip; the sentence below is its tooltip
+EFFECTS_NOT_IN_LIST_TIP = "La pedalera conectada no incluye este efecto en su lista interna; la app no puede instalarlo"
+CANNOT_INSTALL_HERE = "No se puede instalar en esta pedalera"
 
 
 def pedal_connected_label(name: str) -> str:
     return f"{name} (conectada)"
+
+
+def effects_for_models(names: list[str]) -> str:
+    """Subtitle that tells same-name variants apart: the pedal models that can run this file."""
+    return "Para " + " · ".join(names)
+
+
+def effects_other_version_installed(name: str, file: str) -> str:
+    return f"Otra versión de {name} instalada ({file})"
 
 
 def not_compatible_with(name: str) -> str:

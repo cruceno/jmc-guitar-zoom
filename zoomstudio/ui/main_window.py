@@ -770,7 +770,7 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
     def _refresh_installed(self) -> None:
         """The installed set changed (state read, catalog reloaded, disconnect): icons, tiles and Save follow it."""
         self._installed_ids = self._compute_installed_ids()
-        self.catalog_panel.set_installed(self._installed_ids)
+        self.catalog_panel.set_installed(self._installed_ids, self._installable_ids())
         patch = self.current_patch
         if patch is not None:  # the tiles carry the warning: update them in place, the parameters stay as they are
             warned = set(edit.not_installed_slots(patch, self.catalog, self._installed_ids))
@@ -780,6 +780,14 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
             self._refresh_item(location)  # the patch cards carry the warning too
         self._refresh_bank_screen()
         self._update_buttons()
+
+    def _installable_ids(self) -> set[int] | None:
+        """Catalog effects the pedal's list can take (a flag to set, or a file to put back); ``None``: list not read."""
+        if self._installed_files is None:
+            return None
+        by_file = {e.file: e for e in self._pedal_entries}
+        return {i for i, info in self.catalog.items()
+                if (e := by_file.get(pedal_filename(info.filename))) is not None and (e.installable or e.missing)}
 
     def _missing_effects(self) -> list[int]:
         """Catalog IDs of the effects of the current patch that are known not to be installed (each once)."""

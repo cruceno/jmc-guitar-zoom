@@ -636,6 +636,8 @@ def test_an_effect_the_pedals_list_does_not_contain_is_shown_but_cannot_be_insta
     files.install(monkeypatch)
     w = connected_window(qtbot, monkeypatch, {**catalog, unlisted.effect_id: unlisted}, tmp_path, files, models=registry)
     panel = open_screen(qtbot, w)
+    assert "ZZNEW.ZD2" not in names(panel, "available")  # the connected pedal's filter hides what it can never take
+    panel.pedal_combo.setCurrentIndex(panel.pedal_combo.findData("all"))
     panel.select_effect("ZZNEW.ZD2")
     assert not panel.install_button.isEnabled() and panel.reason_label.text() == ST.EFFECTS_NOT_IN_PEDAL_LIST
 

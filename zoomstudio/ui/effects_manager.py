@@ -38,6 +38,7 @@ from .theme import group_color, group_fill_color, group_text_color
 
 ROLE_ENTRY = Qt.ItemDataRole.UserRole + 30  # the Entry behind a card
 ROLE_BADGE = Qt.ItemDataRole.UserRole + 32  # text of the badge on a card the pedal cannot install
+ROLE_MODELS = Qt.ItemDataRole.UserRole + 33  # «Para G11 · G6»: the models that can run this file (all-pedals views)
 DETAIL_WIDTH = 360
 BYPASS = "BYPASS.ZD2"  # the list's first record: the pedal's "no effect", not an effect to manage
 
@@ -204,6 +205,8 @@ class EffectCard(QStyledItemDelegate):
             p.setPen(group_text_color(entry.group))
             line.setRight(chip.left() - 8)
         text = S.group_label(entry.group) if (entry.missing or badge) else f"{S.group_label(entry.group)} · {S.effects_size(entry.size)}"
+        if index.data(ROLE_MODELS):  # a same-name variant is told apart by the models it is for
+            text = f"{S.group_label(entry.group)} · {index.data(ROLE_MODELS)}"
         p.drawText(line, Qt.AlignmentFlag.AlignVCenter, QFontMetrics(ui_font(12)).elidedText(
             text, Qt.TextElideMode.ElideRight, int(line.width())))
         p.restore()
@@ -289,6 +292,7 @@ class EffectsManager(GlassPanel):
         self.pedal_combo.hide()
         self._models: dict = {}
         self._pedal_id: int | None = None  # the pedal the install flow is for (connected, else the target)
+        self._pedal_connected = False  # ... and it is the real, connected one
         self._pedal_name = ""
         self._write_block: str | None = None  # why nothing may be written to the connected pedal
         self._flst_bytes: bytes | None = None
@@ -555,6 +559,7 @@ class EffectsManager(GlassPanel):
         The filter offers that pedal first (named after its ``modelName``), then every pedal, then the others.
         """
         self._models, self._pedal_id, self._allowed = models, pedal_id, allowed_ids
+        self._pedal_connected = connected
         known = models.get(pedal_id)
         self._pedal_name = known.name if known is not None else ""
         chosen = self.pedal_combo.currentData()
@@ -638,7 +643,32 @@ class EffectsManager(GlassPanel):
         if choice is None or choice == "all" or entry.info is None:
             return True
         model = self._models.get(choice)
-        return model is None or entry.info.effect_id in model.effect_ids
+        if model is None or entry.info.effect_id not in model.effect_ids:
+            return model is None
+        if self._pedal_connected and choice == self._pedal_id:
+            # the connected pedal's own view lists what it can take: another model's variant, or an effect its list has
+            # no record of (it never installs), would only look like a second, incompatible copy of an installed one
+            return entry.compat in ("ok", "copy")
+        return True
+
+    def _connected_view(self) -> bool:
+        return self._pedal_connected and self.pedal_combo.currentData() == self._pedal_id
+
+    def _models_line(self, entry: Entry) -> str | None:
+        """«Para G11 · G6 · H8»: shown where several pedals' effects mix, so same-name variants can be told apart."""
+        if entry.info is None or self._connected_view() or not self._models:
+            return None
+        names = sorted(m.name for m in self._models.values() if entry.info.effect_id in m.effect_ids)
+        return S.effects_for_models(names) if names else None
+
+    def _entry_tip(self, entry: Entry, reason: str = "") -> str:
+        """Tooltip: why it cannot be installed (if so), its pedal file name, and an installed same-name version."""
+        lines = [reason] if reason else []
+        lines.append(entry.file)
+        twin = next((e for e in self._installed if e.file != entry.file and e.name == entry.name), None)
+        if twin is not None and entry not in self._installed:
+            lines.append(S.effects_other_version_installed(entry.name, twin.file))
+        return "\n".join(lines)
 
     def _matches(self, entry: Entry, query: str, apply_pedal: bool = False) -> bool:
         if apply_pedal and not self._in_pedal_filter(entry):
@@ -674,6 +704,7 @@ class EffectsManager(GlassPanel):
                 ("available", self.available_list, self._available, self.available_count, self.available_empty,
                  S.EFFECTS_NONE_AVAILABLE)):
             shown = [e for e in entries if self._matches(e, query, apply_pedal=which == "available")]
+            total = len([e for e in entries if which == "installed" or self._in_pedal_filter(e)])
             cards.blockSignals(True)
             cards.clear()
             def section_of(e: Entry) -> str:
@@ -688,12 +719,21 @@ class EffectsManager(GlassPanel):
                 for entry in section:
                     item = QListWidgetItem()
                     item.setData(ROLE_ENTRY, entry)
+                    if which == "available":
+                        item.setData(ROLE_MODELS, self._models_line(entry))
+                        item.setToolTip(self._entry_tip(entry))
+                        item.setData(Qt.ItemDataRole.AccessibleTextRole,
+                                     f"{entry.name}, {item.toolTip().replace(chr(10), ', ')}")
                     item.setData(ROLE_FAV, self._is_favorite(entry) if entry.info is not None else None)
                     if not entry.installable:
                         badge = S.not_compatible_with(self._pedal_name) if self._pedal_name else S.EFFECTS_NOT_INSTALLABLE
+                        tip = badge
+                        if entry.compat == "list":  # its model fits, but the pedal's list has no record of it
+                            badge, tip = S.EFFECTS_LIST_BADGE, S.EFFECTS_NOT_IN_LIST_TIP
                         item.setData(ROLE_BADGE, badge)
-                        item.setToolTip(badge)
-                        item.setData(Qt.ItemDataRole.AccessibleTextRole, f"{entry.name}, {badge}")
+                        full = self._entry_tip(entry, tip)
+                        item.setToolTip(full)
+                        item.setData(Qt.ItemDataRole.AccessibleTextRole, f"{entry.name}, {full.replace(chr(10), ', ')}")
                     if entry.missing:
                         item.setToolTip(S.EFFECTS_MISSING_TIP)
                         item.setData(Qt.ItemDataRole.AccessibleTextRole, f"{entry.name}, {S.EFFECTS_MISSING_TIP}")
@@ -702,7 +742,7 @@ class EffectsManager(GlassPanel):
                     if entry.file == self._selected:
                         cards.setCurrentItem(item)
             cards.blockSignals(False)
-            count.setText(S.effects_count(len(shown), len(entries)))
+            count.setText(S.effects_count(len(shown), total))
             empty.setText(none_text)
             empty.setVisible(not shown)
         if self._entry(self._selected) is None:
