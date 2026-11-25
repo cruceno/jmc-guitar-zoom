@@ -11,8 +11,8 @@ from PySide6.QtGui import (
     QAction, QBrush, QColor, QKeySequence, QShortcut, QRegularExpressionValidator, QUndoCommand, QUndoGroup, QUndoStack,
 )
 from PySide6.QtWidgets import (
-    QCheckBox, QFileDialog, QFrame, QMenu, QScrollArea, QHBoxLayout, QLabel, QLineEdit, QListWidgetItem, QMainWindow,
-    QProgressBar, QPushButton, QSpinBox, QSplitter, QToolButton, QVBoxLayout, QWidget,
+    QFileDialog, QFrame, QMenu, QScrollArea, QHBoxLayout, QLabel, QLineEdit, QListWidgetItem, QMainWindow,
+    QProgressBar, QPushButton, QSpinBox, QSplitter, QStatusBar, QToolButton, QVBoxLayout, QWidget,
 )
 
 from zoomstudio.effects.catalog import EffectInfo
@@ -24,13 +24,16 @@ from . import strings as S
 from . import tokens
 from .cards import ROLE_DIRTY, ROLE_NAME, ROLE_NUMBER, ROLE_STRIP
 from .dialogs import ConfirmDialog
+from .fonts import display_font
 from .glass import BackdropRoot, GlassPanel, GlowHost
 from .icons import icon
+from .painted import ConnectionPill, DotLabel, KeyChipButton, LiveSwitch, PaintedText, SectionLabel, StatusBar
 from .library import LibraryMixin
 from .tuner import TunerPanel
 from .widgets import CatalogPanel, ChainView, EffectTile, ParamPanel, ParamRow, PatchList
 from .worker import PedalWorker, TransportFactory
 
+PATCHES_WIDTH, CATALOG_WIDTH = 248, 368  # the prototype's column widths
 DEFAULT_PATCH_COUNT = 50
 DISPLAY_OFFSET = 9  # the pedal shows locations 1..50 as 10..59
 MODEL_NAMES = {0x6E: "A1 FOUR"}
@@ -147,15 +150,18 @@ class MainWindow(LibraryMixin, QMainWindow):
         h.setContentsMargins(16, 8, 16, 8)
         self.edit_button = self._menu_button(S.EDIT_MENU)
         self.library_button = self._menu_button(S.LIBRARY_MENU)
-        self.connection_label = QLabel(S.NOT_CONNECTED)
-        self.connection_label.setObjectName("connectionPill")
-        self.connection_label.setMinimumWidth(220)
+        self.connection_label = ConnectionPill(S.NOT_CONNECTED)
+        self.connection_label.setMinimumWidth(190)
         self.memory_bar = QProgressBar()
         self.memory_bar.setRange(0, 100)
         self.memory_bar.setValue(0)
         self.memory_bar.setFormat(S.MEMORY_NA)
-        self.memory_bar.setMinimumWidth(200)
+        self.memory_bar.setTextVisible(False)  # the value is its own label: text over a 6 px bar cannot be read
+        self.memory_bar.setFixedWidth(80)
+        self.memory_value = QLabel(S.NOT_AVAILABLE)
+        self.memory_value.setProperty("role", "value")
         self.connect_button = QPushButton(S.CONNECT)
+        self.connect_button.setIcon(icon("plug"))
         self.disconnect_button = QPushButton(S.DISCONNECT)
         self.open_button = self._icon_button("folder", S.OPEN_FOLDER)
         self.reload_button = self._icon_button("reload", S.RELOAD)
@@ -164,14 +170,19 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.save_button = QPushButton(S.SAVE_TO_PEDAL)
         self.save_button.setProperty("primary", True)
         self.save_button.setIcon(icon("save", "on-accent"))
-        self.tuner_button = QPushButton(S.TUNER)
+        self.tuner_button = KeyChipButton(S.TUNER, S.TUNER_KEY)
         self.tuner_button.setIcon(icon("tuner"))
         self.tuner_button.setCheckable(True)
         self.tuner_button.setToolTip(S.TUNER_TIP)
-        self.live_check = QCheckBox(S.LIVE)
+        self.live_check = LiveSwitch(S.LIVE)
         self.live_check.setToolTip(S.LIVE_TIP)
-        for w in (self.edit_button, self.library_button, self.connection_label, self.memory_bar):
+        self.live_check.setAccessibleName(S.LIVE_TIP)
+        for w in (self.edit_button, self.library_button, self.connection_label):
             h.addWidget(w)
+        h.addSpacing(8)
+        h.addWidget(QLabel(S.MEMORY_LABEL))
+        h.addWidget(self.memory_bar)
+        h.addWidget(self.memory_value)
         h.addStretch(1)
         for w in (self.tuner_button, self.live_check, self.open_file_button, self.save_file_button,
                   self.open_button, self.reload_button, self.connect_button, self.disconnect_button):
@@ -206,74 +217,110 @@ class MainWindow(LibraryMixin, QMainWindow):
         left = QWidget()
         lv = QVBoxLayout(left)
         lv.setContentsMargins(0, 0, 0, 0)
-        lv.addWidget(QLabel(S.PATCHES))
+        self.patches_caption = QLabel("")
+        self.patches_caption.setProperty("role", "secondary")
+        lv.addLayout(self._section_header(S.PATCHES, self.patches_caption))
         lv.addWidget(self.patch_list)
         self.patch_panel = left
 
-        self.patch_title = QLabel(S.NO_PATCH_SELECTED)
-        self.patch_title.setStyleSheet("font-size: 16px; font-weight: bold;")
+        # the patch header: number and name are painted / styled in Exo 2 40; the name is edited in place
+        self.patch_number = PaintedText("", display_font(tokens.px("text-title-size"), 300), "text-secondary",
+                                        Qt.AlignmentFlag.AlignRight)
+        self.patch_number.setMinimumWidth(56)
         self.name_edit = QLineEdit()
+        self.name_edit.setObjectName("patchName")
         self.name_edit.setMaxLength(NAME_MAX_LEN)
         self.name_edit.setValidator(QRegularExpressionValidator(QRegularExpression(r"[ -~]*")))
-        self.name_edit.setFixedWidth(130)
+        self.name_edit.setMinimumWidth(230)
+        self.name_edit.setPlaceholderText(S.NO_PATCH_SELECTED)
         self.name_edit.setToolTip(S.name_tip(NAME_MAX_LEN))
+        self.name_edit.setAccessibleName(S.name_tip(NAME_MAX_LEN))
         self.volume_spin = QSpinBox()
         self.volume_spin.setRange(0, VOLUME_MAX)
         self.volume_spin.setToolTip(S.VOLUME_TIP)
+        self.volume_spin.setAccessibleName(S.VOLUME_TIP)
+        self.volume_spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.volume_spin.setFixedWidth(88)
         self.dsp_bar = QProgressBar()
         self.dsp_bar.setRange(0, 100)
         self.dsp_bar.setFormat(S.DSP_NA)
-        self.dsp_bar.setMinimumWidth(180)
+        self.dsp_bar.setTextVisible(False)
+        self.dsp_bar.setFixedWidth(120)
+        self.dsp_value = QLabel(S.NOT_AVAILABLE)
+        self.dsp_value.setProperty("role", "value")
         undo_button, redo_button = QToolButton(), QToolButton()
         undo_button.setDefaultAction(self.undo_action)
         redo_button.setDefaultAction(self.redo_action)
         for b in (undo_button, redo_button):
             b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
             b.setProperty("icon-only", True)
-        self.editor_row = QWidget()
-        er = QHBoxLayout(self.editor_row)
-        er.setContentsMargins(0, 0, 0, 0)
-        for widget in (QLabel(S.NAME), self.name_edit, QLabel(S.VOLUME), self.volume_spin, self.dsp_bar,
-                       undo_button, redo_button):
-            er.addWidget(widget)
-        er.addStretch(1)
+        self.dirty_label = DotLabel(S.UNSAVED_CHANGES)
+        self.save_reason = QLabel("")
+        self.save_reason.setProperty("role", "reason")
+        self.save_reason.setWordWrap(True)
+        self.save_reason.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
+        self.save_reason.setMaximumWidth(250)
+        title_row = QHBoxLayout()
+        title_row.setSpacing(6)
+        title_row.addWidget(self.patch_number)
+        title_row.addWidget(self.name_edit)
+        title_row.addSpacing(10)
+        title_row.addWidget(self.dirty_label, alignment=Qt.AlignmentFlag.AlignVCenter)
+        title_row.addStretch(1)
+        meta_row = QHBoxLayout()
+        meta_row.setSpacing(8)
+        for widget in (QLabel(S.VOLUME), self.volume_spin):
+            meta_row.addWidget(widget)
+        meta_row.addSpacing(10)
+        for widget in (QLabel(S.DSP_LABEL), self.dsp_bar, self.dsp_value):
+            meta_row.addWidget(widget)
+        meta_row.addSpacing(6)
+        for widget in (undo_button, redo_button):
+            meta_row.addWidget(widget)
+        meta_row.addStretch(1)
+        self.editor_row = QWidget()  # everything the patch owns: disabled while there is none or a save runs
+        left_col = QVBoxLayout(self.editor_row)
+        left_col.setContentsMargins(0, 0, 0, 0)
+        left_col.setSpacing(0)
+        left_col.addLayout(title_row)
+        left_col.addLayout(meta_row)
+        right_col = QVBoxLayout()
+        right_col.setSpacing(0)
+        right_col.addWidget(GlowHost(self.save_button, margin=8))
+        right_col.addWidget(self.save_reason, alignment=Qt.AlignmentFlag.AlignRight)
+        right_col.addStretch(1)
+        head = QWidget()
+        head_lay = QHBoxLayout(head)
+        head_lay.setContentsMargins(0, 0, 0, 0)
+        head_lay.addWidget(self.editor_row, stretch=1)
+        head_lay.addLayout(right_col)
         self.name_edit.textEdited.connect(self._on_name_edited)
         self.volume_spin.valueChanged.connect(self._on_volume_changed)
 
         self.chain = ChainView()
-        self.params = ParamPanel()
-        centre = QWidget()
-        cv = QVBoxLayout(centre)
-        cv.setContentsMargins(0, 0, 0, 0)
-        self.dirty_label = QLabel(S.UNSAVED_CHANGES)
-        self.dirty_label.setProperty("role", "dirty")
-        self.save_reason = QLabel("")
-        self.save_reason.setProperty("role", "reason")
-        self.save_reason.setWordWrap(True)
-        self.save_reason.setAlignment(Qt.AlignmentFlag.AlignRight)
-        title_row = QHBoxLayout()
-        title_row.addWidget(self.patch_title)
-        title_row.addWidget(self.dirty_label, alignment=Qt.AlignmentFlag.AlignBottom)
-        title_row.addStretch(1)
-        left_col = QVBoxLayout()
-        left_col.addLayout(title_row)
-        left_col.addWidget(self.editor_row)
-        right_col = QVBoxLayout()
-        right_col.addWidget(GlowHost(self.save_button))
-        right_col.addWidget(self.save_reason)
-        head = QHBoxLayout()
-        head.addLayout(left_col, stretch=1)
-        head.addLayout(right_col)
-        cv.addLayout(head)
+        self.params = ParamPanel(installed_label)
         self.chain_scroll = QScrollArea()
         self.chain_scroll.setWidget(self.chain)
         self.chain_scroll.setWidgetResizable(True)
         self.chain_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.chain_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.chain_scroll.setFixedHeight(self.chain.height() + 14)
+        self.chain_scroll.setFixedHeight(self.chain.height() + 2)
         self.chain_scroll.viewport().setAutoFillBackground(False)
-        cv.addWidget(self.chain_scroll)
-        cv.addWidget(self.params, stretch=1)
+        self.chain_caption = QLabel("")
+        self.chain_caption.setProperty("role", "secondary")
+        chain_block = QWidget()
+        chain_lay = QVBoxLayout(chain_block)
+        chain_lay.setContentsMargins(0, 0, 0, 0)
+        chain_lay.setSpacing(6)
+        chain_lay.addLayout(self._section_header(S.CHAIN_TITLE, self.chain_caption))
+        chain_lay.addWidget(self.chain_scroll)
+        centre = QWidget()
+        cv = QVBoxLayout(centre)
+        cv.setContentsMargins(0, 0, 0, 0)
+        cv.setSpacing(10)
+        cv.addWidget(self._glass(head))
+        cv.addWidget(self._glass(chain_block))
+        cv.addWidget(self._glass(self.params), stretch=1)
         self.centre = centre
         self.chain.tile_selected.connect(self._on_tile_selected)
         self.chain.power_toggled.connect(self._on_power_toggled)
@@ -285,19 +332,30 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.catalog_panel = CatalogPanel(self.catalog, a1_ids, installed_label)
         self.catalog_panel.effect_activated.connect(self._on_catalog_activated)
 
+        left_panel, catalog_panel = self._glass(left), self._glass(self.catalog_panel)
+        left_panel.setFixedWidth(PATCHES_WIDTH)
+        catalog_panel.setFixedWidth(CATALOG_WIDTH)
         splitter = QSplitter()
-        splitter.addWidget(self._glass(left))
-        splitter.addWidget(self._glass(centre))
-        splitter.addWidget(self._glass(self.catalog_panel))
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 3)
-        splitter.setStretchFactor(2, 1)
-        splitter.setSizes([260, 760, 360])
+        splitter.setChildrenCollapsible(False)
+        splitter.setHandleWidth(10)
+        splitter.addWidget(left_panel)
+        splitter.addWidget(centre)
+        splitter.addWidget(catalog_panel)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)  # only the centre takes the spare width: 248 / rest / 368
+        splitter.setStretchFactor(2, 0)
+        splitter.setSizes([PATCHES_WIDTH, 780, CATALOG_WIDTH])
 
         self.splitter = splitter
         self.tuner_panel = TunerPanel(backdrop_root)
         self.tuner_panel.hide()
+        self.tuner_panel.exit_requested.connect(lambda: self.tuner_button.setChecked(False))
         self.header = header
+        self._status_bar = StatusBar()
+        status_panel = GlassPanel(backdrop_root, "strong")
+        status_lay = QHBoxLayout(status_panel)
+        status_lay.setContentsMargins(14, 2, 14, 2)
+        status_lay.addWidget(self._status_bar)
         root = backdrop_root
         rv = QVBoxLayout(root)
         rv.setContentsMargins(12, 10, 12, 8)
@@ -305,9 +363,22 @@ class MainWindow(LibraryMixin, QMainWindow):
         rv.addWidget(header)
         rv.addWidget(splitter, stretch=1)
         rv.addWidget(self.tuner_panel, stretch=1)
+        rv.addWidget(status_panel)
         self.setCentralWidget(root)
         self._build_library_ui()
         self.statusBar().showMessage(S.READY)
+
+    def statusBar(self) -> QStatusBar:  # noqa: N802 (Qt API)
+        """The status bar lives inside a glass panel of the window, not in the main window's own slot."""
+        return self._status_bar
+
+    def _section_header(self, title: str, caption: QLabel) -> QHBoxLayout:
+        """Exo 2 spaced-capitals title with a caption (a count, a hint) at its right."""
+        row = QHBoxLayout()
+        row.addWidget(SectionLabel(title))
+        row.addStretch(1)
+        row.addWidget(caption)
+        return row
 
     def _menu_button(self, text: str) -> QToolButton:
         button = QToolButton()
@@ -327,12 +398,14 @@ class MainWindow(LibraryMixin, QMainWindow):
         """Put ``content`` on a glass panel (the content keeps its own layout and signals)."""
         panel = GlassPanel(self.backdrop_root)
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setContentsMargins(14, 10, 14, 10)
         layout.addWidget(content)
         return panel
 
-    def _set_connection(self, text: str, connected: bool) -> None:
+    def _set_connection(self, text: str, connected: bool, kind: str | None = None) -> None:
+        """``kind`` is the colour of the dot: ok (connected), info (a folder is loaded) or none."""
         self.connection_label.setText(text)
+        self.connection_label.set_kind(kind or ("ok" if connected else "none"))
         self.connection_label.setProperty("connected", connected)
         self.connection_label.style().unpolish(self.connection_label)
         self.connection_label.style().polish(self.connection_label)
@@ -365,6 +438,8 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.save_reason.style().unpolish(self.save_reason)
         self.save_reason.style().polish(self.save_reason)
         self.dirty_label.setVisible(dirty)
+        in_use = sum(1 for pt in self._patches.values() if any(not e.is_placeholder for e in pt.effects))
+        self.patches_caption.setText(S.patches_caption(in_use, self._display(1), self._display(self._patch_count)))
         self.centralWidget().update()
         self._update_library_actions()
         if self._tuner_on:  # nothing but the tuner and Disconnect may be used while the pedal is muted
@@ -392,6 +467,7 @@ class MainWindow(LibraryMixin, QMainWindow):
     def _apply_tuner_state(self, on: bool) -> None:
         """Show/hide the tuner panel and lock/unlock the editor (the pedal itself is driven by the worker)."""
         self._tuner_on = on
+        self.tuner_button.setText(S.TUNER_EXIT if on else S.TUNER)
         if self.tuner_button.isChecked() != on:
             self.tuner_button.blockSignals(True)
             self.tuner_button.setChecked(on)
@@ -429,7 +505,6 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.undo_group.setActiveStack(None)
         self.chain.clear()
         self.params.clear()
-        self.patch_title.setText(S.NO_PATCH_SELECTED)
         self._update_header()
 
     def is_empty_slot(self, location: int) -> bool:
@@ -554,37 +629,54 @@ class MainWindow(LibraryMixin, QMainWindow):
 
     def _update_catalog_target(self) -> None:
         patch, slot = self.current_patch, self.chain.selected_slot
-        tile = next((t for t in self.chain.tiles() if t.slot_index == slot), None)
+        tiles = self.chain.tiles()
+        tile = next((t for t in tiles if t.slot_index == slot), None)
         label = S.catalog_target(None if tile is None else slot, tile is not None and tile.is_empty,
                                  tile is not None and tile.is_wide)
         self.catalog_panel.set_target(label, patch is not None and tile is not None)
         self.catalog_panel.set_chain_effects(
             set() if patch is None else {s.effect_id for s in patch.effects if not s.is_placeholder})
+        strip, text, replaced = [], S.NO_TARGET, 0.0
+        if patch is not None and tile is not None:
+            strip = [(None if t.is_empty else t.group, t.span, t.slot_index == slot) for t in tiles]
+            text = S.catalog_destination(slot, tile.is_empty, tile.is_wide, tile.effect_name)
+            info = None if tile.is_empty else self.catalog.get(patch.effects[slot].effect_id)
+            replaced = info.dsp_load_percent if info else 0.0
+        self.catalog_panel.set_destination(text, strip, self.dsp_percent(), replaced)
 
     def _update_header(self) -> None:
         self._update_catalog_target()
         location, patch = self._location, self.current_patch
         self.editor_row.setEnabled(patch is not None and not self._saving)
-        if location is None:
-            self.dsp_bar.setValue(0)
-            self.dsp_bar.setFormat(S.DSP_NA)
-            return
+        self.patch_number.setText("" if location is None else str(self._display(location)))
+        self.chain_caption.setText("" if patch is None else S.chain_caption(
+            sum(1 for s_ in patch.effects if not s_.is_placeholder), len(patch.effects)))
         if patch is None:
-            self.patch_title.setText(S.empty_patch_title(self._display(location)))
-            self.dsp_bar.setValue(0)
-            self.dsp_bar.setFormat(S.DSP_NA)
+            self.name_edit.blockSignals(True)
+            self.name_edit.setText("")
+            self.name_edit.blockSignals(False)
+            self.name_edit.setPlaceholderText(S.NO_PATCH_SELECTED if location is None else S.PATCH_EMPTY_NAME)
+            self._set_dsp(None)
             return
-        self.patch_title.setText(S.patch_title(self._display(location), patch.name, patch.volume))
         for widget, setter, value in ((self.name_edit, self.name_edit.setText, patch.name),
                                       (self.volume_spin, self.volume_spin.setValue, patch.volume)):
             if (widget.text() if widget is self.name_edit else widget.value()) != value:
                 widget.blockSignals(True)
                 setter(value)
                 widget.blockSignals(False)
-        dsp = self.dsp_percent()
-        self.dsp_bar.setValue(min(100, round(dsp)))
-        self.dsp_bar.setFormat(S.dsp_text(dsp))
-        self.dsp_bar.setStyleSheet("QProgressBar::chunk { background: #c0392b; }" if dsp > 100 else "")
+        self.name_edit.setPlaceholderText(S.UNNAMED)
+        self._set_dsp(self.dsp_percent())
+
+    def _set_dsp(self, dsp: float | None) -> None:
+        """Show the DSP load: the bar is only the fill, the value (and the over-the-limit warning) is a label."""
+        over = dsp is not None and dsp > 100
+        self.dsp_bar.setValue(0 if dsp is None else min(100, round(dsp)))
+        self.dsp_bar.setFormat(S.DSP_NA if dsp is None else S.dsp_text(dsp))
+        self.dsp_value.setText(S.NOT_AVAILABLE if dsp is None else S.dsp_value(dsp))
+        for widget in (self.dsp_bar, self.dsp_value):
+            widget.setProperty("over", over)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
 
     def save_blockers(self) -> list[str]:
         """Reasons the selected patch must not be written to the pedal (A1, A2, A3 and DSP checks)."""
@@ -612,10 +704,12 @@ class MainWindow(LibraryMixin, QMainWindow):
         if patch is None:
             return
         if slot_index >= len(patch.effects) or patch.effects[slot_index].is_placeholder:
-            self.params.clear(S.EMPTY_SLOT_HINT)
+            self.params.show_empty(slot_index)
             return
         slot = patch.effects[slot_index]
-        self.params.show_effect(slot, self.catalog.get(slot.effect_id))
+        tile = next((t for t in self.chain.tiles() if t.slot_index == slot_index), None)
+        self.params.show_effect(slot, self.catalog.get(slot.effect_id),
+                                S.slot_label(slot_index, tile is not None and tile.is_wide))
 
     # ------------------------------------------------------------- editing
 
@@ -878,9 +972,8 @@ class MainWindow(LibraryMixin, QMainWindow):
         self._reset_edits()
         self._patches.update(found)
         self._rebuild_patch_list()
-        self._set_connection(S.offline(folder.name), False)
-        self.memory_bar.setValue(0)
-        self.memory_bar.setFormat(S.MEMORY_NA)
+        self._set_connection(S.offline(folder.name), False, "info")
+        self._set_memory(None)
         self.statusBar().showMessage(S.loaded_from_folder(len(found), folder))
         if problems:
             self._report_error("; ".join(problems[:3]))
@@ -974,8 +1067,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.live_check.setChecked(False)
         self._set_connection(S.NOT_CONNECTED, False)
         self.connection_label.setToolTip("")
-        self.memory_bar.setValue(0)
-        self.memory_bar.setFormat(S.MEMORY_NA)
+        self._set_memory(None)
         self.statusBar().showMessage(S.DISCONNECTED)
         self._update_buttons()
 
@@ -994,13 +1086,27 @@ class MainWindow(LibraryMixin, QMainWindow):
 
     @Slot(object)
     def _on_disk_usage(self, usage) -> None:
-        pct = usage.used_percent
-        self.memory_bar.setValue(round(pct))
-        self.memory_bar.setFormat(S.memory_text(usage.used / 1024, usage.maximum / 1024, pct))
+        self._set_memory(usage)
+
+    def _set_memory(self, usage) -> None:
+        """Memory of the pedal: the bar is the fill, the percentage is a label, the exact figure is the tooltip."""
+        if usage is None:
+            self.memory_bar.setValue(0)
+            self.memory_bar.setFormat(S.MEMORY_NA)
+            self.memory_value.setText(S.NOT_AVAILABLE)
+            tip = S.MEMORY_NA
+        else:
+            pct = usage.used_percent
+            self.memory_bar.setValue(round(pct))
+            tip = S.memory_text(usage.used / 1024, usage.maximum / 1024, pct)
+            self.memory_bar.setFormat(tip)
+            self.memory_value.setText(f"{pct:.0f} %")
+        for widget in (self.memory_bar, self.memory_value):
+            widget.setToolTip(tip)
 
     @Slot(str)
     def _report_error(self, message: str) -> None:
-        self.statusBar().showMessage(S.error(message), 15000)
+        self.statusBar().show_error(S.error(message), 15000)
         if self._worker is not None and not self._is_connected:
             self.connect_button.setEnabled(True)
         self.error_shown.emit(message)

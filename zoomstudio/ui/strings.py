@@ -45,6 +45,11 @@ NOT_CONNECTED = "Sin conexión"
 READY = "Listo"
 MEMORY_NA = "Memoria: n/d"
 DSP_NA = "DSP: n/d"
+MEMORY_LABEL = "Memoria"
+DSP_LABEL = "DSP"
+NOT_AVAILABLE = "n/d"
+CHAIN_TITLE = "Cadena"
+PATCH_EMPTY_NAME = "Patch vacío"
 EDIT_MENU = "&Editar"
 LIBRARY_MENU = "&Biblioteca"
 UNDO = "Deshacer"
@@ -57,6 +62,8 @@ OPEN_FILE = "Abrir archivo…"
 SAVE_FILE = "Guardar como archivo…"
 SAVE_TO_PEDAL = "Guardar en la pedalera"
 TUNER = "Afinador"
+SWITCH_ON = "SÍ"
+SWITCH_OFF = "NO"
 LIVE = "En vivo"
 CANCEL = "Cancelar"
 CONFIRM = "Confirmar"
@@ -91,6 +98,20 @@ def memory_text(used_kb: float, max_kb: float, pct: float) -> str:
 
 def name_tip(limit: int) -> str:
     return f"Nombre del patch: hasta {limit} caracteres ASCII imprimibles"
+
+
+def dsp_value(dsp: float) -> str:
+    """The value written beside the DSP bar («69 %»; over 100 % it says why the bar is red)."""
+    return f"{dsp:.0f} %" + (" · sobre el límite" if dsp > 100 else "")
+
+
+def patches_caption(in_use: int, first: int = 10, last: int = 59) -> str:
+    return f"{first}–{last} · {in_use} en uso"
+
+
+def chain_caption(effects: int, slots: int) -> str:
+    noun = "efecto" if effects == 1 else "efectos"
+    return f"{effects} {noun} · {slots} slots · ←/→ elegir · Ctrl+←/→ o arrastrar para reordenar"
 
 
 def dsp_text(dsp: float) -> str:
@@ -421,6 +442,9 @@ POWER_OFF = "Apagado"
 SELECT_EFFECT = "Seleccione un efecto de la cadena"
 CATALOG_TITLE = "Catálogo de efectos"
 SEARCH_EFFECTS = "Buscar efectos…"
+SEARCH_EFFECTS_TIP = "Buscar efectos por nombre o grupo"
+CLEAR_SEARCH = "Borrar la búsqueda"
+DSP_AFTER = "DSP después"
 ONLY_A1 = "Solo A1 FOUR"
 BADGE_ON_PEDAL = "En la pedalera"
 BADGE_IN_CHAIN = "En la cadena"
@@ -444,14 +468,40 @@ def catalog_row(name: str, group: str, dsp: float, on_pedal: bool) -> str:
     return f"{name}   {group_label(group)}   {percent(dsp)}" + (f"   {BADGE_ON_PEDAL}" if on_pedal else "")
 
 
+def visible_count(n: int) -> str:
+    return "1 visible" if n == 1 else f"{n} visibles"
+
+
+def no_effect_matches(query: str, group: str, only_a1: bool) -> str:
+    text = f"Ningún efecto coincide con «{query}»" if query else "Ningún efecto coincide con los filtros"
+    if group:
+        text += f" en {group}"
+    if only_a1:
+        text += " entre los compatibles con la A1 FOUR"
+    return text + "."
+
+
+def catalog_destination(selected_index: int | None, is_empty: bool, wide: bool, name: str) -> str:
+    """Sentence of the destination card: where the selected effect goes and what it replaces."""
+    if selected_index is None:
+        return NO_TARGET
+    n = selected_index + 1
+    where = f"Va a los slots {n}–{n + 1}" if wide else f"Va al slot {n}"
+    return f"{where} · slot vacío" if is_empty else f"{where} · reemplaza {name}"
+
+
 def catalog_detail(description: str, dsp: float, wide: bool, sources: str) -> str:
     return f"{description}\n{percent(dsp)} de DSP, {slots_label(2 if wide else 1)}. En: {sources}"
 
 
 # ----------------------------------------------------------------- tuner
 
+TUNER_TITLE = "Afinador · lectura de la pedalera"
+TUNER_EXIT = "Salir del afinador"
+TUNER_KEY = "T"
+TUNER_SCALE_ZERO = "0"
 TUNER_HINT = ("Desvío en pasos de la pedalera (0 = afinado). La pedalera queda muda mientras el afinador "
-              "está encendido; pulse T para salir.")
+              "está encendido; pulsar T o «Salir del afinador» para volver al editor.")
 
 ERR_SAVE_FAILED = "No se pudo guardar el patch"
 
@@ -474,6 +524,24 @@ def footswitch_name(is_on: bool, effect: str) -> str:
 RESET = "Restablecer"
 PARAM_HINT = "Arrastre una perilla · doble clic para restablecer"
 NO_PARAM_HELP = "Sin descripción para este parámetro"
+
+
+def empty_slot_title(n: int) -> str:
+    return f"El slot {n} está vacío"
+
+
+def empty_slot_instructions(n: int) -> str:
+    return (f"Elegir un efecto en el catálogo y pulsar «Agregar al slot {n}», Enter o doble clic. "
+            "También se puede arrastrar hasta el slot.")
+
+
+def param_facts(value: int, maximum: int, default: int) -> str:
+    return f"Valor {value} · rango 0–{maximum} · predeterminado {default}"
+
+
+def effect_facts(dsp: float, wide: bool, installed: bool) -> str:
+    where = "instalado en la pedalera" if installed else "no instalado en la pedalera"
+    return f"{percent(dsp)} de DSP · {slots_label(2 if wide else 1)} · {where}"
 
 
 def param_range(maximum: int, default: int) -> str:

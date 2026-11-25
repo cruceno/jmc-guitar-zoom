@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
+from pathlib import Path
+
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QFontMetrics, QLinearGradient, QPainter, QPainterPath, QPen, QRadialGradient
+from PySide6.QtGui import (
+    QColor, QFontMetrics, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QRadialGradient,
+)
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QDial, QStyle, QStyledItemDelegate
 
 from . import strings as S
@@ -25,6 +31,24 @@ def card_path(rect: QRectF, radius: float = 12) -> QPainterPath:
     path = QPainterPath()
     path.addRoundedRect(rect, radius, radius)
     return path
+
+
+@lru_cache(maxsize=128)
+def svg_thumbnail(path: Path, width: int, height: int, dpr: float = 1.0) -> QPixmap | None:
+    """An effect's SVG rasterized once at ``width`` x ``height`` (fitted, centred); ``None`` if unreadable."""
+    renderer = QSvgRenderer(str(path))
+    if not renderer.isValid() or renderer.defaultSize().isEmpty():
+        return None
+    image = QImage(round(width * dpr), round(height * dpr), QImage.Format.Format_ARGB32_Premultiplied)
+    image.fill(Qt.GlobalColor.transparent)
+    size = renderer.defaultSize().scaled(image.size(), Qt.AspectRatioMode.KeepAspectRatio)
+    painter = QPainter(image)
+    renderer.render(painter, QRectF((image.width() - size.width()) / 2, (image.height() - size.height()) / 2,
+                                    size.width(), size.height()))
+    painter.end()
+    out = QPixmap.fromImage(image)
+    out.setDevicePixelRatio(dpr)
+    return out
 
 
 def with_alpha(color: QColor, alpha: float) -> QColor:
@@ -116,7 +140,7 @@ class Knob(QDial):
     def __init__(self) -> None:
         super().__init__()
         self.default_value = 0
-        self.setFixedSize(QSize(72, 72))
+        self.setFixedSize(QSize(66, 66))
         self.setNotchesVisible(False)
 
     def paintEvent(self, _event) -> None:  # noqa: N802 (Qt API)
@@ -190,9 +214,13 @@ class EffectCardDelegate(QStyledItemDelegate):
         p.setBrush(group_fill_color(group))
         p.setPen(QPen(group_color(group), 1.5))
         p.drawRoundedRect(mono, 7, 7)
-        p.setPen(group_text_color(group))
-        p.setFont(display_font(12, 600))
-        p.drawText(mono, Qt.AlignmentFlag.AlignCenter, d["name"][:2].upper())
+        thumb = svg_thumbnail(d["svg"], 30, 42, 1.0) if d.get("svg") else None
+        if thumb is not None:
+            p.drawPixmap(mono.toRect(), thumb)
+        else:
+            p.setPen(group_text_color(group))
+            p.setFont(display_font(12, 600))
+            p.drawText(mono, Qt.AlignmentFlag.AlignCenter, d["name"][:2].upper())
         left = mono.right() + 12
         right = rect.right() - 12
         dsp_font = ui_font(14)

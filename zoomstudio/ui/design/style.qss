@@ -3,6 +3,10 @@
 QWidget { font-family: $font_sans; font-size: ${text_body_size}px; color: $text_primary; }
 QMainWindow, QDialog { background: $backdrop_base; }
 QLabel { background: transparent; }
+QLabel[role="hint"] { color: $text_secondary; }
+QLabel[role="desc"] { font-size: 13px; }
+QLabel[role="strong"] { font-weight: 700; }
+QLabel[role="off"] { color: $status_warn; font-size: ${text_caption_size}px; }
 QLabel[role="secondary"] { color: $text_secondary; font-size: ${text_caption_size}px; }
 QLabel[role="section"] { color: $text_secondary; font-family: $font_display; font-size: ${text_label_size}px; font-weight: 600; }
 QLabel[role="heading"] { font-family: $font_display; font-size: ${text_heading_size}px; font-weight: 500; }
@@ -39,6 +43,7 @@ QLineEdit, QSpinBox, QComboBox {
 QLineEdit:hover, QSpinBox:hover, QComboBox:hover { border-color: $border_control; }
 QLineEdit:focus, QSpinBox:focus, QComboBox:focus { border: 2px solid $focus_ring; }
 QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled { color: $text_disabled; }
+QSpinBox { padding: 0 2px 0 6px; }
 QSpinBox::up-button, QSpinBox::down-button { width: 20px; border: none; background: transparent; }
 QSpinBox::up-arrow { image: url($icons_dir/chevron-up.svg); width: 10px; height: 10px; }
 QSpinBox::down-arrow { image: url($icons_dir/chevron-down.svg); width: 10px; height: 10px; }
@@ -76,9 +81,19 @@ QProgressBar[over="true"]::chunk { background: $status_danger; }
 QSplitter::handle { background: transparent; }
 
 QLabel#connectionPill {
-  background: $input_bg; border: 1px solid $hairline; border-radius: ${control_radius}px; padding: 0 14px; min-height: ${control_height}px;
+  background: $input_bg; border: 1px solid $hairline; border-radius: ${control_radius}px; padding: 0 14px 0 30px; min-height: ${control_height}px;
 }
-QLabel#connectionPill[connected="true"] { color: $status_ok; }
+QLabel[role="value"] { color: $text_primary; font-weight: 500; }
+QLabel[role="value"][over="true"] { color: $status_danger; }
+QProgressBar[over="true"]::chunk { background: $status_danger; }
+QLineEdit#patchName {
+  background: transparent; border: 1px solid transparent; border-radius: 14px; padding: 0 12px; min-height: 46px;
+  font-family: $font_display; font-size: ${text_title_size}px; font-weight: 500;
+}
+QLineEdit#patchName:hover { border: 1px solid $border_control; }
+QLineEdit#patchName:focus { border: 1px solid $border_strong; background: $input_bg; }
+QLineEdit#patchName:disabled { color: $text_disabled; border-color: transparent; }
+QPushButton[keychip="true"] { padding-right: 44px; }
 QLabel[role="reason"] { color: $text_secondary; font-size: ${text_caption_size}px; }
 QLabel[role="reason"][blocking="true"] { color: $status_danger; }
 QLabel[role="dirty"] { color: $status_warn; font-size: ${text_caption_size}px; }
@@ -89,7 +104,7 @@ QToolButton#removeButton:hover { background: $card_hover; }
 QScrollArea { background: transparent; border: none; }
 QScrollArea > QWidget > QWidget { background: transparent; }
 
-QWidget#tunerPill { background: $input_bg; border: 1.5px solid $tuner_tick; border-radius: 22px; }
+QWidget#tunerPill { background: $input_bg; border: 2px solid $tuner_tick; border-radius: 22px; }
 QWidget#tunerPill[state="in_tune"] { border-color: $tuner_in_tune; }
 QWidget#tunerPill[state="near"] { border-color: $tuner_near; }
 QWidget#tunerPill[state="off"] { border-color: $tuner_off; }

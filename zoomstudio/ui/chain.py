@@ -314,7 +314,7 @@ class ChainView(QWidget):
         self._tiles: list[PedalTile] = []
         self._selected: int | None = None
         self._restore_focus = False
-        self.setFixedHeight(PEDAL_H + 2 * BODY_PAD + 2 + FOOT + 26)
+        self.setFixedHeight(PEDAL_H + 2 * BODY_PAD + 2 + FOOT + 12)
 
     def tiles(self) -> list[PedalTile]:
         return list(self._tiles)

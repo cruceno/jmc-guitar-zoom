@@ -13,7 +13,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import QFileDialog, QMenu, QProgressBar, QPushButton
+from PySide6.QtWidgets import QFileDialog, QLabel, QMenu, QProgressBar, QPushButton
 
 from zoomstudio.patches import edit, library
 from zoomstudio.patches.model import Patch
@@ -71,10 +71,15 @@ class LibraryMixin:
 
         self.task_bar = QProgressBar()
         self.task_bar.setMaximumWidth(260)
+        self.task_bar.setTextVisible(False)  # the phase and count are a label: text over a 6 px bar cannot be read
+        self.task_label = QLabel("")
+        self.task_label.setProperty("role", "secondary")
+        self.task_label.hide()
         self.task_cancel = QPushButton(S.CANCEL)
         self.task_cancel.clicked.connect(self._cancel_task)
         self.task_bar.hide()
         self.task_cancel.hide()
+        self.statusBar().addPermanentWidget(self.task_label)
         self.statusBar().addPermanentWidget(self.task_bar)
         self.statusBar().addPermanentWidget(self.task_cancel)
 
@@ -342,9 +347,12 @@ class LibraryMixin:
         self.task_bar.setRange(0, max(1, total))
         self.task_bar.setValue(done)
         self.task_bar.setFormat(f"{phase} %v/%m")
+        self.task_label.setText(f"{phase} {done}/{total}")
+        self.task_label.show()
 
     def _on_backup_done(self, folder: str, ok: bool) -> None:
         self.task_bar.hide()
+        self.task_label.hide()
         self.task_cancel.hide()
         self._set_saving(False)
         self.statusBar().showMessage(S.backup_saved(folder) if ok else S.backup_incomplete(folder))
