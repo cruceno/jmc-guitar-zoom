@@ -31,3 +31,28 @@ def test_self_check_flag_is_hidden_from_help(capsys):
     with pytest.raises(SystemExit):
         build_parser().parse_args(["--help"])
     assert "--self-check" not in capsys.readouterr().out
+
+
+def test_self_check_with_a_path_also_writes_the_same_report_to_that_file(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(mido, "get_output_names", lambda: ["Zoom A1 FOUR MIDI 1"])
+    report = tmp_path / "report.txt"
+    assert main(["--self-check", str(report)]) == 0
+    out = capsys.readouterr().out
+    assert report.read_text(encoding="utf-8") == out
+    assert out.splitlines()[0] == f"jmc-guitar-zoom {__version__}"
+
+
+def test_self_check_failure_is_also_written_to_the_report_file(monkeypatch, capsys, tmp_path):
+    def boom():
+        raise ImportError("no rtmidi")
+
+    monkeypatch.setattr(mido, "get_output_names", boom)
+    report = tmp_path / "report.txt"
+    assert main(["--self-check", str(report)]) == 1
+    assert "self-check failed: ImportError: no rtmidi" in report.read_text(encoding="utf-8")
+    assert "self-check failed" in capsys.readouterr().err
+
+
+def test_self_check_flag_without_a_path_does_not_swallow_the_next_option(monkeypatch, capsys):
+    monkeypatch.setattr(mido, "get_output_names", lambda: [])
+    assert build_parser().parse_args(["--self-check", "--no-connect"]).no_connect is True

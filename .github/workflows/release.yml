@@ -1,0 +1,116 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04 # an older glibc keeps the AppImage running on older distributions
+    env:
+      QT_QPA_PLATFORM: offscreen
+      APPIMAGE_EXTRACT_AND_RUN: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Qt and ALSA runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libasound2
+      - run: uv sync --group build
+      - name: Tests
+        run: uv run pytest -q
+      - name: The tag must equal the app version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION="$(uv run python -c 'import jmc_guitar_zoom; print(jmc_guitar_zoom.__version__)')"
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match jmc_guitar_zoom.__version__ $VERSION" >&2
+            exit 1
+          fi
+      - name: Build the AppImage
+        run: bash packaging/linux/build_appimage.sh
+      - name: Self-check the AppImage
+        run: |
+          set -o pipefail
+          ./dist/JMC_Guitar_Zoom-*-x86_64.AppImage --self-check | tee report.txt
+          grep -Eq '^fonts registered: [1-9][0-9]*$' report.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: dist/JMC_Guitar_Zoom-*-x86_64.AppImage
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --group build
+      - name: Tests
+        run: uv run pytest -q
+      - name: The tag must equal the app version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          VERSION="$(uv run python -c 'import jmc_guitar_zoom; print(jmc_guitar_zoom.__version__)')"
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match jmc_guitar_zoom.__version__ $VERSION" >&2
+            exit 1
+          fi
+      - name: Build the app with PyInstaller
+        run: uv run pyinstaller --noconfirm --workpath build --distpath dist packaging/jmc-guitar-zoom.spec
+      - name: Self-check the built exe
+        shell: pwsh
+        run: |
+          # The exe is windowed (no stdout): it writes its report to a file.
+          $p = Start-Process -FilePath "dist\jmc-guitar-zoom\jmc-guitar-zoom.exe" -ArgumentList "--self-check", "report.txt" -Wait -PassThru
+          if (-not (Test-Path report.txt)) { throw "the self-check wrote no report" }
+          Get-Content report.txt
+          if ($p.ExitCode -ne 0) { throw "self-check exited with $($p.ExitCode)" }
+          if (-not (Select-String -Path report.txt -Pattern '^fonts registered: [1-9][0-9]*$' -Quiet)) { throw "no fonts registered" }
+      - name: Compile the installer with Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --no-progress -y
+          }
+          $version = uv run python -c "import jmc_guitar_zoom; print(jmc_guitar_zoom.__version__)"
+          & $iscc "/DAppVersion=$version" packaging\windows\jmc-guitar-zoom.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with $LASTEXITCODE" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/JMC_Guitar_Zoom-*-Setup.exe
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, windows]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-files
+          merge-multiple: true
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          PRE=""
+          case "$GITHUB_REF_NAME" in *-*) PRE="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" release-files/* --title "$GITHUB_REF_NAME" --generate-notes $PRE

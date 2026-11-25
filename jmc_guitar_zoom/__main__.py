@@ -111,13 +111,18 @@ def build_parser() -> argparse.ArgumentParser:
                         "guitarlab/GL next to the repository")
     p.add_argument("--offline", metavar="DIR", help="open a backup folder of NNN.zptc files instead of connecting")
     p.add_argument("--no-connect", action="store_true", help="do not connect to the pedal at start-up")
-    p.add_argument("--self-check", action="store_true", help=argparse.SUPPRESS)
+    # Hidden: ``--self-check [PATH]``. A windowed Windows exe has no stdout, so PATH also receives the report.
+    p.add_argument("--self-check", nargs="?", const="", default=None, metavar="PATH", help=argparse.SUPPRESS)
     p.add_argument("--screenshot", metavar="PATH", help=argparse.SUPPRESS)
     return p
 
 
-def self_check() -> int:
-    """Prove Qt, the bundled fonts and the MIDI backend load; opens no window and no port."""
+def self_check(report_path: str | None = None) -> int:
+    """Prove Qt, the bundled fonts and the MIDI backend load; opens no window and no port.
+
+    The report goes to stdout (stderr on failure) and, when ``report_path`` is given, to that file as well."""
+    lines: list[str] = []
+    code = 0
     try:
         from PySide6.QtWidgets import QApplication
 
@@ -130,22 +135,34 @@ def self_check() -> int:
 
         ports = mido.get_output_names()
         gl = paths.guitarlab_dir()
-        print(f"jmc-guitar-zoom {__version__}")
-        print(f"data folder: {paths.data_root()}")
-        print(f"fonts registered: {len(fonts)}")
-        print(f"MIDI outputs: {', '.join(ports) if ports else 'none'}")
-        print(f"Guitar Lab: {gl if gl else 'none'}")
+        lines = [
+            f"jmc-guitar-zoom {__version__}",
+            f"data folder: {paths.data_root()}",
+            f"fonts registered: {len(fonts)}",
+            f"MIDI outputs: {', '.join(ports) if ports else 'none'}",
+            f"Guitar Lab: {gl if gl else 'none'}",
+        ]
         del app
-        return 0
     except Exception as exc:  # noqa: BLE001 - any load failure must be reported as a failed check
-        print(f"self-check failed: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return 1
+        lines = [f"self-check failed: {type(exc).__name__}: {exc}"]
+        code = 1
+    text = "".join(f"{line}\n" for line in lines)
+    if report_path:
+        try:
+            Path(report_path).write_text(text, encoding="utf-8")
+        except OSError as exc:
+            print(f"self-check: cannot write {report_path}: {exc}", file=sys.stderr)
+            code = 1
+    stream = sys.stderr if code else sys.stdout
+    if stream is not None:  # a windowed (no console) exe has no stdout/stderr
+        stream.write(text)
+    return code
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.self_check:
-        return self_check()
+    if args.self_check is not None:
+        return self_check(args.self_check or None)
 
     from PySide6.QtWidgets import QApplication
 
@@ -178,6 +195,11 @@ def main(argv: list[str] | None = None) -> int:
     gc_guard.install(app)  # cyclic GC only on this thread: a worker's collection crashed Shiboken (see gc_guard)
     app.setApplicationName("JMC Guitar Zoom")
     app.setOrganizationName("JMC Guitar Zoom")
+    from PySide6.QtGui import QIcon
+
+    from jmc_guitar_zoom.ui.tokens import DESIGN_DIR
+
+    app.setWindowIcon(QIcon(str(DESIGN_DIR / "app-icon.svg")))
     from PySide6.QtCore import QStandardPaths
 
     from jmc_guitar_zoom.ui.config_migration import migrate_legacy_config

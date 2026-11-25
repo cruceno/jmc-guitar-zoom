@@ -10,3 +10,7 @@ tests/.zoom-fixtures/
 # local notes, not published
 odd/
 BRIEF.md
+
+# packaging output (PyInstaller work folder, bundles, AppImage and installer)
+build/
+dist/
