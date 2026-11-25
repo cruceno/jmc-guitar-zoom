@@ -2,6 +2,8 @@
 
 No network: the channel is a fake fetcher with fixture lists and zips. The library folder is private to each test.
 """
+import gc
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -341,6 +343,101 @@ def test_closing_the_window_stops_the_updater_thread(qtbot, catalog, tmp_path):
     thread = w._update_thread
     w.close()
     assert thread is not None and not thread.isRunning()
+
+
+# ------------------------------------------------------------------ garbage collection off the GUI thread
+
+
+class _GcProbe:
+    """A stand-in updater that records whether automatic garbage collection was on while the worker ran it."""
+
+    def __init__(self):
+        self.seen = []
+
+    def check(self, **_kw):
+        self.seen.append(gc.isenabled())
+        return SimpleNamespace(firmware_versions={})
+
+    def download(self, entries, progress=None, cancelled=None):
+        self.seen.append(gc.isenabled())
+        return SimpleNamespace(ok_count=0)
+
+
+@pytest.fixture
+def gc_state():
+    was = gc.isenabled()
+    yield
+    gc.enable() if was else gc.disable()
+
+
+@pytest.mark.parametrize("slot", ["check", "download"])
+def test_the_worker_pauses_garbage_collection_while_it_runs_and_restores_it(qtbot, gc_state, slot):
+    """A collection on the worker thread walks PySide wrappers the GUI thread is deleting: it crashed the process."""
+    from zoomstudio.ui.update_view import UpdateWorker
+
+    probe = _GcProbe()
+    worker = UpdateWorker(probe, None)
+    gc.enable()
+    call = (lambda: worker.check(None, False, None, True)) if slot == "check" else (lambda: worker.download([]))
+    call()
+    assert probe.seen == [False]  # off while the updater ran
+    assert gc.isenabled()  # and back on after
+
+
+@pytest.mark.parametrize("slot", ["check", "download"])
+def test_the_worker_leaves_garbage_collection_off_when_it_was_off(qtbot, gc_state, slot):
+    from zoomstudio.ui.update_view import UpdateWorker
+
+    worker = UpdateWorker(_GcProbe(), None)
+    gc.disable()
+    (worker.check(None, False, None, True) if slot == "check" else worker.download([]))
+    assert not gc.isenabled()
+
+
+def test_every_pedal_worker_slot_runs_with_garbage_collection_paused(qtbot, gc_state):
+    """The pedal worker is the other thread that runs Python while the GUI thread tears widgets down."""
+    from zoomstudio.ui.worker import PedalWorker
+
+    seen = []
+
+    class Client:
+        def set_param(self, *a):
+            seen.append(gc.isenabled())
+
+    worker = PedalWorker(lambda: None)
+    worker._client = Client()
+    gc.enable()
+    worker.send_param(0, 1, 2)
+    assert seen == [False] and gc.isenabled()
+    slots = [n for n in dir(PedalWorker) if hasattr(getattr(PedalWorker, n), "__wrapped__")]
+    assert {"send_param", "save_patch", "write_patches", "backup_all", "connect_pedal", "_poll_tuner"} <= set(slots)
+
+
+def test_overlapping_pauses_restore_the_collector_only_when_the_last_one_ends(gc_state):
+    from zoomstudio.ui.worker import gc_paused
+
+    gc.enable()
+    with gc_paused():
+        with gc_paused():
+            assert not gc.isenabled()
+        assert not gc.isenabled()
+    assert gc.isenabled()
+
+
+def test_a_check_through_the_window_runs_with_garbage_collection_paused(qtbot, catalog, tmp_path, gc_state):
+    w, _, _ = window(qtbot, tmp_path, catalog)
+    probe = _GcProbe()
+    real = w._updater.check
+    ran_on = []
+
+    def spy(**kw):
+        ran_on.append(threading.current_thread() is not threading.main_thread())
+        probe.seen.append(gc.isenabled())
+        return real(**kw)
+
+    w._updater.check = spy
+    assert startup_check(qtbot, w)
+    assert probe.seen == [False] and ran_on == [True]
 
 
 # ------------------------------------------------------------------ copy

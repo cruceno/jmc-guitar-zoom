@@ -29,6 +29,7 @@ from .fonts import display_font, ui_font
 from .glass import BackdropRoot, GlassPanel
 from .icons import icon
 from .painted import SectionLabel
+from .worker import gc_paused
 from .theme import group_color, group_fill_color, group_text_color
 
 ROLE_UPDATE = Qt.ItemDataRole.UserRole + 50  # the EffectUpdate behind a card
@@ -408,6 +409,10 @@ class UpdateWorker(QObject):
 
     @Slot(object, bool, object, bool)
     def check(self, model_id, all_models: bool, firmware, background: bool) -> None:
+        with gc_paused():
+            self._check(model_id, all_models, firmware, background)
+
+    def _check(self, model_id, all_models: bool, firmware, background: bool) -> None:
         try:
             result = self._updater.check(model_id=model_id, all_models=all_models, firmware=firmware)
             self.check_done.emit(result, "", background, all_models)
@@ -418,6 +423,10 @@ class UpdateWorker(QObject):
 
     @Slot(object)
     def download(self, entries) -> None:
+        with gc_paused():
+            self._download(entries)
+
+    def _download(self, entries) -> None:
         self._cancel.clear()
         try:
             report = self._updater.download(
