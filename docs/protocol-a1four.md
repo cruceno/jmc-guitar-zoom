@@ -144,7 +144,14 @@ caches them under the list's version.
   (`64 03 00 0A 01 <window>` to select a window, `0A 03 01` and `0A 04 01` for footswitches 1 and 2) are
   acknowledged by the A1 FOUR but had no visible effect: the rhythm did not start. The application therefore has no
   rhythm or looper control.
-- **Settings** (system tempo, patch volume, autosave, ...). Documented by zoom-zt2 as system-setting messages for
-  other models; reading and changing them on the A1 FOUR is deferred, not implemented.
+- **Global tone** (the low, middle, high and level knobs in MEMORY or STOMP mode, kept across patches). Checked on
+  hardware (2026-11-25): turning the knobs in editor mode sends nothing (while tempo and tuner calibration, `0A 0C`,
+  are echoed); raising the low band from 0 to 3 changed neither the current patch (`64 13`) nor any file on the
+  pedal (`FLST_SEQ.ZT2`, `GUARDZDL.ZT2`, `G_OUT_EQ.BDL`, which holds the EQ itself, not its settings); and Guitar
+  Lab 7.3 does not offer it either. It lives in the pedal's internal settings with no known MIDI access, so the
+  application does not control it.
+- **Settings** (system tempo, autosave, ...). Documented by zoom-zt2 as system-setting messages for other models;
+  reading and changing them on the A1 FOUR is deferred, not implemented. The patch volume and name are live-edited
+  (see above).
 - **Firmware** is neither downloaded nor written. The updater only compares the version the channel publishes with
   the one the pedal reports.
