@@ -79,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     from zoomstudio.device import MidoTransport
     from zoomstudio.effects.catalog import a1four_effect_ids, load_catalog
     from zoomstudio.ui.main_window import MainWindow
+    from zoomstudio.ui.fonts import install_spanish, register_fonts
     from zoomstudio.ui.theme import apply_dark_theme
 
     catalogs = [parse_catalog_arg(c) for c in args.catalog] or default_catalogs()
@@ -89,6 +90,8 @@ def main(argv: list[str] | None = None) -> int:
 
     app = QApplication(sys.argv[:1])
     app.setApplicationName("Zoom Studio")
+    install_spanish(app)
+    register_fonts()
     apply_dark_theme(app)
 
     window = MainWindow(catalog, a1_ids=a1_ids, transport_factory=MidoTransport.open,
