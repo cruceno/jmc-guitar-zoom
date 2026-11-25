@@ -7,9 +7,6 @@ signals connected to them. Every failure becomes an ``error`` signal.
 
 from __future__ import annotations
 
-import contextlib
-import functools
-import gc
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -29,45 +26,6 @@ from zoomstudio.patches.zptc import parse_zptc
 from . import strings as S
 
 TransportFactory = Callable[[], Transport]
-
-_gc_lock = threading.Lock()
-_gc_depth = 0
-_gc_was_enabled = False
-
-
-@contextlib.contextmanager
-def gc_paused():
-    """Pause the cyclic garbage collector while a worker thread runs Python (re-entrant, shared by every worker).
-
-    Shiboken drops the GIL while it deletes the C++ side of a wrapper, so the GUI thread can sit half-way through
-    tearing a widget tree down. A collection started by a worker in that window walks wrappers that are being
-    destroyed and segfaults (``gc_collect_main -> visit_decref -> libshiboken6``). Reference counting still frees
-    everything that is not in a cycle; the collector resumes as it was when the last worker leaves.
-    """
-    global _gc_depth, _gc_was_enabled
-    with _gc_lock:
-        if _gc_depth == 0:
-            _gc_was_enabled = gc.isenabled()
-            gc.disable()
-        _gc_depth += 1
-    try:
-        yield
-    finally:
-        with _gc_lock:
-            _gc_depth -= 1
-            if _gc_depth == 0 and _gc_was_enabled:
-                gc.enable()
-
-
-def paused_gc(fn):
-    """Decorator form of :func:`gc_paused` for a method that runs on a worker thread (put it under ``@Slot``)."""
-
-    @functools.wraps(fn)
-    def wrapper(*args, **kwargs):
-        with gc_paused():
-            return fn(*args, **kwargs)
-
-    return wrapper
 
 
 def describe_error(exc: BaseException) -> str:
@@ -151,7 +109,6 @@ class PedalWorker(QObject):
     # -------------------------------------------------------------- slots
 
     @Slot()
-    @paused_gc
     def connect_pedal(self) -> None:
         self._close_transport()
         try:
@@ -169,14 +126,12 @@ class PedalWorker(QObject):
         self.connected.emit(identity, info)
 
     @Slot()
-    @paused_gc
     def disconnect_pedal(self) -> None:
         self._tuner_off_quietly()
         self._close_transport()
         self.disconnected.emit()
 
     @Slot()
-    @paused_gc
     def load_all_patches(self) -> None:
         client = self._require_client()
         if client is None:
@@ -199,7 +154,6 @@ class PedalWorker(QObject):
         self.loading_finished.emit()
 
     @Slot()
-    @paused_gc
     def refresh_disk_usage(self) -> None:
         client = self._require_client()
         if client is None:
@@ -213,7 +167,6 @@ class PedalWorker(QObject):
         self.disk_usage.emit(usage)
 
     @Slot()
-    @paused_gc
     def load_effects_state(self) -> None:
         """Read the effect list, the file names and the disk usage in one PC-mode session."""
         client = self._require_client()
@@ -232,7 +185,6 @@ class PedalWorker(QObject):
         self.effects_state.emit(flst_bytes, files, usage)
 
     @Slot(str, object, object)
-    @paused_gc
     def install_effect_file(self, name: str, path, backup_dir) -> None:
         """Upload the local ``.zd2`` as ``name`` and flag it installed (the installer verifies both by read-back)."""
         client = self._require_client()
@@ -250,7 +202,6 @@ class PedalWorker(QObject):
         self.effect_change_finished.emit(True)
 
     @Slot(str, object, object)
-    @paused_gc
     def repair_effect_file(self, name: str, path, backup_dir) -> None:
         """Upload only the missing file of an effect the list already marks installed (the list is not changed)."""
         client = self._require_client()
@@ -268,7 +219,6 @@ class PedalWorker(QObject):
         self.effect_change_finished.emit(True)
 
     @Slot(str, object, object)
-    @paused_gc
     def remove_effect_file(self, name: str, backup_dir, in_use) -> None:
         """Clear the flag of ``name`` and delete its file; the installer refuses effects that ``in_use`` lists."""
         client = self._require_client()
@@ -290,7 +240,6 @@ class PedalWorker(QObject):
         return backup_dir is not None
 
     @Slot(int, object, object)
-    @paused_gc
     def save_patch(self, location: int, data: bytes, backup_dir) -> None:
         """Safe write of one patch: back up the slot, write, read back and compare.
 
@@ -357,7 +306,6 @@ class PedalWorker(QObject):
         return stored
 
     @Slot(object, object)
-    @paused_gc
     def write_patches(self, items, backup_dir) -> None:
         """Safe write of several slots (``items`` = ``[(location, data), ...]``) under one PC mode.
 
@@ -404,7 +352,6 @@ class PedalWorker(QObject):
         return S.err_queue_stopped(location + 9, why, done)
 
     @Slot(object, bool, object)
-    @paused_gc
     def backup_all(self, dest_parent, with_files: bool, stamp=None) -> None:
         """Save every patch as ``NNN.zptc`` plus ``manifest.json`` (and optionally every pedal file).
 
@@ -500,7 +447,6 @@ class PedalWorker(QObject):
         return ok
 
     @Slot(int, int, int)
-    @paused_gc
     def send_param(self, slot: int, param: int, value: int) -> None:
         """Live edit: send one ``64 03`` parameter change (fire and forget)."""
         client = self._client
@@ -512,7 +458,6 @@ class PedalWorker(QObject):
             self._fail(exc)
 
     @Slot(int)
-    @paused_gc
     def select_patch(self, location: int) -> None:
         client = self._client
         if client is None:
@@ -529,12 +474,10 @@ class PedalWorker(QObject):
         return self._tuner_timer is not None
 
     @Slot(bool)
-    @paused_gc
     def set_tuner(self, on: bool) -> None:
         self.tuner_on() if on else self.tuner_off()
 
     @Slot()
-    @paused_gc
     def tuner_on(self) -> None:
         """Switch the pedal tuner on and poll its CC 98/99 traffic on this thread."""
         client = self._require_client()
@@ -559,7 +502,6 @@ class PedalWorker(QObject):
         self._tuner_timer.start()
 
     @Slot()
-    @paused_gc
     def tuner_off(self) -> None:
         was_active = self.tuner_active
         self._stop_tuner_polling()
@@ -609,7 +551,6 @@ class PedalWorker(QObject):
         if isinstance(event, TunerReading):
             self.tuner_reading.emit(event.note, event.offset)
 
-    @paused_gc
     def _poll_tuner(self) -> None:
         client = self._client
         if client is None:

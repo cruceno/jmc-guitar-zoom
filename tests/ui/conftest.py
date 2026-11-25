@@ -50,3 +50,15 @@ def no_effect_list_read_after_connect(monkeypatch):
     from zoomstudio.ui.main_window import MainWindow
 
     monkeypatch.setattr(MainWindow, "_load_installed_state", lambda self: None)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def gc_on_the_gui_thread_only(qapp):
+    """The suite runs with the app's GC policy: a worker thread's collection crashed PySide (see ``gc_guard``)."""
+    import gc
+
+    from zoomstudio.ui import gc_guard
+
+    gc_guard.install(qapp)
+    yield
+    gc.enable()  # the timer dies with the application

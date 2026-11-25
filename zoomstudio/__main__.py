@@ -139,6 +139,9 @@ def main(argv: list[str] | None = None) -> int:
     updater = LibraryUpdater(library, extra_dirs=[f for label, f in catalogs if label != LIBRARY_LABEL])
 
     app = QApplication(sys.argv[:1])
+    from zoomstudio.ui import gc_guard
+
+    gc_guard.install(app)  # cyclic GC only on this thread: a worker's collection crashed Shiboken (see gc_guard)
     app.setApplicationName("Zoom Studio")
     install_spanish(app)
     register_fonts()

@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from PySide6.QtWidgets import QApplication
 from update_support import (EFFECTS, FIXTURES, HALL_ID, NOW, RACKCOMP_ID, hall_newer, open_view, routes, startup_check,
                             window)
 from test_ui_effects_manager import (AFTER, BEFORE, ON_PEDAL, PedalFiles, connected_window)
@@ -345,99 +346,80 @@ def test_closing_the_window_stops_the_updater_thread(qtbot, catalog, tmp_path):
     assert thread is not None and not thread.isRunning()
 
 
-# ------------------------------------------------------------------ garbage collection off the GUI thread
-
-
-class _GcProbe:
-    """A stand-in updater that records whether automatic garbage collection was on while the worker ran it."""
-
-    def __init__(self):
-        self.seen = []
-
-    def check(self, **_kw):
-        self.seen.append(gc.isenabled())
-        return SimpleNamespace(firmware_versions={})
-
-    def download(self, entries, progress=None, cancelled=None):
-        self.seen.append(gc.isenabled())
-        return SimpleNamespace(ok_count=0)
+# ------------------------------------------------------------------ garbage collection only on the GUI thread
 
 
 @pytest.fixture
-def gc_state():
-    was = gc.isenabled()
-    yield
-    gc.enable() if was else gc.disable()
+def gc_guard_off():
+    """Leave the collector as the suite's session guard set it, whatever a test installed."""
+    from zoomstudio.ui import gc_guard
+
+    yield gc_guard
+    gc_guard.install(QApplication.instance())
 
 
-@pytest.mark.parametrize("slot", ["check", "download"])
-def test_the_worker_pauses_garbage_collection_while_it_runs_and_restores_it(qtbot, gc_state, slot):
-    """A collection on the worker thread walks PySide wrappers the GUI thread is deleting: it crashed the process."""
-    from zoomstudio.ui.update_view import UpdateWorker
-
-    probe = _GcProbe()
-    worker = UpdateWorker(probe, None)
-    gc.enable()
-    call = (lambda: worker.check(None, False, None, True)) if slot == "check" else (lambda: worker.download([]))
-    call()
-    assert probe.seen == [False]  # off while the updater ran
-    assert gc.isenabled()  # and back on after
-
-
-@pytest.mark.parametrize("slot", ["check", "download"])
-def test_the_worker_leaves_garbage_collection_off_when_it_was_off(qtbot, gc_state, slot):
-    from zoomstudio.ui.update_view import UpdateWorker
-
-    worker = UpdateWorker(_GcProbe(), None)
-    gc.disable()
-    (worker.check(None, False, None, True) if slot == "check" else worker.download([]))
-    assert not gc.isenabled()
-
-
-def test_every_pedal_worker_slot_runs_with_garbage_collection_paused(qtbot, gc_state):
-    """The pedal worker is the other thread that runs Python while the GUI thread tears widgets down."""
-    from zoomstudio.ui.worker import PedalWorker
-
+def test_install_turns_automatic_collection_off_and_the_timer_collects_on_the_gui_thread(qtbot, gc_guard_off, monkeypatch):
+    """A collection started by a worker thread walks PySide wrappers the GUI thread is deleting: it crashed."""
     seen = []
-
-    class Client:
-        def set_param(self, *a):
-            seen.append(gc.isenabled())
-
-    worker = PedalWorker(lambda: None)
-    worker._client = Client()
+    real = gc.collect
+    monkeypatch.setattr(gc, "collect", lambda *a: seen.append(threading.current_thread()) or real(*a))
     gc.enable()
-    worker.send_param(0, 1, 2)
-    assert seen == [False] and gc.isenabled()
-    slots = [n for n in dir(PedalWorker) if hasattr(getattr(PedalWorker, n), "__wrapped__")]
-    assert {"send_param", "save_patch", "write_patches", "backup_all", "connect_pedal", "_poll_tuner"} <= set(slots)
+    timer = gc_guard_off.install(QApplication.instance(), interval_ms=10)
+    assert not gc.isenabled()
+    qtbot.waitUntil(lambda: bool(seen), timeout=2000)
+    assert timer.isActive() and all(t is threading.main_thread() for t in seen)
 
 
-def test_overlapping_pauses_restore_the_collector_only_when_the_last_one_ends(gc_state):
-    from zoomstudio.ui.worker import gc_paused
+def test_cycles_made_on_a_worker_thread_are_collected_later_on_the_gui_thread(qtbot, gc_guard_off):
+    died_on = []
 
-    gc.enable()
-    with gc_paused():
-        with gc_paused():
-            assert not gc.isenabled()
-        assert not gc.isenabled()
-    assert gc.isenabled()
+    class Cyclic:
+        def __init__(self):
+            self.me = self
+
+        def __del__(self):
+            died_on.append(threading.current_thread())
+
+    gc_guard_off.install(QApplication.instance(), interval_ms=10)
+    worker = threading.Thread(target=lambda: [Cyclic() for _ in range(50)])
+    worker.start()
+    worker.join()
+    qtbot.waitUntil(lambda: len(died_on) == 50, timeout=2000)
+    assert all(t is threading.main_thread() for t in died_on)
 
 
-def test_a_check_through_the_window_runs_with_garbage_collection_paused(qtbot, catalog, tmp_path, gc_state):
-    w, _, _ = window(qtbot, tmp_path, catalog)
-    probe = _GcProbe()
-    real = w._updater.check
-    ran_on = []
+def test_installing_twice_keeps_one_timer(qtbot, gc_guard_off):
+    app = QApplication.instance()
+    first = gc_guard_off.install(app, interval_ms=10)
+    second = gc_guard_off.install(app, interval_ms=10)
+    assert second is not first and not first.isActive() and second.isActive()
 
-    def spy(**kw):
-        ran_on.append(threading.current_thread() is not threading.main_thread())
-        probe.seen.append(gc.isenabled())
-        return real(**kw)
 
-    w._updater.check = spy
-    assert startup_check(qtbot, w)
-    assert probe.seen == [False] and ran_on == [True]
+def test_main_installs_the_guard_right_after_the_application_exists(qapp, monkeypatch):
+    import zoomstudio.__main__ as entry
+    import zoomstudio.ui.gc_guard as gc_guard
+    import zoomstudio.ui.main_window as main_window
+
+    class Stop(Exception):
+        pass
+
+    def no_window(*a, **k):
+        raise Stop
+
+    installed = []
+    monkeypatch.setattr(gc_guard, "install", lambda app, **k: installed.append(app))
+    monkeypatch.setattr(main_window, "MainWindow", no_window)
+
+    class SameApp:  # main() creates the application: hand it the one the suite already has
+        def __new__(cls, argv):
+            return qapp
+
+        instance = staticmethod(QApplication.instance)
+
+    monkeypatch.setattr("PySide6.QtWidgets.QApplication", SameApp)
+    with pytest.raises(Stop):
+        entry.main(["--no-connect"])
+    assert installed == [qapp]
 
 
 # ------------------------------------------------------------------ copy
