@@ -589,3 +589,93 @@ def tuner_status(note: str | None, offset: int) -> str:
     if offset < 0:
         return f"BAJO −{-offset} · subir afinación"
     return f"ALTO +{offset} · bajar afinación"
+
+
+# ----------------------------------------------------------------- effects manager
+
+EFFECTS_BUTTON = "Efectos"
+EFFECTS_TIP = "Instala o quita efectos de la pedalera. La edición de patches queda bloqueada mientras está abierta"
+EFFECTS_TITLE = "Efectos de la pedalera"
+EFFECTS_CLOSE = "Cerrar"
+EFFECTS_INSTALLED = "Instalados"
+EFFECTS_AVAILABLE = "Disponibles para instalar"
+EFFECTS_SEARCH_TIP = "Buscar efectos por nombre o grupo"
+EFFECTS_OFFLINE = ("Conecte la pedalera para administrar sus efectos: sin conexión no se puede ver qué hay "
+                   "instalado ni instalar o quitar efectos.")
+EFFECTS_LOADING = "Leyendo la lista de efectos de la pedalera…"
+EFFECTS_NONE_INSTALLED = "No hay efectos instalados que coincidan."
+EFFECTS_NONE_AVAILABLE = "No hay efectos disponibles para instalar que coincidan."
+EFFECTS_SELECT_HINT = "Seleccione un efecto para ver su explicación y las acciones disponibles."
+EFFECTS_NO_DESCRIPTION = "Este efecto no figura en el catálogo local: no hay explicación disponible."
+EFFECTS_INSTALL = "Instalar"
+EFFECTS_REMOVE = "Quitar"
+EFFECTS_BUSY_INSTALL = "Instalando el efecto en la pedalera…"
+EFFECTS_BUSY_REMOVE = "Quitando el efecto de la pedalera…"
+EFFECTS_NOT_IN_CATALOG = "No figura en el catálogo local: no se puede comprobar si algún patch lo usa."
+EFFECTS_PATCHES_INCOMPLETE = "Aún no se leyeron todos los patches: no se puede comprobar si alguno usa este efecto."
+EFFECTS_UNSAVED_PATCHES = "Hay patches con cambios sin guardar: guárdelos o descártelos antes de quitar un efecto."
+EFFECTS_INSTALL_OK = "Se puede instalar."
+EFFECTS_REMOVE_OK = "Se puede quitar: ningún patch lo usa."
+EFFECTS_SIZE_NA = "tamaño n/d"
+EFFECTS_DSP_NA = "n/d"
+EFFECTS_BACKUP_NOTE = ("Antes de escribir se hace una copia de seguridad de la lista de efectos "
+                       "(FLST_SEQ.ZT2) en la carpeta de copias.")
+
+
+def effects_size(size: int | None) -> str:
+    return EFFECTS_SIZE_NA if size is None else f"{number(size / 1024)} KB"
+
+
+def effects_memory(used: int, total: int, free: int) -> str:
+    return f"{_ES.toString(used)} de {_ES.toString(total)} bytes usados · {_ES.toString(free)} bytes libres"
+
+
+def effects_count(shown: int, total: int) -> str:
+    return str(total) if shown == total else f"{shown} de {total}"
+
+
+def effects_facts(group: str, dsp: str, size: str) -> str:
+    return f"{group} · DSP {dsp} · {size}"
+
+
+def effects_install_blocked(need: int, size: int, margin: int, free: int) -> str:
+    return (f"No hay memoria suficiente: hacen falta {_ES.toString(need)} bytes ({_ES.toString(size)} del efecto "
+            f"más {_ES.toString(margin)} de margen) y quedan {_ES.toString(free)}.")
+
+
+def effects_in_use(patches: list[tuple[int, str]]) -> str:
+    names = ", ".join(f"{display} ({name})" if name else str(display) for display, name in patches)
+    return f"No se puede quitar: lo usan los patches {names}." if len(patches) > 1 else (
+        f"No se puede quitar: lo usa el patch {names}.")
+
+
+def effects_confirm_install_title(name: str) -> str:
+    return f"Instalar {name}"
+
+
+def effects_confirm_install(name: str, file: str, size: int, free: int) -> str:
+    return (f"Se escribirá {file} ({effects_size(size)}) en la pedalera y se marcará {name} como instalado. "
+            f"Memoria libre: {_ES.toString(free)} bytes. {EFFECTS_BACKUP_NOTE}")
+
+
+def effects_confirm_remove_title(name: str) -> str:
+    return f"Quitar {name}"
+
+
+def effects_confirm_remove(name: str, file: str) -> str:
+    return (f"Se desmarcará {name} en la lista de efectos y se borrará {file} de la pedalera. "
+            f"Ningún patch lo usa. {EFFECTS_BACKUP_NOTE}")
+
+
+def effects_installed_ok(name: str) -> str:
+    return f"{name} instalado en la pedalera"
+
+
+def effects_removed_ok(name: str) -> str:
+    return f"{name} quitado de la pedalera"
+
+
+def err_effect_change(name: str, installing: bool, exc: object) -> str:
+    return with_detail(f"No se pudo {'instalar' if installing else 'quitar'} {name}", exc)
+EFFECTS_RETRY = "Reintentar"
+EFFECTS_LOAD_FAILED = "No se pudo leer la lista de efectos de la pedalera. El motivo figura en el mensaje de error."

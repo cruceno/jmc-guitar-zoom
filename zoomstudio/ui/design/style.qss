@@ -111,3 +111,9 @@ QWidget#tunerPill { background: $input_bg; border: 2px solid $tuner_tick; border
 QWidget#tunerPill[state="in_tune"] { border-color: $tuner_in_tune; }
 QWidget#tunerPill[state="near"] { border-color: $tuner_near; }
 QWidget#tunerPill[state="off"] { border-color: $tuner_off; }
+
+/* effects manager */
+QProgressBar#effectsMemory { min-height: 10px; max-height: 10px; border-radius: 5px; }
+QProgressBar#effectsMemory::chunk { border-radius: 4px; }
+QLabel[role="offline"] { color: $text_secondary; font-size: 15px; }
+QPushButton[danger="true"]:disabled { background: transparent; border: 1px dashed $border_strong; color: $text_disabled; }

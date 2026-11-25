@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from zoomstudio.effects.catalog import EffectInfo
+from zoomstudio.effects.flst import pedal_filename
 from zoomstudio.patches import edit
 from zoomstudio.patches.model import NAME_MAX_LEN, VOLUME_MAX, Patch
 from zoomstudio.patches.zptc import build_zptc, parse_zptc
@@ -24,6 +25,7 @@ from . import strings as S
 from . import tokens
 from .cards import ROLE_DIRTY, ROLE_NAME, ROLE_NUMBER, ROLE_STRIP
 from .dialogs import ConfirmDialog
+from .effects_manager import EffectsManager
 from .fonts import display_font
 from .glass import BackdropRoot, GlassMenu, GlassPanel, GlowHost
 from .icons import icon, pixmap
@@ -105,6 +107,9 @@ class MainWindow(LibraryMixin, QMainWindow):
     queue_finished = Signal(object, int)  # a multi-slot write ended: locations written, failed location
     _backup_requested = Signal(object, bool, object)
     _queue_requested = Signal(object, object)
+    _effects_state_requested = Signal()
+    _effect_install_requested = Signal(str, object, object)
+    _effect_remove_requested = Signal(str, object, object)
 
     def __init__(self, catalog: dict[int, EffectInfo], a1_ids: set[int] | None = None,
                  transport_factory: TransportFactory | None = None, installed_label: str = "pedal",
@@ -131,6 +136,9 @@ class MainWindow(LibraryMixin, QMainWindow):
         self._is_connected = False
         self._closed = False
         self._tuner_on = False
+        self._effects_open = False
+        self._effects_busy = False
+        self._patches_complete = False  # every patch of the pedal was read (and none failed)
         self._worker: PedalWorker | None = None
         self._thread: QThread | None = None
 
@@ -174,6 +182,10 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.tuner_button.setIcon(icon("tuner"))
         self.tuner_button.setCheckable(True)
         self.tuner_button.setToolTip(S.TUNER_TIP)
+        self.effects_button = QPushButton(S.EFFECTS_BUTTON)
+        self.effects_button.setIcon(icon("package"))
+        self.effects_button.setCheckable(True)
+        self.effects_button.setToolTip(S.EFFECTS_TIP)
         self.live_check = LiveSwitch(S.LIVE)
         self.live_check.setToolTip(S.LIVE_TIP)
         self.live_check.setAccessibleName(S.LIVE_TIP)
@@ -184,7 +196,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         h.addWidget(self.memory_bar)
         h.addWidget(self.memory_value)
         h.addStretch(1)
-        for w in (self.tuner_button, self.live_check, self.open_file_button, self.save_file_button,
+        for w in (self.effects_button, self.tuner_button, self.live_check, self.open_file_button, self.save_file_button,
                   self.open_button, self.reload_button, self.connect_button, self.disconnect_button):
             h.addWidget(w)
         self.connect_button.clicked.connect(self._on_connect_clicked)
@@ -196,6 +208,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.open_file_button.clicked.connect(self._choose_open_file)
         self.live_check.toggled.connect(self._on_live_toggled)
         self.tuner_button.toggled.connect(self._on_tuner_toggled)
+        self.effects_button.toggled.connect(self._on_effects_toggled)
         self.tuner_shortcut = QShortcut(QKeySequence("T"), self)
         self.tuner_shortcut.activated.connect(self._on_tuner_shortcut)
 
@@ -358,6 +371,12 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.tuner_panel = TunerPanel(backdrop_root)
         self.tuner_panel.hide()
         self.tuner_panel.exit_requested.connect(lambda: self.tuner_button.setChecked(False))
+        self.effects_panel = EffectsManager(backdrop_root, self.catalog, a1_ids)
+        self.effects_panel.hide()
+        self.effects_panel.close_requested.connect(lambda: self.effects_button.setChecked(False))
+        self.effects_panel.refresh_requested.connect(self._request_effects_state)
+        self.effects_panel.install_requested.connect(self._on_effect_install)
+        self.effects_panel.remove_requested.connect(self._on_effect_remove)
         self.header = header
         self._status_bar = StatusBar()
         status_panel = GlassPanel(backdrop_root, "strong")
@@ -371,6 +390,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         rv.addWidget(header)
         rv.addWidget(splitter, stretch=1)
         rv.addWidget(self.tuner_panel, stretch=1)
+        rv.addWidget(self.effects_panel, stretch=1)
         rv.addWidget(status_panel)
         self.setCentralWidget(root)
         self._build_library_ui()
@@ -428,7 +448,9 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.open_file_button.setEnabled(self._location is not None and not self._saving)
         self.save_file_button.setEnabled(patch is not None)
         self.live_check.setEnabled(self._is_connected)
-        self.tuner_button.setEnabled(self._is_connected and self._worker is not None and not self._saving)
+        self.tuner_button.setEnabled(self._is_connected and self._worker is not None and not self._saving
+                                     and not self._effects_open)
+        self.effects_button.setEnabled(not self._tuner_on and not self._saving and not self._effects_busy)
         blockers = self.save_blockers()
         dirty = self._location is not None and self.is_dirty(self._location)
         self.save_button.setEnabled(
@@ -451,7 +473,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.patches_caption.setText(S.patches_caption(in_use, self._display(1), self._display(self._patch_count)))
         self.centralWidget().update()
         self._update_library_actions()
-        if self._tuner_on:  # nothing but the tuner and Disconnect may be used while the pedal is muted
+        if self._tuner_on or self._effects_open:  # the tuner mutes the pedal; the effects screen owns the files
             for w in (self.save_button, self.open_file_button, self.save_file_button, self.live_check,
                       self.reload_button, self.connect_button, self.open_button):
                 w.setEnabled(False)
@@ -459,6 +481,85 @@ class MainWindow(LibraryMixin, QMainWindow):
                         self.paste_action, self.clear_action, self.export_selected_action, self.export_all_action,
                         self.import_file_action, self.import_folder_action):
                 act.setEnabled(False)
+            if self._effects_busy:
+                self.disconnect_button.setEnabled(False)
+        if self._effects_open:
+            self._refresh_effects_context()
+
+    # ------------------------------------------------------------- effects manager
+
+    def _on_effects_toggled(self, on: bool) -> None:
+        self._effects_open = on
+        self.splitter.setEnabled(not on)
+        self.splitter.setVisible(not on)
+        self.effects_panel.setVisible(on)
+        self.edit_button.setEnabled(not on)
+        self.library_button.setEnabled(not on)
+        self._update_buttons()
+        if on:
+            self._request_effects_state()
+
+    def _request_effects_state(self) -> None:
+        if self._worker is None or not self._is_connected:
+            self.effects_panel.set_offline()
+            return
+        self.effects_panel.set_loading()
+        self._effects_state_requested.emit()
+
+    def effects_usage(self) -> dict[str, list[tuple[int, str]]]:
+        """Pedal file name -> (display number, name) of the loaded patches that use the effect."""
+        users: dict[str, list[tuple[int, str]]] = {}
+        for location in sorted(self._patches):
+            patch = self._patches[location]
+            files = {pedal_filename(info.filename) for slot in patch.effects
+                     if (info := self.catalog.get(slot.effect_id)) is not None}
+            for file in sorted(files):
+                users.setdefault(file, []).append((self._display(location), patch.name))
+        return users
+
+    def _refresh_effects_context(self) -> None:
+        self.effects_panel.set_patch_usage(self._patches_complete and self._is_connected, self.any_dirty(),
+                                           self.effects_usage())
+
+    @property
+    def effects_backup_dir(self) -> Path:
+        """Where the effect list is backed up before it changes."""
+        if self.backup_dir is not None:
+            return self.backup_dir / "effects"
+        from zoomstudio.__main__ import autosave_dir
+
+        return autosave_dir() / "effects"
+
+    def _on_effect_install(self, name: str, path) -> None:
+        if self._worker is not None and self._is_connected:
+            self._set_effects_busy(True, S.EFFECTS_BUSY_INSTALL)
+            self._effect_install_requested.emit(name, path, self.effects_backup_dir)
+
+    def _on_effect_remove(self, name: str) -> None:
+        if self._worker is not None and self._is_connected:
+            self._set_effects_busy(True, S.EFFECTS_BUSY_REMOVE)
+            in_use = {file: [number for number, _name in patches] for file, patches in self.effects_usage().items()}
+            self._effect_remove_requested.emit(name, self.effects_backup_dir, in_use)
+
+    def _set_effects_busy(self, busy: bool, text: str = "") -> None:
+        self._effects_busy = busy
+        self.effects_panel.set_busy(busy, text)
+        self._update_buttons()
+
+    @Slot(object, object, object)
+    def _on_effects_state(self, flst_bytes, files, usage) -> None:
+        self._set_memory(usage)
+        self._refresh_effects_context()
+        self.effects_panel.set_state(flst_bytes, files, usage)
+
+    @Slot(str, bool)
+    def _on_effect_changed(self, name: str, installed: bool) -> None:
+        self.statusBar().showMessage((S.effects_installed_ok if installed else S.effects_removed_ok)(name))
+
+    @Slot(bool)
+    def _on_effect_change_finished(self, _success: bool) -> None:
+        self._set_effects_busy(False)
+        self._request_effects_state()  # the lists and the memory always reflect the pedal, whatever happened
 
     # ------------------------------------------------------------- tuner
 
@@ -1027,6 +1128,13 @@ class MainWindow(LibraryMixin, QMainWindow):
         self._param_requested.connect(w.send_param)
         self._select_requested.connect(w.select_patch)
         self._tuner_requested.connect(w.set_tuner)
+        self._effects_state_requested.connect(w.load_effects_state)
+        self._effect_install_requested.connect(w.install_effect_file)
+        self._effect_remove_requested.connect(w.remove_effect_file)
+        w.effects_state.connect(self._on_effects_state)
+        w.effects_state_failed.connect(self.effects_panel.set_failed)
+        w.effect_changed.connect(self._on_effect_changed)
+        w.effect_change_finished.connect(self._on_effect_change_finished)
         w.tuner_reading.connect(self.tuner_panel.show_reading)
         w.tuner_state.connect(self._on_tuner_state)
         self._thread.start()
@@ -1052,9 +1160,11 @@ class MainWindow(LibraryMixin, QMainWindow):
     def _begin_pedal_read(self) -> None:
         assert self._worker is not None
         self._patches = {}
+        self._patches_complete = False
         self._reset_edits()
         self._rebuild_patch_list()
         self.statusBar().showMessage(S.READING_PATCHES)
+        self._update_buttons()
         self._worker.request("load_all_patches")
         self._worker.request("refresh_disk_usage")
 
@@ -1079,6 +1189,8 @@ class MainWindow(LibraryMixin, QMainWindow):
         self._set_connection(S.NOT_CONNECTED, False)
         self.connection_label.setToolTip("")
         self._set_memory(None)
+        if self._effects_open:
+            self.effects_panel.set_offline()
         self.statusBar().showMessage(S.DISCONNECTED)
         self._update_buttons()
 
@@ -1092,6 +1204,8 @@ class MainWindow(LibraryMixin, QMainWindow):
 
     @Slot()
     def _on_loading_finished(self) -> None:
+        self._patches_complete = len(self._patches) >= self._patch_count
+        self._update_buttons()
         self.statusBar().showMessage(S.loaded_from_pedal(len(self._patches)))
         self.patches_loaded.emit()
 

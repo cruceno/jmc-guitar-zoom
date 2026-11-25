@@ -14,6 +14,8 @@ from pathlib import Path
 from PySide6.QtCore import QMetaObject, QObject, QTimer, Qt, Signal, Slot
 
 from zoomstudio.device import PedalClient, PedalError, TunerReading
+from zoomstudio.effects import installer
+from zoomstudio.effects.flst import FLST_NAME
 from zoomstudio.device.transport import Transport
 from zoomstudio.patches import library
 from zoomstudio.patches.backup import write_backup
@@ -58,6 +60,10 @@ class PedalWorker(QObject):
     queue_finished = Signal(object, int)  # locations written and verified, failed location (0: none)
     tuner_reading = Signal(object, int)  # note name or None, offset -7..+7 (0: in tune)
     tuner_state = Signal(bool)  # the worker turned the tuner off by itself (refused, I/O error, disconnect)
+    effects_state = Signal(object, object, object)  # FLST_SEQ.ZT2 bytes, file names on the pedal, DiskUsage
+    effects_state_failed = Signal()  # the state could not be read (the reason went through ``error``)
+    effect_changed = Signal(str, bool)  # pedal file name, installed (emitted when the change was verified)
+    effect_change_finished = Signal(bool)  # success (always emitted last)
     error = Signal(str)
 
     def __init__(self, transport_factory: TransportFactory, timeout: float = 3.0) -> None:
@@ -159,6 +165,62 @@ class PedalWorker(QObject):
             self._fail(exc)
             return
         self.disk_usage.emit(usage)
+
+    @Slot()
+    def load_effects_state(self) -> None:
+        """Read the effect list, the file names and the disk usage in one PC-mode session."""
+        client = self._require_client()
+        if client is None:
+            self.effects_state_failed.emit()
+            return
+        try:
+            with client.pc_mode(True):
+                flst_bytes = client.read_file(FLST_NAME)
+                files = client.list_files()
+                usage = client.disk_usage()
+        except (PedalError, OSError) as exc:
+            self._fail(exc)
+            self.effects_state_failed.emit()
+            return
+        self.effects_state.emit(flst_bytes, files, usage)
+
+    @Slot(str, object, object)
+    def install_effect_file(self, name: str, path, backup_dir) -> None:
+        """Upload the local ``.zd2`` as ``name`` and flag it installed (the installer verifies both by read-back)."""
+        client = self._require_client()
+        if client is None or not self._backup_dir_ok(backup_dir):
+            self.effect_change_finished.emit(False)
+            return
+        try:
+            data = Path(path).read_bytes()
+            installer.install_effect(client, data, name, Path(backup_dir))
+        except (PedalError, OSError, installer.EffectInstallError) as exc:
+            self.error.emit(S.err_effect_change(name, True, describe_error(exc)))
+            self.effect_change_finished.emit(False)
+            return
+        self.effect_changed.emit(name, True)
+        self.effect_change_finished.emit(True)
+
+    @Slot(str, object, object)
+    def remove_effect_file(self, name: str, backup_dir, in_use) -> None:
+        """Clear the flag of ``name`` and delete its file; the installer refuses effects that ``in_use`` lists."""
+        client = self._require_client()
+        if client is None or not self._backup_dir_ok(backup_dir):
+            self.effect_change_finished.emit(False)
+            return
+        try:
+            installer.remove_effect(client, name, Path(backup_dir), in_use)
+        except (PedalError, OSError, installer.EffectInstallError) as exc:
+            self.error.emit(S.err_effect_change(name, False, describe_error(exc)))
+            self.effect_change_finished.emit(False)
+            return
+        self.effect_changed.emit(name, False)
+        self.effect_change_finished.emit(True)
+
+    def _backup_dir_ok(self, backup_dir) -> bool:
+        if backup_dir is None:
+            self.error.emit(S.ERR_NO_BACKUP_DIR)
+        return backup_dir is not None
 
     @Slot(int, object, object)
     def save_patch(self, location: int, data: bytes, backup_dir) -> None:

@@ -29,6 +29,7 @@ PATHS = {
     "unplug": '<path d="M9 2v6M15 2v6"/><path d="M6 8h12v3a6 6 0 0 1-12 0z"/><path d="M12 17v5"/><path d="M3 3l18 18"/>',
     "target": '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>',
     "swap": '<path d="M4 8h14l-3-3"/><path d="M20 16H6l3 3"/>',
+    "package": '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
     "plus": '<path d="M12 5v14M5 12h14"/>',
     "arrowUp": '<path d="M12 19V5"/><path d="m6 11 6-6 6 6"/>',
     "arrowDown": '<path d="M12 5v14"/><path d="m18 13-6 6-6-6"/>',

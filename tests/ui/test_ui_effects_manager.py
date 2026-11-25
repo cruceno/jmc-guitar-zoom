@@ -1,0 +1,297 @@
+"""The effects manager screen, driven through the window: lists, actions, confirmations and the worker round trip.
+
+The pedal's files are an in-memory store behind ``PedalClient.read_file/list_files/disk_usage/write_file/
+delete_file``; PC mode still goes through a scripted FakeTransport. No MIDI hardware is touched.
+"""
+import dataclasses
+from pathlib import Path
+
+import pytest
+
+from ui_replies import FIXTURES, HDR, S, fake_pedal, patch_reply
+from zoomstudio.device import PedalClient
+from zoomstudio.device import sysex
+from zoomstudio.device.errors import PedalFileNotFound
+from zoomstudio.device.sysex import DiskUsage
+from zoomstudio.effects import flst
+from zoomstudio.effects.catalog import load_catalog
+from zoomstudio.effects.installer import MEMORY_MARGIN
+from zoomstudio.ui import strings as ST
+from zoomstudio.ui.dialogs import ConfirmDialog
+from zoomstudio.ui.main_window import MainWindow
+
+EFFECTS = Path(__file__).parents[1] / "effects" / "fixtures"
+BEFORE = (EFFECTS / "flst" / "before-12st.ZT2").read_bytes()
+AFTER = (EFFECTS / "flst" / "after-12st.ZT2").read_bytes()
+BACKUP = FIXTURES / "backup"
+PATCHES = [(BACKUP / "001.zptc").read_bytes(), (FIXTURES / "53-HB-Jazz.zptc").read_bytes()]
+ON_PEDAL = ["COMP.ZD2", "FDDLXR1U.ZD2", "FDDX1X12.ZD2", "GTGEQ71U.ZD2", "HALL.ZD2", "OPTCOMP.ZD2"]
+TOTAL, FREE = 3_087_950, 143_150
+
+
+class PedalFiles:
+    """The pedal's file system, plugged into PedalClient's file methods."""
+
+    def __init__(self, flst_bytes: bytes, names=ON_PEDAL, free: int = FREE) -> None:
+        self.files = {flst.FLST_NAME: flst_bytes, **{n: b"\x00" * 64 for n in names}}
+        self.free = free
+
+    def install(self, monkeypatch) -> None:
+        def read_file(_client, name, timeout=None):
+            if name not in self.files:
+                raise PedalFileNotFound(name)
+            return self.files[name]
+
+        def write_file(_client, name, data, timeout=None):
+            self.free += len(self.files.get(name, b"")) - len(data)
+            self.files[name] = bytes(data)
+
+        def delete_file(_client, name, timeout=None):
+            self.free += len(self.files.pop(name, b""))
+
+        monkeypatch.setattr(PedalClient, "read_file", read_file)
+        monkeypatch.setattr(PedalClient, "write_file", write_file)
+        monkeypatch.setattr(PedalClient, "delete_file", delete_file)
+        monkeypatch.setattr(PedalClient, "list_files", lambda _client, timeout=None: sorted(self.files))
+        monkeypatch.setattr(PedalClient, "disk_usage", lambda _client, timeout=None: DiskUsage(TOTAL, self.free))
+
+
+@pytest.fixture(scope="module")
+def catalog():
+    return load_catalog(("pedal", FIXTURES / "catalog"), ("Guitar Lab", EFFECTS / "lib"))
+
+
+def connected_window(qtbot, monkeypatch, catalog, tmp_path, pedal_files: PedalFiles, a1_ids=None):
+    pedal_files.install(monkeypatch)
+    transport = fake_pedal(PATCHES)
+    for _ in range(30):  # every state read, install and removal runs in its own PC mode
+        transport.on(sysex.pc_mode(True, 0x6E), S(HDR + b"\x00\x00"))
+        transport.on(sysex.pc_mode(False, 0x6E), S(HDR + b"\x00\x00"))
+    w = MainWindow(catalog, a1_ids=a1_ids, transport_factory=lambda: transport, backup_dir=tmp_path)
+    qtbot.addWidget(w)
+    with qtbot.waitSignal(w.patches_loaded, timeout=5000):
+        w.connect_button.click()
+    return w
+
+
+def open_screen(qtbot, w):
+    panel = w.effects_panel
+    with qtbot.waitSignal(panel.state_shown, timeout=5000):
+        w.effects_button.click()
+    return panel
+
+
+def names(panel, which):
+    return sorted(getattr(panel, f"{which}_names")())
+
+
+@pytest.fixture
+def screen(qtbot, monkeypatch, catalog, tmp_path):
+    pedal_files = PedalFiles(BEFORE)
+    w = connected_window(qtbot, monkeypatch, catalog, tmp_path, pedal_files)
+    return w, open_screen(qtbot, w), pedal_files
+
+
+def test_lists_are_built_from_the_pedal_list_and_the_local_files(screen):
+    _w, panel, _files = screen
+    assert names(panel, "installed") == ON_PEDAL
+    # 160_COMP and 12Strings: listed with the flag off and a local .zd2 to upload
+    assert names(panel, "available") == ["160_COMP.ZD2", "MDL_12ST.ZD2"]
+
+
+def test_once_the_flag_is_set_the_effect_moves_to_installed(qtbot, monkeypatch, catalog, tmp_path):
+    w = connected_window(qtbot, monkeypatch, catalog, tmp_path, PedalFiles(AFTER, ON_PEDAL + ["MDL_12ST.ZD2"]))
+    panel = open_screen(qtbot, w)
+    assert "MDL_12ST.ZD2" in names(panel, "installed")
+    assert names(panel, "available") == ["160_COMP.ZD2"]
+
+
+def test_an_installed_flag_without_the_file_is_not_installed(qtbot, monkeypatch, catalog, tmp_path):
+    w = connected_window(qtbot, monkeypatch, catalog, tmp_path, PedalFiles(BEFORE, ON_PEDAL[:-1]))
+    panel = open_screen(qtbot, w)
+    assert "OPTCOMP.ZD2" not in names(panel, "installed")
+    assert "OPTCOMP.ZD2" not in names(panel, "available")  # its flag is set: nothing to install
+
+
+def test_effects_the_list_does_not_contain_are_not_offered(qtbot, monkeypatch, catalog, tmp_path):
+    unlisted = dataclasses.replace(catalog[0x1800030], effect_id=0x1800099, filename="ZZNEW_100.zd2")
+    pedal_files = PedalFiles(BEFORE)
+    w = connected_window(qtbot, monkeypatch, {**catalog, unlisted.effect_id: unlisted}, tmp_path, pedal_files)
+    panel = open_screen(qtbot, w)
+    assert "ZZNEW.ZD2" not in names(panel, "available")
+    assert names(panel, "available") == ["160_COMP.ZD2", "MDL_12ST.ZD2"]
+
+
+def test_only_effects_of_the_a1_four_are_offered(qtbot, monkeypatch, catalog, tmp_path):
+    w = connected_window(qtbot, monkeypatch, catalog, tmp_path, PedalFiles(BEFORE), a1_ids={0x14400190})
+    panel = open_screen(qtbot, w)
+    assert names(panel, "available") == ["MDL_12ST.ZD2"]
+
+
+def test_search_filters_both_lists(screen):
+    _w, panel, _files = screen
+    panel.search.setText("hall")
+    assert names(panel, "installed") == ["HALL.ZD2"]
+    assert names(panel, "available") == []
+    assert panel.available_empty.isVisibleTo(panel)
+    panel.search.setText("")
+    assert len(names(panel, "installed")) == len(ON_PEDAL)
+
+
+def test_selecting_a_card_shows_the_extended_spanish_description(screen, catalog):
+    _w, panel, _files = screen
+    panel.select_effect("HALL.ZD2")
+    assert panel.detail_name.text() == "Hall"
+    assert panel.detail_text.text() == panel.description_of("HALL.ZD2") != ""
+    from zoomstudio.effects.i18n import effect_description
+    assert panel.detail_text.text() == effect_description(catalog[0x9000030])
+
+
+def test_the_memory_bar_and_its_label_are_separate_widgets(screen):
+    _w, panel, _files = screen
+    assert panel.memory_bar.isTextVisible() is False
+    assert panel.memory_bar.value() == round((1 - FREE / TOTAL) * 100)
+    assert panel.memory_label.text() == ST.effects_memory(TOTAL - FREE, TOTAL, FREE)
+
+
+def test_install_is_disabled_with_the_reason_when_memory_is_short(qtbot, monkeypatch, catalog, tmp_path):
+    size = catalog[0x14400190].path.stat().st_size
+    w = connected_window(qtbot, monkeypatch, catalog, tmp_path, PedalFiles(BEFORE, free=size + MEMORY_MARGIN - 1))
+    panel = open_screen(qtbot, w)
+    panel.select_effect("MDL_12ST.ZD2")
+    assert not panel.install_button.isEnabled()
+    assert panel.reason_label.text() == ST.effects_install_blocked(
+        size + MEMORY_MARGIN, size, MEMORY_MARGIN, size + MEMORY_MARGIN - 1)
+    assert panel.reason_label.isVisibleTo(panel)
+
+
+def test_install_is_enabled_with_exactly_the_margin(qtbot, monkeypatch, catalog, tmp_path):
+    size = catalog[0x14400190].path.stat().st_size
+    w = connected_window(qtbot, monkeypatch, catalog, tmp_path, PedalFiles(BEFORE, free=size + MEMORY_MARGIN))
+    panel = open_screen(qtbot, w)
+    panel.select_effect("MDL_12ST.ZD2")
+    assert panel.install_button.isEnabled()
+
+
+def test_remove_is_disabled_and_names_the_patches_that_use_the_effect(screen):
+    _w, panel, _files = screen
+    panel.select_effect("HALL.ZD2")  # the second patch (display 11, "HB Jazz") uses it
+    assert not panel.remove_button.isEnabled()
+    assert "11 (HB Jazz)" in panel.reason_label.text()
+    panel.select_effect("OPTCOMP.ZD2")  # both patches
+    assert not panel.remove_button.isEnabled()
+    assert "10 (AG D-28)" in panel.reason_label.text() and "11 (HB Jazz)" in panel.reason_label.text()
+    panel.select_effect("COMP.ZD2")
+    assert panel.remove_button.isEnabled()
+
+
+def test_remove_is_blocked_until_every_patch_is_loaded(screen, qtbot):
+    w, panel, _files = screen
+    panel.select_effect("COMP.ZD2")
+    assert panel.remove_button.isEnabled()
+    w.reload()  # a reload empties the list before the patches come back (the button itself is locked)
+    assert not panel.remove_button.isEnabled()
+    assert panel.reason_label.text() == ST.EFFECTS_PATCHES_INCOMPLETE
+
+
+def test_remove_is_blocked_while_a_patch_has_unsaved_edits(screen):
+    w, panel, _files = screen
+    w.select_location(1)
+    w.name_edit.setText("Otro")
+    w.name_edit.textEdited.emit("Otro")
+    panel.select_effect("COMP.ZD2")
+    assert not panel.remove_button.isEnabled()
+    assert panel.reason_label.text() == ST.EFFECTS_UNSAVED_PATCHES
+
+
+def test_install_asks_first_then_uploads_and_refreshes_the_state(screen, qtbot, monkeypatch, tmp_path):
+    w, panel, files = screen
+    asked = []
+    monkeypatch.setattr(ConfirmDialog, "ask", staticmethod(lambda parent, title, text, *a, **k: asked.append((title, text)) or True))
+    panel.select_effect("MDL_12ST.ZD2")
+    with qtbot.waitSignal(panel.state_shown, timeout=5000):
+        panel.install_button.click()
+    assert len(asked) == 1 and "copia de seguridad" in asked[0][1] and "FLST_SEQ.ZT2" in asked[0][1]
+    assert files.files["MDL_12ST.ZD2"] == catalog_bytes()
+    assert files.files[flst.FLST_NAME] == AFTER
+    assert "MDL_12ST.ZD2" in names(panel, "installed") and "MDL_12ST.ZD2" not in names(panel, "available")
+    assert len(list((tmp_path / "effects").glob("*FLST_SEQ.ZT2"))) == 1  # the backup of the list
+    assert w.memory_value.text() == f"{round((1 - files.free / TOTAL) * 100)} %"
+    assert not files.free == FREE
+
+
+def catalog_bytes() -> bytes:
+    return (EFFECTS / "lib" / "MDL_12ST_100.zd2").read_bytes()
+
+
+def test_declining_the_confirmation_writes_nothing(screen, qtbot, monkeypatch):
+    _w, panel, files = screen
+    monkeypatch.setattr(ConfirmDialog, "ask", staticmethod(lambda *a, **k: False))
+    panel.select_effect("MDL_12ST.ZD2")
+    panel.install_button.click()
+    qtbot.wait(200)
+    assert files.files[flst.FLST_NAME] == BEFORE and "MDL_12ST.ZD2" not in files.files
+
+
+def test_remove_asks_first_then_deletes_and_refreshes_the_state(screen, qtbot, monkeypatch, tmp_path):
+    w, panel, files = screen
+    asked = []
+    monkeypatch.setattr(ConfirmDialog, "ask", staticmethod(lambda parent, title, text, *a, **k: asked.append(text) or True))
+    panel.select_effect("COMP.ZD2")
+    with qtbot.waitSignal(panel.state_shown, timeout=5000):
+        panel.remove_button.click()
+    assert len(asked) == 1 and "copia de seguridad" in asked[0]
+    assert "COMP.ZD2" not in files.files
+    assert not flst.is_installed(files.files[flst.FLST_NAME], "COMP.ZD2")
+    assert "COMP.ZD2" not in names(panel, "installed") and "COMP.ZD2" in names(panel, "available")
+    assert len(list((tmp_path / "effects").glob("*FLST_SEQ.ZT2"))) == 1
+
+
+def test_a_failed_install_goes_through_the_error_path(qtbot, monkeypatch, catalog, tmp_path):
+    size = catalog[0x14400190].path.stat().st_size
+    files = PedalFiles(BEFORE, free=size + MEMORY_MARGIN)
+    w = connected_window(qtbot, monkeypatch, catalog, tmp_path, files)
+    panel = open_screen(qtbot, w)
+    panel.select_effect("MDL_12ST.ZD2")
+    files.free = 10  # the pedal has less memory by the time the install runs
+    with qtbot.waitSignal(w.error_shown, timeout=5000) as blocker:
+        panel.install_button.click()
+    assert blocker.args[0].startswith("No se pudo instalar MDL_12ST.ZD2")
+    qtbot.waitUntil(lambda: panel.install_button.isEnabled() or not panel.reason_label.text().startswith("Instalando"),
+                    timeout=3000)
+    assert files.files[flst.FLST_NAME] == BEFORE
+
+
+def test_without_a_connection_the_screen_explains_it_and_offers_nothing(qtbot, catalog, tmp_path):
+    w = MainWindow(catalog, a1_ids=None, backup_dir=tmp_path)
+    qtbot.addWidget(w)
+    w.effects_button.click()
+    panel = w.effects_panel
+    assert panel.message_label.text() == ST.EFFECTS_OFFLINE
+    assert panel.message_label.isVisibleTo(panel)
+    assert names(panel, "installed") == [] and names(panel, "available") == []
+    assert not panel.install_button.isEnabled() and not panel.remove_button.isEnabled()
+
+
+def test_disconnecting_with_the_screen_open_shows_the_offline_message(screen, qtbot):
+    w, panel, _files = screen
+    w.disconnect_button.click()
+    qtbot.waitUntil(lambda: panel.message_label.text() == ST.EFFECTS_OFFLINE, timeout=3000)
+    assert names(panel, "installed") == []
+
+
+def test_editing_is_locked_while_the_screen_is_open(screen):
+    w, panel, _files = screen
+    assert panel.isVisibleTo(w) and not w.splitter.isVisibleTo(w)
+    assert not w.splitter.isEnabled()
+    assert not w.edit_button.isEnabled() and not w.library_button.isEnabled()
+    assert not w.save_button.isEnabled() and not w.tuner_button.isEnabled()
+    assert w.effects_button.isChecked()
+    panel.close_button.click()
+    assert not panel.isVisibleTo(w) and w.splitter.isVisibleTo(w) and w.splitter.isEnabled()
+    assert w.edit_button.isEnabled() and w.library_button.isEnabled() and not w.effects_button.isChecked()
+
+
+def test_the_tuner_cannot_start_while_the_screen_is_open(screen):
+    w, _panel, _files = screen
+    assert not w.tuner_button.isEnabled()
