@@ -481,6 +481,7 @@ def test_repair_asks_first_then_uploads_only_the_file_and_refreshes(qtbot, monke
     assert panel.missing_names() == []
     assert "MDL_12ST.ZD2" in names(panel, "installed")
     assert w.memory_value.text() == f"{round((1 - files.free / TOTAL) * 100)} %"
+    assert w.statusBar().currentMessage() == ST.effects_repaired_ok("MDL_12ST.ZD2")  # not "installed"
 
 
 def test_declining_the_repair_writes_nothing(qtbot, monkeypatch, catalog, tmp_path):

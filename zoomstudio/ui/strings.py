@@ -673,6 +673,10 @@ def effects_installed_ok(name: str) -> str:
     return f"{name} instalado en la pedalera"
 
 
+def effects_repaired_ok(name: str) -> str:
+    return f"{name} reparado: se subió el archivo que faltaba"
+
+
 def effects_removed_ok(name: str) -> str:
     return f"{name} quitado de la pedalera"
 

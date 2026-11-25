@@ -541,11 +541,13 @@ class MainWindow(LibraryMixin, QMainWindow):
     def _on_effect_install(self, name: str, path) -> None:
         if self._worker is not None and self._is_connected:
             self._set_effects_busy(True, S.EFFECTS_BUSY_INSTALL)
+            self._effects_repairing = False
             self._effect_install_requested.emit(name, path, self.effects_backup_dir)
 
     def _on_effect_repair(self, name: str, path) -> None:
         if self._worker is not None and self._is_connected:
             self._set_effects_busy(True, S.EFFECTS_BUSY_REPAIR)
+            self._effects_repairing = True  # the worker reports a repair as an install: name it right
             self._effect_repair_requested.emit(name, path, self.effects_backup_dir)
 
     def _on_effect_remove(self, name: str) -> None:
@@ -567,10 +569,15 @@ class MainWindow(LibraryMixin, QMainWindow):
 
     @Slot(str, bool)
     def _on_effect_changed(self, name: str, installed: bool) -> None:
-        self.statusBar().showMessage((S.effects_installed_ok if installed else S.effects_removed_ok)(name))
+        if getattr(self, "_effects_repairing", False):
+            message = S.effects_repaired_ok
+        else:
+            message = S.effects_installed_ok if installed else S.effects_removed_ok
+        self.statusBar().showMessage(message(name))
 
     @Slot(bool)
     def _on_effect_change_finished(self, _success: bool) -> None:
+        self._effects_repairing = False
         self._set_effects_busy(False)
         self._request_effects_state()  # the lists and the memory always reflect the pedal, whatever happened
 
