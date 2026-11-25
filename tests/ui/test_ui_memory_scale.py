@@ -110,7 +110,7 @@ def test_the_fill_reaches_3_to_1_against_the_track_in_every_state(state):
     track = over(tokens.color("input-bg"), tokens.color("surface-raised"))  # the track sits on a raised surface
     for name in memory.FILL_TOKENS[state]:
         assert contrast(tokens.color(name), track) >= 3.0, name
-    qss = (memory.__file__.rsplit("/", 1)[0] + "/design/style.qss")
+    qss = tokens.DESIGN_DIR / "style.qss"  # a "/" split of __file__ broke on Windows
     text = open(qss, encoding="utf-8").read()
     if state != "ok":  # the stylesheet paints the chunk with those same tokens
         assert f'QProgressBar[memory="{state}"]::chunk' in text
