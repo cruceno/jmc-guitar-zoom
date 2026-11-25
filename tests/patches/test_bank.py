@@ -99,3 +99,58 @@ def test_default_folder_is_patches_bank_under_the_workspace():
 def test_empty_patch_can_be_stored(tmp_path):
     entry = PatchBank(tmp_path).add(build_zptc(empty_patch()), origin=10)
     assert entry.name == empty_patch().name
+
+
+# ------------------------------------------------------------ rename and delete
+
+def test_rename_changes_the_patch_and_the_index_and_trashes_the_old_file(tmp_path):
+    store = PatchBank(tmp_path)
+    old = store.add(named("Old Name"), origin=44, now="20261125-101500")
+    new = store.rename(old.id, "New Name")
+    assert (new.name, new.origin, new.stored_at) == ("New Name", 44, "20261125-101500")
+    assert new.id != old.id and new.sha256 != old.sha256
+    assert parse_zptc(store.read(new.id)).name == "New Name"
+    assert [e.id for e in PatchBank(tmp_path).list()] == [new.id]
+    trashed = list(store.trash_dir().glob("*.zptc"))
+    assert len(trashed) == 1 and parse_zptc(trashed[0].read_bytes()).name == "Old Name"
+    assert not (tmp_path / old.file).exists()
+
+
+def test_rename_to_a_colliding_name_never_overwrites(tmp_path):
+    store = PatchBank(tmp_path)
+    a = store.add(named("Same"), origin=10, now="20261125-101500")
+    b = store.add(named("Other"), origin=11, now="20261125-101500")
+    renamed = store.rename(b.id, "Same")
+    assert renamed.file != a.file and store.read(a.id) == named("Same")
+    assert len(store.list()) == 2
+
+
+@pytest.mark.parametrize("bad", ["Eleven char", "Ñandú", "tab\there"])
+def test_rename_refuses_names_the_editor_would_refuse(tmp_path, bad):
+    store = PatchBank(tmp_path)
+    entry = store.add(named("Keep"), origin=10)
+    with pytest.raises(BankError):
+        store.rename(entry.id, bad)
+    assert [e.name for e in store.list()] == ["Keep"] and not store.trash_dir().exists()
+
+
+def test_delete_moves_the_file_to_the_trash_and_it_is_never_readopted(tmp_path):
+    store = PatchBank(tmp_path)
+    entry = store.add(named("Gone"), origin=10)
+    trashed = store.delete(entry.id)
+    assert trashed.parent == store.trash_dir() and trashed.read_bytes() == named("Gone")
+    assert store.list() == [] and not (tmp_path / entry.file).exists()
+    (tmp_path / bank_module.INDEX_NAME).unlink()  # even a rebuilt index does not bring it back
+    assert PatchBank(tmp_path).list() == []
+    again = store.add(named("Gone"), origin=10, now=entry.stored_at)
+    assert len(list(store.trash_dir().glob("*.zptc"))) == 1 and store.delete(again.id) != trashed
+    assert len(list(store.trash_dir().glob("*.zptc"))) == 2
+
+
+def test_delete_and_rename_of_an_unknown_or_missing_entry_fail_cleanly(tmp_path):
+    store = PatchBank(tmp_path)
+    entry = store.add(named("Lost"), origin=10)
+    (tmp_path / entry.file).unlink()
+    for call in (lambda: store.delete(entry.id), lambda: store.rename(entry.id, "X"), lambda: store.delete("nope")):
+        with pytest.raises(BankError):
+            call()

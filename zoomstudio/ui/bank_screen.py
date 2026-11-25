@@ -12,16 +12,16 @@ from __future__ import annotations
 
 import copy
 
-from PySide6.QtCore import QByteArray, QMimeData, Qt, Signal
-from PySide6.QtGui import QPainter, QPen
+from PySide6.QtCore import QByteArray, QMimeData, QRegularExpression, Qt, Signal
+from PySide6.QtGui import QPainter, QPen, QRegularExpressionValidator
 from PySide6.QtWidgets import (
-    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget,
+    QDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget,
 )
 
 from zoomstudio.patches import bank as bank_module
 from zoomstudio.patches import edit, library
 from zoomstudio.patches.bank import BankError, PatchBank
-from zoomstudio.patches.model import Patch
+from zoomstudio.patches.model import NAME_MAX_LEN, Patch
 from zoomstudio.patches.zptc import build_zptc, parse_zptc
 
 from . import strings as S
@@ -31,7 +31,7 @@ from .cards import (
     with_alpha,
 )
 from .dialogs import ConfirmDialog
-from .glass import BackdropRoot, GlassPanel
+from .glass import BackdropRoot, GlassMenu, GlassPanel
 from .icons import icon
 from .painted import SectionLabel
 from .widgets import MIME_PATCH, PatchList
@@ -93,6 +93,8 @@ class BankList(QListWidget):
     """The bank's cards. A position dropped anywhere on the list asks to stash it."""
 
     position_dropped = Signal(int)  # location of the patch to keep
+    rename_key = Signal()  # F2
+    delete_key = Signal()  # Delete
 
     def __init__(self) -> None:
         super().__init__()
@@ -106,6 +108,16 @@ class BankList(QListWidget):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
         self.setMouseTracking(True)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        if event.key() == Qt.Key.Key_F2 and not event.modifiers():
+            self.rename_key.emit()
+            event.accept()
+        elif event.key() == Qt.Key.Key_Delete and not event.modifiers():
+            self.delete_key.emit()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
     @property
     def dropping(self) -> bool:
@@ -166,17 +178,61 @@ class BankList(QListWidget):
             p.end()
 
 
+class RenameDialog(QDialog):
+    """Ask for a patch name: the editor's rules (at most ``NAME_MAX_LEN`` printable ASCII characters)."""
+
+    def __init__(self, parent: QWidget | None, current: str) -> None:
+        super().__init__(parent)
+        self.setObjectName("renameDialog")
+        self.setWindowTitle(S.BANK_RENAME_TITLE)
+        self.setModal(True)
+        label = QLabel(S.BANK_RENAME_LABEL)
+        self.edit = QLineEdit(current)
+        self.edit.setMaxLength(NAME_MAX_LEN)
+        self.edit.setValidator(QRegularExpressionValidator(QRegularExpression(r"[ -~]*")))
+        self.edit.setAccessibleName(S.BANK_RENAME_LABEL)
+        self.edit.selectAll()
+        self.hint = QLabel(S.bank_name_hint(NAME_MAX_LEN))
+        self.hint.setProperty("role", "secondary")
+        self.ok_button = QPushButton(S.BANK_RENAME_OK)
+        self.ok_button.setProperty("primary", True)
+        self.cancel_button = QPushButton(S.CANCEL)
+        self.ok_button.clicked.connect(self.accept)
+        self.cancel_button.clicked.connect(self.reject)
+        self.edit.returnPressed.connect(self.accept)
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        buttons.addWidget(self.cancel_button)
+        buttons.addWidget(self.ok_button)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 20, 24, 18)
+        layout.setSpacing(8)
+        layout.addWidget(label)
+        layout.addWidget(self.edit)
+        layout.addWidget(self.hint)
+        layout.addSpacing(6)
+        layout.addLayout(buttons)
+        self.setMinimumWidth(360)
+
+    def name(self) -> str:
+        return self.edit.text()
+
+
 class BankScreen(GlassPanel):
     """Pedal positions on the left, the bank on the right, and the two actions between a pick and a pick."""
 
     close_requested = Signal()
     stash_requested = Signal(int)  # location whose patch goes to the bank
     load_requested = Signal(str, int)  # bank entry id, location to load it into
+    rename_requested = Signal(str, str)  # bank entry id, new name
+    delete_requested = Signal(str)  # bank entry id
     state_shown = Signal()
 
     def __init__(self, root: BackdropRoot) -> None:
         super().__init__(root)
+        self._root = root
         self._can_act = False
+        self._can_edit = True  # rename and delete touch only the bank folder: no pedal needed
         self._busy = False
         self._connected = False
         self._rows: dict[int, tuple[int, str, bool]] = {}  # location -> (display, name or "" when free, dirty)
@@ -194,6 +250,10 @@ class BankScreen(GlassPanel):
         self.bank_list.setAccessibleName(S.BANK_ENTRIES_LIST)
         self.bank_list.itemSelectionChanged.connect(self._update_actions)
         self.bank_list.position_dropped.connect(self.stash_requested)
+        self.bank_list.rename_key.connect(self._on_rename_clicked)
+        self.bank_list.delete_key.connect(self._on_delete_clicked)
+        self.bank_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.bank_list.customContextMenuRequested.connect(self._show_entry_menu)
         self.search = QLineEdit()
         self.search.setPlaceholderText(S.BANK_SEARCH)
         self.search.setClearButtonEnabled(True)
@@ -219,6 +279,14 @@ class BankScreen(GlassPanel):
         self.load_button.setIcon(icon("arrowUp", "on-accent"))
         self.load_button.setToolTip(S.BANK_LOAD_TIP)
         self.load_button.clicked.connect(self._on_load_clicked)
+        self.rename_button = QPushButton(S.BANK_RENAME)
+        self.rename_button.setToolTip(S.BANK_RENAME_TIP)
+        self.rename_button.clicked.connect(self._on_rename_clicked)
+        self.delete_button = QPushButton(S.BANK_DELETE)
+        self.delete_button.setProperty("danger", True)
+        self.delete_button.setIcon(icon("x", "status-danger"))
+        self.delete_button.setToolTip(S.BANK_DELETE_TIP)
+        self.delete_button.clicked.connect(self._on_delete_clicked)
         self.stash_button = QPushButton(S.BANK_STASH)
         self.stash_button.setIcon(icon("bank"))
         self.stash_button.setToolTip(S.BANK_STASH_TIP)
@@ -247,6 +315,9 @@ class BankScreen(GlassPanel):
         buttons = QHBoxLayout()
         buttons.setSpacing(10)
         buttons.addWidget(self.note_label, stretch=1)
+        buttons.addWidget(self.rename_button)
+        buttons.addWidget(self.delete_button)
+        buttons.addSpacing(14)
         buttons.addWidget(self.stash_button)
         buttons.addWidget(self.load_button)
         layout = QVBoxLayout(self)
@@ -324,6 +395,7 @@ class BankScreen(GlassPanel):
         """What the window allows right now: both actions need a connected pedal, every patch read, no write running."""
         self._connected, self._busy = connected, busy
         self._can_act = connected and complete and not busy
+        self._can_edit = not busy
         self._update_actions()
 
     # ------------------------------------------------------------------ data out
@@ -378,8 +450,56 @@ class BankScreen(GlassPanel):
         if location is not None:
             self.load_requested.emit(entry, location)
 
+    def ask_name(self, current: str) -> str | None:
+        """Ask for the new name of an entry; None when cancelled."""
+        dialog = RenameDialog(self, current)
+        return dialog.name() if dialog.exec() == QDialog.DialogCode.Accepted else None
+
+    def _on_rename_clicked(self) -> None:
+        entry = self.selected_entry()
+        if entry is None or not self._can_edit:
+            return
+        current = next((e["name"] for e in self._entries if e["id"] == entry), "")
+        new = self.ask_name(current)
+        if new is not None and new.strip() and new != current:
+            self.rename_requested.emit(entry, new)
+
+    def _on_delete_clicked(self) -> None:
+        entry = self.selected_entry()
+        if entry is not None and self._can_edit:
+            self.delete_requested.emit(entry)
+
+    def selected_row(self) -> int:
+        return self.bank_list.currentRow()
+
+    def select_row_near(self, row: int) -> None:
+        """Select the card at ``row`` or the last one (nothing when the list is empty)."""
+        count = self.bank_list.count()
+        if count:
+            self.bank_list.setCurrentRow(min(max(row, 0), count - 1))
+
+    def context_menu_for(self, item: QListWidgetItem | None) -> GlassMenu | None:
+        if item is None:
+            return None
+        self.bank_list.setCurrentItem(item)
+        menu = GlassMenu(self, self._root)
+        rename = menu.addAction(S.BANK_RENAME)
+        delete = menu.addAction(S.BANK_DELETE)
+        rename.triggered.connect(lambda _c=False: self._on_rename_clicked())
+        delete.triggered.connect(lambda _c=False: self._on_delete_clicked())
+        for act in (rename, delete):
+            act.setEnabled(self._can_edit)
+        return menu
+
+    def _show_entry_menu(self, pos) -> None:
+        menu = self.context_menu_for(self.bank_list.itemAt(pos))
+        if menu is not None:
+            menu.exec(self.bank_list.viewport().mapToGlobal(pos))
+
     def _update_actions(self) -> None:
         location, entry = self.selected_position(), self.selected_entry()
+        self.rename_button.setEnabled(self._can_edit and entry is not None)
+        self.delete_button.setEnabled(self._can_edit and entry is not None)
         self.stash_button.setEnabled(self._can_act and location is not None)
         self.load_button.setEnabled(self._can_act and entry is not None)
         self.note_label.setText(S.BANK_BUSY_NOTE if self._busy else ("" if self._connected else S.BANK_OFFLINE_NOTE))
@@ -547,6 +667,47 @@ class BankMixin:
         if not self._queue_write({location: incoming}):
             self._bank_op = None
         self._refresh_bank_screen()
+
+    def _bank_free(self) -> bool:
+        """Rename and delete only touch the bank folder, but never while a bank operation or write is running."""
+        if self._saving or self._bank_op is not None:
+            self._report_error(S.ERR_BANK_BUSY)
+            return False
+        return True
+
+    def rename_entry(self, entry_id: str, new_name: str) -> None:
+        if not self._bank_free():
+            return
+        try:
+            old = self.bank_store.get(entry_id)
+            entry = self.bank_store.rename(entry_id, new_name)
+        except BankError as exc:
+            self._report_error(S.err_bank_rename(exc))
+            return
+        self._refresh_bank_screen()
+        self.bank_panel.select_entry(entry.id)
+        self.statusBar().showMessage(S.bank_renamed(old.name, entry.name))
+
+    def delete_entry(self, entry_id: str) -> None:
+        if not self._bank_free():
+            return
+        try:
+            entry = self.bank_store.get(entry_id)
+        except BankError as exc:
+            self._report_error(S.err_bank_delete(exc))
+            return
+        if not ConfirmDialog.ask(self, S.BANK_DELETE_TITLE, S.ask_bank_delete(entry.name, self.bank_store.trash_dir()),
+                                 S.CONFIRM_BANK_DELETE, danger=True):
+            return
+        row = self.bank_panel.selected_row()
+        try:
+            trashed = self.bank_store.delete(entry_id)
+        except BankError as exc:
+            self._report_error(S.err_bank_delete(exc))
+            return
+        self._refresh_bank_screen()
+        self.bank_panel.select_row_near(row)
+        self.statusBar().showMessage(S.bank_deleted(entry.name, trashed))
 
     def _bank_queue_done(self, written: object, failed: int) -> None:
         """The write queue ended: finish the bank operation that started it (if any) and refresh the lists."""

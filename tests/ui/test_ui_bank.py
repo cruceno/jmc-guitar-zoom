@@ -356,3 +356,127 @@ def test_a_bank_drop_with_a_junk_payload_is_ignored(qtbot, catalog, tmp_path, ye
     before = len(t.sent)
     drop(cards, cards.viewport().rect().center(), MIME_PATCH, b"junk")
     assert len(t.sent) == before and names(w) == []
+
+
+# ------------------------------------------------------- rename and delete entries
+
+def folder_hash(folder) -> str:
+    import hashlib
+
+    h = hashlib.sha256()
+    for path in sorted(folder.rglob("*")):
+        h.update(str(path.relative_to(folder)).encode() + (path.read_bytes() if path.is_file() else b"/"))
+    return h.hexdigest()
+
+
+def open_with_entry(qtbot, catalog, tmp_path):
+    w, t = window(qtbot, catalog, tmp_path)
+    entry = bank_of(w).add(LEAD, origin=20)
+    w.bank_button.click()
+    w.bank_panel.select_entry(entry.id)
+    return w, t, entry
+
+
+def pick(monkeypatch, panel, name):
+    monkeypatch.setattr(panel, "ask_name", lambda current: name)
+
+
+def test_rename_by_button_renames_the_patch_and_keeps_the_selection(qtbot, catalog, tmp_path, monkeypatch):
+    w, t, entry = open_with_entry(qtbot, catalog, tmp_path)
+    before = len(wire(t))
+    pick(monkeypatch, w.bank_panel, "Renamed")
+    w.bank_panel.rename_button.click()
+    assert names(w) == ["Renamed"] and w.bank_panel.entry_names() == ["Renamed"]
+    assert parse_zptc(bank_of(w).read(bank_of(w).list()[0].id)).name == "Renamed"
+    assert w.bank_panel.selected_entry() == bank_of(w).list()[0].id
+    assert len(list(bank_of(w).trash_dir().glob("*.zptc"))) == 1 and wire(t)[before:] == []
+
+
+def test_rename_by_f2_and_by_menu(qtbot, catalog, tmp_path, monkeypatch):
+    from PySide6.QtTest import QTest
+
+    w, t, entry = open_with_entry(qtbot, catalog, tmp_path)
+    pick(monkeypatch, w.bank_panel, "ViaF2")
+    QTest.keyClick(w.bank_panel.bank_list, Qt.Key.Key_F2)
+    assert names(w) == ["ViaF2"]
+    menu = w.bank_panel.context_menu_for(w.bank_panel.bank_list.item(0))
+    pick(monkeypatch, w.bank_panel, "ViaMenu")
+    next(a for a in menu.actions() if a.text() == strings.BANK_RENAME).trigger()
+    assert names(w) == ["ViaMenu"]
+
+
+@pytest.mark.parametrize("answer", [None, "", "   ", "Bank Lead"])
+def test_a_cancelled_empty_or_unchanged_rename_changes_nothing(qtbot, catalog, tmp_path, monkeypatch, answer):
+    w, t, entry = open_with_entry(qtbot, catalog, tmp_path)
+    digest = folder_hash(bank_of(w).folder)
+    pick(monkeypatch, w.bank_panel, answer)
+    w.bank_panel.rename_button.click()
+    assert folder_hash(bank_of(w).folder) == digest
+
+
+def test_a_refused_name_is_reported_and_changes_nothing(qtbot, catalog, tmp_path, errors):
+    w, t, entry = open_with_entry(qtbot, catalog, tmp_path)
+    w.error_shown.connect(errors.append)
+    digest = folder_hash(bank_of(w).folder)
+    w.rename_entry(entry.id, "Much too long")
+    assert len(errors) == 1 and folder_hash(bank_of(w).folder) == digest
+
+
+def test_delete_by_button_asks_names_the_trash_and_moves_the_file(qtbot, catalog, tmp_path, yes):
+    w, t, entry = open_with_entry(qtbot, catalog, tmp_path)
+    before = len(wire(t))
+    w.bank_panel.delete_button.click()
+    assert "Bank Lead" in yes[0] and str(bank_of(w).trash_dir()) in yes[0]
+    assert names(w) == [] and w.bank_panel.entry_names() == []
+    assert [p.read_bytes() for p in bank_of(w).trash_dir().glob("*.zptc")] == [LEAD]
+    assert wire(t)[before:] == []
+
+
+def test_delete_by_key_and_by_menu_keeps_a_sensible_selection(qtbot, catalog, tmp_path, yes):
+    from PySide6.QtTest import QTest
+
+    w, t = window(qtbot, catalog, tmp_path)
+    ids = [bank_of(w).add(LEAD, origin=20 + i, now=f"2026112{i}-101500").id for i in range(3)]
+    w.bank_button.click()
+    panel = w.bank_panel
+    panel.select_row_near(1)
+    QTest.keyClick(panel.bank_list, Qt.Key.Key_Delete)
+    assert len(bank_of(w).list()) == 2 and panel.bank_list.currentRow() == 1
+    menu = panel.context_menu_for(panel.bank_list.item(0))
+    next(a for a in menu.actions() if a.text() == strings.BANK_DELETE).trigger()
+    assert len(bank_of(w).list()) == 1 and panel.selected_entry() is not None
+    assert len(yes) == 2 and len(list(bank_of(w).trash_dir().glob("*.zptc"))) == 2
+
+
+def test_a_declined_delete_changes_nothing(qtbot, catalog, tmp_path, monkeypatch):
+    w, t, entry = open_with_entry(qtbot, catalog, tmp_path)
+    monkeypatch.setattr(ConfirmDialog, "ask", staticmethod(lambda *a, **k: False))
+    digest = folder_hash(bank_of(w).folder)
+    w.bank_panel.delete_button.click()
+    assert folder_hash(bank_of(w).folder) == digest and w.bank_panel.entry_names() == ["Bank Lead"]
+
+
+def test_rename_and_delete_are_disabled_without_a_selection_and_while_writing(qtbot, catalog, tmp_path, yes, errors):
+    w, t, entry = open_with_entry(qtbot, catalog, tmp_path)
+    panel = w.bank_panel
+    assert panel.rename_button.isEnabled() and panel.delete_button.isEnabled()
+    panel.select_entry(None)
+    assert not panel.rename_button.isEnabled() and not panel.delete_button.isEnabled()
+    panel.select_entry(entry.id)
+    w.error_shown.connect(errors.append)
+    w._set_saving(True)
+    assert not panel.rename_button.isEnabled() and not panel.delete_button.isEnabled()
+    w.rename_entry(entry.id, "X")
+    w.delete_entry(entry.id)
+    assert errors == [strings.ERR_BANK_BUSY] * 2 and names(w) == ["Bank Lead"]
+    w._set_saving(False)
+
+
+def test_rename_dialog_enforces_the_editor_name_rules(qtbot):
+    from zoomstudio.ui.bank_screen import RenameDialog
+
+    dialog = RenameDialog(None, "Old")
+    qtbot.addWidget(dialog)
+    assert dialog.edit.text() == "Old" and dialog.edit.maxLength() == 10
+    assert dialog.edit.validator().validate("Ñ", 0)[0].name != "Acceptable"
+    assert "10" in dialog.hint.text()

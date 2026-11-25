@@ -396,6 +396,8 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.bank_panel.close_requested.connect(lambda: self.bank_button.setChecked(False))
         self.bank_panel.stash_requested.connect(self.stash_position)
         self.bank_panel.load_requested.connect(self.load_from_bank)
+        self.bank_panel.rename_requested.connect(self.rename_entry)
+        self.bank_panel.delete_requested.connect(self.delete_entry)
         self.header = header
         self._status_bar = StatusBar()
         status_panel = GlassPanel(backdrop_root, "strong")

@@ -868,3 +868,41 @@ def bank_count(count: int) -> str:
 
 def bank_card_name(name: str, origin: int | None, stamp: str) -> str:
     return f"{_bank_name(name)}, {bank_origin(origin)}, {bank_date(stamp)}"
+
+
+# ---- patch bank: rename and delete entries
+BANK_RENAME = "Renombrar…"
+BANK_RENAME_TIP = "Cambia el nombre del patch del banco (F2); el patch conserva el nuevo nombre al cargarlo en la pedalera"
+BANK_DELETE = "Eliminar"
+BANK_DELETE_TIP = "Mueve el patch a la papelera del banco (Supr); se puede recuperar desde esa carpeta"
+BANK_RENAME_TITLE = "Renombrar patch del banco"
+BANK_RENAME_LABEL = "Nombre nuevo:"
+BANK_RENAME_OK = "Renombrar"
+BANK_DELETE_TITLE = "Eliminar del banco"
+CONFIRM_BANK_DELETE = "Mover a la papelera"
+ERR_BANK_BUSY = "Hay una operación del banco en curso: espere a que termine"
+
+
+def bank_name_hint(limit: int) -> str:
+    return f"Hasta {limit} caracteres ASCII imprimibles"
+
+
+def ask_bank_delete(name: str, trash: object) -> str:
+    return (f"{_bank_name(name)} sale del banco y se mueve a la carpeta de la papelera:\n{trash}\n"
+            "No se borra: se puede recuperar copiando el archivo desde esa carpeta. No se toca la pedalera.")
+
+
+def bank_renamed(old: str, new: str) -> str:
+    return f"{_bank_name(old)} ahora se llama {_bank_name(new)}; el archivo anterior quedó en la papelera del banco"
+
+
+def bank_deleted(name: str, path: object) -> str:
+    return f"{_bank_name(name)} está en la papelera del banco: {path}"
+
+
+def err_bank_rename(why: object) -> str:
+    return f"No se pudo renombrar el patch del banco: {why}"
+
+
+def err_bank_delete(why: object) -> str:
+    return f"No se pudo eliminar el patch del banco: {why}"

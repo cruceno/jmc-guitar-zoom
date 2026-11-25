@@ -15,11 +15,13 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from . import edit
 from .library import safe_file_name, write_new
-from .zptc import parse_zptc
+from .zptc import build_zptc, parse_zptc
 
 INDEX_NAME = "index.json"
 INDEX_VERSION = 1
+TRASH_NAME = "papelera"  # deleted and replaced files wait here; never listed, never re-adopted
 
 
 class BankError(Exception):
@@ -123,7 +125,52 @@ class PatchBank:
             raise BankError(f"cannot remove {entry.file}: {exc}") from exc
         self._save_index([e for e in self.list() if e.id != entry_id])
 
+    def trash_dir(self) -> Path:
+        return self.folder / TRASH_NAME
+
+    def rename(self, entry_id: str, new_name: str) -> BankEntry:
+        """Rename the patch itself: a new file (exclusive, read back), a new index entry, the old file to the trash."""
+        old = self.get(entry_id)
+        try:
+            renamed = build_zptc(edit.rename(parse_zptc(self.read(entry_id)), new_name))
+        except ValueError as exc:
+            raise BankError(str(exc)) from exc
+        try:
+            path = self._create(old.stored_at, new_name, renamed)
+            if path.read_bytes() != renamed:
+                path.unlink(missing_ok=True)
+                raise BankError(f"{path.name} did not read back as written")
+        except OSError as exc:
+            raise BankError(f"cannot store the renamed patch: {exc}") from exc
+        entry = BankEntry(path.stem, path.name, new_name, old.origin, old.stored_at, digest(renamed))
+        entries = [e for e in self.list() if e.id not in (old.id, entry.id)] + [entry]
+        entries.sort(key=lambda e: (e.stored_at, e.id))
+        self._save_index(entries)
+        self._to_trash(old.file)
+        return entry
+
+    def delete(self, entry_id: str) -> Path:
+        """Move the entry's file to the trash folder (never a hard delete); returns where it went."""
+        entry = self.get(entry_id)
+        trashed = self._to_trash(entry.file)
+        self._save_index([e for e in self.list() if e.id != entry_id])
+        return trashed
+
     # ------------------------------------------------------------------ internals
+
+    def _to_trash(self, file: str) -> Path:
+        """Move ``file`` into the trash under a timestamp prefix; an existing trash file is never replaced."""
+        try:
+            self.trash_dir().mkdir(parents=True, exist_ok=True)
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            for attempt in range(1000):
+                dest = self.trash_dir() / f"{stamp}{f'-{attempt}' if attempt else ''}-{file}"
+                if not dest.exists():
+                    os.rename(self.folder / file, dest)
+                    return dest
+        except OSError as exc:
+            raise BankError(f"cannot move {file} to the trash: {exc}") from exc
+        raise BankError(f"no free name in {self.trash_dir()}")
 
     def _create(self, stamp: str, name: str, data: bytes) -> Path:
         base = f"{stamp}-{safe_file_name(name)}"

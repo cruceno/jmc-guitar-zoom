@@ -198,3 +198,14 @@ def test_catalog_cards_are_as_wide_as_the_viewport(qtbot, monkeypatch, catalog, 
     viewport = lst.viewport().width()
     assert lst.visualItemRect(lst.item(0)).width() == viewport
     assert lst.sizeHintForColumn(0) <= viewport
+
+
+@pytest.mark.parametrize("name", ["", "Bank Lead", "WWWWWWWWWW"])
+def test_the_bank_rename_dialog_is_not_clipped(qtbot, themed, name):
+    from zoomstudio.ui.bank_screen import RenameDialog
+
+    dialog = RenameDialog(None, name)
+    qtbot.addWidget(dialog)
+    dialog.show()
+    qtbot.waitExposed(dialog)
+    assert clipped(dialog) == [] and no_hscroll(dialog) == []
