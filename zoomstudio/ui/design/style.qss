@@ -112,6 +112,9 @@ QLabel[role="dirty"] { color: $status_warn; font-size: ${text_caption_size}px; }
 
 QToolButton#removeButton { min-height: 0; min-width: 0; padding: 0; border: none; background: transparent; border-radius: 11px; }
 QToolButton#removeButton:hover { background: $card_hover; }
+QToolButton#notInstalledButton { min-height: 0; min-width: 0; padding: 0; border: none; background: transparent; border-radius: 12px; }
+QToolButton#notInstalledButton:hover { background: $status_warn_bg; }
+QToolButton#notInstalledButton:focus { border: 2px solid $focus_ring; }
 QScrollArea { background: transparent; border: none; }
 QScrollArea > QWidget > QWidget { background: transparent; }
 

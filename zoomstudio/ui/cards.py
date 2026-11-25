@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from functools import lru_cache
 from pathlib import Path
+from typing import NamedTuple
 
 from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (
@@ -17,6 +18,7 @@ from . import strings as S
 from . import tokens
 from .fonts import display_font, ui_font
 from .glass import paint_glow
+from .icons import pixmap
 from .theme import group_color, group_fill_color, group_text_color
 
 ROLE_NUMBER = Qt.ItemDataRole.UserRole + 10   # display number of the location (int)
@@ -460,8 +462,52 @@ class SectionList(FavoriteList):
         self.viewport().update()
 
 
+BADGE = 16  # side of an icon of a catalog card
+BADGE_GAP = 5
+
+
+class Badge(NamedTuple):
+    key: str    # "pedal", "chain" or "warn"
+    icon: str   # name in ``icons.PATHS``
+    token: str  # colour token
+    text: str   # tooltip and accessible name
+
+
+def card_badges(d: dict) -> list[Badge]:
+    """The icons of a catalog card, left to right: installed on the pedal, in the patch's chain, and a warning.
+
+    ``d["installed"]`` is True, False, or None while the pedal's effect list is not known (nothing is guessed).
+    Installed and in the chain show together; an effect in the chain that is not installed shows the warning.
+    """
+    out = []
+    if d.get("installed") is True:
+        out.append(Badge("pedal", "chip", "status-info", S.ON_PEDAL_NAME))
+    if d.get("in_chain"):
+        out.append(Badge("chain", "link", "accent", S.IN_CHAIN_NAME))
+        if d.get("installed") is False:
+            out.append(Badge("warn", "alert", "status-warn", S.NOT_INSTALLED_TIP))
+    return out
+
+
+def badge_rects(item_rect: QRect, count: int, right_room: int = STAR_ROOM) -> list[QRectF]:
+    """Where the ``count`` icons of a card sit inside the item's rectangle (right-aligned, left to right)."""
+    card = QRectF(item_rect).adjusted(2, 3, -2, -3)
+    right = card.right() - 12 - right_room
+    left = right - count * BADGE - max(0, count - 1) * BADGE_GAP
+    return [QRectF(left + i * (BADGE + BADGE_GAP), card.top() + 30, BADGE, BADGE) for i in range(count)]
+
+
+def badge_at(item_rect: QRect, d: dict, pos) -> Badge | None:
+    """The icon under ``pos`` (a point of the viewport), if any."""
+    badges = card_badges(d)
+    for badge, spot in zip(badges, badge_rects(item_rect, len(badges))):
+        if spot.adjusted(-2, -2, 2, 2).contains(QPointF(pos)):
+            return badge
+    return None
+
+
 class EffectCardDelegate(QStyledItemDelegate):
-    """A catalog effect as a card: group monogram, name, group and slots, DSP and one badge."""
+    """A catalog effect as a card: group monogram, name, group and slots, DSP and its icons."""
 
     def sizeHint(self, option, index) -> QSize:  # noqa: N802 (Qt API)
         return QSize(1, SECTION_HEIGHT if index.data(ROLE_SECTION) else 60)  # the list stretches a row to its viewport
@@ -518,15 +564,8 @@ class EffectCardDelegate(QStyledItemDelegate):
         p.setPen(group_text_color(group))
         p.drawText(QRectF(left, rect.top() + 29, 170, 18), Qt.AlignmentFlag.AlignVCenter,
                    f"{S.group_label(group)} · {S.slots_label(2 if d['wide'] else 1)}")
-        badge = ((S.BADGE_IN_CHAIN, "accent") if d["in_chain"] else (
-            (S.BADGE_ON_PEDAL, "text-secondary") if d["installed"] else None))
-        if badge:
-            text, token = badge
-            w = QFontMetrics(ui_font(11)).horizontalAdvance(text) + 14
-            chip = QRectF(right - w, rect.top() + 30, w, 16)
-            p.setPen(QPen(with_alpha(tokens.color(token), 0.7), 1))
-            p.drawPath(card_path(chip, 8))
-            p.setFont(ui_font(11))
-            p.setPen(tokens.color(token))
-            p.drawText(chip, Qt.AlignmentFlag.AlignCenter, text)
+        badges = card_badges(d)
+        dpr = p.device().devicePixelRatioF() if p.device() is not None else 1.0
+        for badge, spot in zip(badges, badge_rects(option.rect, len(badges), right_room=STAR_ROOM)):
+            p.drawPixmap(spot.topLeft(), pixmap(badge.icon, tokens.color(badge.token).name(), BADGE, dpr))
         p.restore()

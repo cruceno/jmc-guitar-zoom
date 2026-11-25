@@ -15,6 +15,7 @@ from .model import MAX_EFFECT_SLOTS, NAME_MAX_LEN, PARAM_COUNT, PARAM_MAX, VOLUM
 
 WIDE_FILLER = 0x00000001
 DSP_LIMIT_PERCENT = 100.0
+NOT_INSTALLED_REASON = "El patch usa efectos que no están en la pedalera"
 
 
 # ------------------------------------------------------------ chain shape
@@ -241,12 +242,37 @@ def slot_problems(patch: Patch, catalog: Mapping[int, Any], allowed_ids: set[int
     return out
 
 
-def save_blockers(patch: Patch, catalog: Mapping[int, Any], allowed_ids: set[int] | None) -> list[str]:
-    """Every reason the patch must not be written to the pedal (empty list: it may be written)."""
+def not_installed_slots(patch: Patch, catalog: Mapping[int, Any], installed_ids: set[int] | None) -> list[int]:
+    """Slot indexes (fillers counted) whose effect is known not to be installed on the connected pedal.
+
+    ``installed_ids=None`` means the pedal's effect list is not known (offline, not read yet): nothing is guessed,
+    so no slot is reported. An effect the catalog does not know is reported by ``slot_problems`` instead.
+    """
+    if installed_ids is None:
+        return []
+    return [i for i, slot in enumerate(patch.effects)
+            if not slot.is_placeholder and slot.effect_id in catalog and slot.effect_id not in installed_ids]
+
+
+def not_installed_names(patch: Patch, catalog: Mapping[int, Any], installed_ids: set[int] | None) -> list[str]:
+    """Names of the effects of ``not_installed_slots``, each once, in chain order."""
+    return list(dict.fromkeys(catalog[patch.effects[i].effect_id].name
+                              for i in not_installed_slots(patch, catalog, installed_ids)))
+
+
+def save_blockers(patch: Patch, catalog: Mapping[int, Any], allowed_ids: set[int] | None,
+                  installed_ids: set[int] | None = None) -> list[str]:
+    """Every reason the patch must not be written to the pedal (empty list: it may be written).
+
+    ``installed_ids``: the effects installed on the connected pedal; ``None`` (the default) leaves that check out.
+    """
     reasons: list[str] = []
     for i, why in slot_problems(patch, catalog, allowed_ids).items():
         info = catalog.get(patch.effects[i].effect_id)
         reasons.append(f"{info.name if info else '0x%08X' % patch.effects[i].effect_id}: {why}")
+    missing = not_installed_names(patch, catalog, installed_ids)
+    if missing:
+        reasons.append(f"{NOT_INSTALLED_REASON}: {', '.join(missing)}")
     dsp = dsp_percent(patch, catalog)
     if dsp > DSP_LIMIT_PERCENT + 1e-9:
         reasons.append(f"la carga de DSP es {dsp:.0f} %: debe ser 100 % o menos para guardar")

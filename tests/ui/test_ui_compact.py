@@ -26,7 +26,7 @@ from zoomstudio.ui.widgets import ParamRow
 
 EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
 SIZES = [(1280, 760), (1440, 900), (1600, 1000)]
-STATES = ["two-pedals", "no-patch", "gt-geq-7", "effects-manager", "effects-all-pedals", "read-only-pedal", "bank", "tuner", "offline", *UPDATE_STATES]
+STATES = ["two-pedals", "no-patch", "gt-geq-7", "not-installed", "effects-manager", "effects-all-pedals", "read-only-pedal", "bank", "tuner", "offline", *UPDATE_STATES]
 SQUEEZE_SLACK = 1
 
 
@@ -69,7 +69,11 @@ def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
     qtbot.addWidget(w)
     with qtbot.waitSignal(w.patches_loaded, timeout=5000):
         w.connect_button.click()
-    if state == "gt-geq-7":
+    if state == "not-installed":  # warning on a tile and a card, Live on, «Instalar en la pedalera» on the target card
+        from test_ui_install_indicators import show_not_installed
+
+        show_not_installed(qtbot, w)
+    elif state == "gt-geq-7":
         w.select_location(2)  # HB Jazz
         tile = next(t for t in w.chain_tiles() if t.effect_name == "Gt GEQ 7")
         w.select_tile(tile.slot_index)
@@ -127,8 +131,8 @@ def sibling_overlaps(root: QWidget) -> list[str]:
                 and c.width() > 0 and c.height() > 0 and not c.isWindow()]
         for i, a in enumerate(kids):
             for b in kids[i + 1:]:
-                if "removeButton" in (a.objectName(), b.objectName()):
-                    continue  # the close mark of a chain tile sits on top of its body on purpose
+                if {"removeButton", "notInstalledButton"} & {a.objectName(), b.objectName()}:
+                    continue  # the close mark and the warning of a chain tile sit on top of its body on purpose
                 inter = a.geometry().intersected(b.geometry())
                 if inter.width() > 1 and inter.height() > 1:
                     found.append(f"{label(a)} overlaps {label(b)} inside {label(parent)} ({inter.width()}x{inter.height()})")

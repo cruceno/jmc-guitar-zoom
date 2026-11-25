@@ -163,7 +163,7 @@ class PedalBody(QFrame):
             p.drawEllipse(led, 4.5, 4.5)
             p.setFont(ui_font(12))
             p.setPen(tokens.color("text-secondary"))
-            power_w = inner.width() - 16
+            power_w = inner.width() - 16 - (26 if t.not_installed else 0)
             p.drawText(QRectF(led.x() + 11, inner.bottom() - 16, power_w, 16), Qt.AlignmentFlag.AlignVCenter,
                        p.fontMetrics().elidedText(S.POWER_ON if t.is_enabled_effect else S.POWER_OFF,
                                                   Qt.TextElideMode.ElideRight, int(power_w)))
@@ -210,11 +210,13 @@ class PedalTile(QWidget):
     remove_requested = Signal(int)
     effect_dropped = Signal(int, int)  # slot index, catalog effect ID
     tile_dropped = Signal(int, int)  # source slot index, target slot index
+    install_requested = Signal(int)  # the warning icon: install this effect on the pedal (slot index)
 
     def __init__(self, slot_index: int, slot: EffectSlot, info: EffectInfo | None, span: int,
-                 problem: str = "") -> None:
+                 problem: str = "", not_installed: bool = False) -> None:
         super().__init__()
         self.slot_index = slot_index
+        self.not_installed = not_installed  # the effect is known not to be installed on the connected pedal
         self.problem = problem  # why this effect blocks writing the patch to the pedal ("": none)
         self.span = span
         self.is_empty = slot.is_empty
@@ -252,6 +254,16 @@ class PedalTile(QWidget):
         self.remove_button.setFixedSize(22, 22)
         self.remove_button.setVisible(not slot.is_empty)
         self.remove_button.clicked.connect(lambda: self.remove_requested.emit(self.slot_index))
+        self.warn_button = QToolButton(self)  # amber triangle: clicking it installs the effect
+        self.warn_button.setObjectName("notInstalledButton")
+        self.warn_button.setIcon(icon("alert", "status-warn", 18))
+        self.warn_button.setToolTip(S.NOT_INSTALLED_TIP)
+        self.warn_button.setAccessibleName(S.NOT_INSTALLED_TIP)
+        self.warn_button.setAccessibleDescription(S.INSTALL_ON_PEDAL)
+        self.warn_button.setFixedSize(24, 24)
+        self.warn_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.warn_button.setVisible(not_installed and not slot.is_empty)
+        self.warn_button.clicked.connect(lambda: self.install_requested.emit(self.slot_index))
         self.set_pedal_width(PEDAL_W)
         if slot.is_empty:
             self.setToolTip(S.SLOT_EMPTY_TIP)
@@ -266,6 +278,15 @@ class PedalTile(QWidget):
     def set_pedal_width(self, width: int) -> None:
         self.setFixedSize(width, PEDAL_H + 2 * BODY_PAD + 2 + FOOT)
         self.remove_button.move(width - BODY_PAD - 28, BODY_PAD + 8)
+        self.warn_button.move(width - BODY_PAD - 10 - 24, PEDAL_H + BODY_PAD - 8 - 24)  # bottom right of the pedal body
+
+    def set_not_installed(self, flag: bool) -> None:
+        """The pedal's effect list was read (or lost): show or hide the warning in place, without a rebuild."""
+        if flag == self.not_installed:
+            return
+        self.not_installed = flag
+        self.warn_button.setVisible(flag and not self.is_empty)
+        self.body.update()
 
     def _on_power(self, on: bool) -> None:
         self.is_enabled_effect = on
@@ -330,6 +351,7 @@ class ChainView(QWidget):
     remove_requested = Signal(int)
     effect_dropped = Signal(int, int)
     tile_moved = Signal(int, int)
+    install_requested = Signal(int)  # a tile's warning icon: slot index of the effect to install
 
     def __init__(self) -> None:
         super().__init__()
@@ -350,7 +372,7 @@ class ChainView(QWidget):
         self._selected = None
 
     def set_patch(self, patch: Patch | None, catalog: dict[int, EffectInfo],
-                  problems: dict[int, str] | None = None) -> None:
+                  problems: dict[int, str] | None = None, not_installed: set[int] | None = None) -> None:
         self.clear()
         if patch is None:
             self.update()
@@ -362,7 +384,8 @@ class ChainView(QWidget):
             info = catalog.get(slot.effect_id)
             followed_by_filler = i + 1 < len(slots) and slots[i + 1].is_wide_filler
             wide = not slot.is_empty and (followed_by_filler or (info is not None and info.is_wide))
-            self._add_tile(PedalTile(i, slot, info, 2 if wide else 1, (problems or {}).get(i, "")))
+            self._add_tile(PedalTile(i, slot, info, 2 if wide else 1, (problems or {}).get(i, ""),
+                                     i in (not_installed or ())))
         for k in range(max(0, CHAIN_MIN_TILES - len(self._tiles))):
             # empty drop targets beyond the stored chain (slot indexes past the end of the patch)
             self._add_tile(PedalTile(len(slots) + k, EffectSlot(), None, 1))
@@ -376,6 +399,7 @@ class ChainView(QWidget):
         tile.remove_requested.connect(self.remove_requested)
         tile.effect_dropped.connect(self.effect_dropped)
         tile.tile_dropped.connect(self.tile_moved)
+        tile.install_requested.connect(self.install_requested)
         tile.show()
         self._tiles.append(tile)
 

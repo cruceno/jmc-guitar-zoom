@@ -6,7 +6,8 @@ from PySide6.QtCore import QByteArray, QEvent, QMimeData, QRectF, QSize, Qt, Sig
 from PySide6.QtGui import QColor, QDrag, QFont, QFontMetrics, QImage, QLinearGradient, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDial, QFrame, QGridLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QProgressBar, QScrollArea, QSizePolicy, QSpinBox, QStyle, QToolButton, QVBoxLayout, QWidget,
+    QListWidget, QListWidgetItem, QMenu, QProgressBar, QScrollArea, QSizePolicy, QSpinBox, QStyle, QToolButton, QToolTip,
+    QVBoxLayout, QWidget,
 )
 
 from zoomstudio.effects.catalog import EffectInfo
@@ -15,7 +16,7 @@ from zoomstudio.patches.model import EffectSlot, Patch
 
 from . import strings as S
 from . import tokens
-from .cards import ROLE_EFFECT, ROLE_FAV, ROLE_SECTION, FAVORITES_KEY, SectionList, set_section_header, EffectCardDelegate, Knob, PatchCardDelegate, card_path, pedal_thumbnail, svg_thumbnail, with_alpha
+from .cards import ROLE_EFFECT, ROLE_FAV, ROLE_SECTION, FAVORITES_KEY, SectionList, set_section_header, EffectCardDelegate, Knob, PatchCardDelegate, badge_at, card_badges, card_path, pedal_thumbnail, svg_thumbnail, with_alpha
 from .favorites import FavoritesStore
 from .fonts import display_font, ui_font
 from .icons import icon, pixmap
@@ -417,9 +418,11 @@ class _CatalogList(SectionList):
     """Catalog rows that can be dragged onto a chain tile (payload: the effect ID); Enter activates a row."""
 
     enter_pressed = Signal(object)
+    install_requested = Signal(object)  # the item whose effect the context menu offers to install
 
     def __init__(self) -> None:
         super().__init__()
+        self.install_block: str | None = None  # why nothing can be installed now (read-only pedal, busy): None: it can
         self.setDragEnabled(True)
         self.setDragDropMode(QListWidget.DragDropMode.DragOnly)
         self.setItemDelegate(EffectCardDelegate(self))
@@ -435,6 +438,27 @@ class _CatalogList(SectionList):
             return
         super().keyPressEvent(event)
 
+    def context_menu_for(self, item: QListWidgetItem) -> QMenu | None:
+        menu = super().context_menu_for(item)
+        if item is None or self.is_header(item) or (item.data(ROLE_EFFECT) or {}).get("installed") is not False:
+            return menu
+        menu = menu if menu is not None else QMenu(self)
+        action = menu.addAction(icon("chip"), S.INSTALL_ON_PEDAL)
+        action.setEnabled(self.install_block is None)
+        action.setToolTip(self.install_block or "")
+        action.triggered.connect(lambda: self.install_requested.emit(item))
+        return menu
+
+    def viewportEvent(self, event) -> bool:  # noqa: N802 (Qt API)
+        if event.type() == QEvent.Type.ToolTip:
+            item = self.itemAt(event.pos())
+            data = item.data(ROLE_EFFECT) if item is not None and not self.is_header(item) else None
+            badge = badge_at(self.visualItemRect(item), data, event.pos()) if data else None
+            if badge is not None:
+                QToolTip.showText(event.globalPos(), badge.text, self)
+                return True
+        return super().viewportEvent(event)
+
     def mimeData(self, items) -> QMimeData:  # noqa: N802 (Qt API)
         mime = QMimeData()
         if items and not self.is_header(items[0]):
@@ -449,11 +473,33 @@ class DestinationCard(QFrame):
         super().__init__()
         self.text = ""
         self.strip: list[tuple[str | None, int, bool]] = []
-        self.setFixedHeight(64)
+        self.setFixedHeight(self.BASE_HEIGHT)
+        self.install_button = QPushButton(S.INSTALL_ON_PEDAL, self)  # offered while the selected effect is not installed
+        self.install_button.setIcon(icon("chip"))
+        self.install_button.setFixedHeight(self.INSTALL_HEIGHT)
+        self.install_button.hide()
+
+    BASE_HEIGHT = 64
+    INSTALL_HEIGHT = 28
 
     def set_destination(self, text: str, strip: list[tuple[str | None, int, bool]]) -> None:
         self.text, self.strip = text, strip
         self.update()
+
+    def set_install(self, offered: bool, block: str | None = None) -> None:
+        """Show «Instalar en la pedalera» under the sentence (disabled, with the reason, while ``block``)."""
+        self.install_button.setVisible(offered)
+        self.install_button.setEnabled(offered and block is None)
+        self.install_button.setToolTip(block or "")
+        self.setFixedHeight(self.BASE_HEIGHT + (self.INSTALL_HEIGHT + 6 if offered else 0))
+        self._place_install()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        super().resizeEvent(event)
+        self._place_install()
+
+    def _place_install(self) -> None:
+        self.install_button.setGeometry(12, 32, max(0, self.width() - 24), self.INSTALL_HEIGHT)
 
     def paintEvent(self, _event) -> None:  # noqa: N802 (Qt API)
         p = QPainter(self)
@@ -499,6 +545,7 @@ class CatalogPanel(QWidget):
     manage_requested = Signal()  # the «Administrar» button: open the pedal's effects screen
 
     pedal_chosen = Signal(int)  # the selector (shown only with several supported pedals): model id
+    install_requested = Signal(int)  # «Instalar en la pedalera» (card button or context menu): catalog effect ID
 
     def __init__(self, catalog: dict[int, EffectInfo], allowed_ids: set[int] | None, installed_label: str,
                  favorites: FavoritesStore | None = None, pedal_name: str = "",
@@ -509,6 +556,8 @@ class CatalogPanel(QWidget):
         self._allowed = allowed_ids  # what the target pedal can run (None: no restriction known)
         self._pedal_name = pedal_name
         self._installed_label = installed_label
+        self._installed_ids: set[int] | None = None  # None: the pedal's effect list is not known (nothing is guessed)
+        self._install_block: str | None = None
         self._current_dsp = 0.0
         self._replaced_dsp = 0.0
         self._opened: set[str] = set()  # sections the user unfolded (kept for the session)
@@ -632,6 +681,8 @@ class CatalogPanel(QWidget):
         self.list.itemDoubleClicked.connect(
             lambda item: None if item.data(ROLE_SECTION) else self.effect_activated.emit(item.data(_ID_ROLE)))
         self.list.enter_pressed.connect(lambda item: self.effect_activated.emit(item.data(_ID_ROLE)))
+        self.list.install_requested.connect(lambda item: self.install_requested.emit(item.data(_ID_ROLE)))
+        self.destination.install_button.clicked.connect(self._install_current)
         self.list.favorite_toggled.connect(lambda item: self.favorites.toggle(item.data(_ID_ROLE)))
         self.list.section_toggled.connect(self._on_section_toggled)
         self.favorites.changed.connect(self._on_favorites_changed)
@@ -652,8 +703,12 @@ class CatalogPanel(QWidget):
         row.addWidget(self.manage_button)
         return row
 
-    def _is_installed(self, info: EffectInfo) -> bool:
-        return self._installed_label in info.sources
+    def _installed_state(self, effect_id: int) -> bool | None:
+        """Installed on the connected pedal: True or False, None while its effect list is not known."""
+        return None if self._installed_ids is None else effect_id in self._installed_ids
+
+    def _badge_names(self, data: dict) -> list[str]:
+        return [b.text for b in card_badges(data)]
 
     def _matches(self, info: EffectInfo) -> bool:
         text = self.search.text().strip().lower()
@@ -776,12 +831,13 @@ class CatalogPanel(QWidget):
             header.setFlags(header.flags() & ~Qt.ItemFlag.ItemIsDragEnabled)
             self.list.addItem(header)
             for info in members:
+                data = {"name": info.name, "group": info.group, "dsp": info.dsp_load_percent, "wide": info.is_wide,
+                        "installed": self._installed_state(info.effect_id), "in_chain": info.effect_id in self._chain_ids,
+                        "svg": info.svg_path}
                 item = QListWidgetItem(S.catalog_row(info.name, info.group, info.dsp_load_percent,
-                                                     self._is_installed(info)))
-                item.setData(ROLE_EFFECT, {
-                    "name": info.name, "group": info.group, "dsp": info.dsp_load_percent, "wide": info.is_wide,
-                    "installed": self._is_installed(info), "in_chain": info.effect_id in self._chain_ids,
-                    "svg": info.svg_path})
+                                                     self._badge_names(data)))
+                item.setData(Qt.ItemDataRole.AccessibleTextRole, item.text())
+                item.setData(ROLE_EFFECT, data)
                 item.setData(_ID_ROLE, info.effect_id)
                 item.setData(ROLE_FAV, self.favorites.is_favorite(info.effect_id))
                 item.setData(_NAME_ROLE, info.name)
@@ -823,11 +879,42 @@ class CatalogPanel(QWidget):
 
     def set_chain_effects(self, ids: set[int]) -> None:
         self._chain_ids = set(ids)
+        self._refresh_badges()
+
+    def set_installed(self, ids: set[int] | None) -> None:
+        """The effects installed on the connected pedal (``None``: not known, so no icon claims anything)."""
+        ids = None if ids is None else set(ids)
+        if ids == self._installed_ids:
+            return
+        self._installed_ids = ids
+        self._refresh_badges()
+
+    def set_install_block(self, reason: str | None) -> None:
+        """Why the quick install must stay off (a pedal the app cannot write, a write already running)."""
+        self._install_block = reason
+        self.list.install_block = reason
+        self._sync_install()
+
+    def _refresh_badges(self) -> None:
         for item in self._effect_items():
             data = dict(item.data(ROLE_EFFECT))
             data["in_chain"] = item.data(_ID_ROLE) in self._chain_ids
+            data["installed"] = self._installed_state(item.data(_ID_ROLE))
             item.setData(ROLE_EFFECT, data)
+            item.setText(S.catalog_row(data["name"], data["group"], data["dsp"], self._badge_names(data)))
+            item.setData(Qt.ItemDataRole.AccessibleTextRole, item.text())
         self.list.viewport().update()
+        self._sync_install()
+
+    def _sync_install(self) -> None:
+        item = self._current_effect()
+        offered = item is not None and (item.data(ROLE_EFFECT) or {}).get("installed") is False
+        self.destination.set_install(offered, self._install_block)
+
+    def _install_current(self) -> None:
+        item = self._current_effect()
+        if item is not None:
+            self.install_requested.emit(item.data(_ID_ROLE))
 
     def _activate_current(self) -> None:
         item = self._current_effect()
@@ -863,6 +950,7 @@ class CatalogPanel(QWidget):
         self.detail_facts.setText("")
         self.target_button.setEnabled(item is not None and self._target_enabled)
         self.detail_card.setVisible(item is not None)
+        self._sync_install()
         self._show_after(item)
         if item is None:
             return

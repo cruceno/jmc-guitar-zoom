@@ -40,3 +40,13 @@ def private_target(monkeypatch, tmp_path_factory):
     path = tmp_path_factory.mktemp("config-target") / settings.FILE_NAME
     monkeypatch.setattr(settings, "default_path", lambda: path)
     return path
+
+
+@pytest.fixture(autouse=True)
+def no_effect_list_read_after_connect(monkeypatch):
+    """After the patches the editor reads the pedal's effect list (a PC-mode session with file reads). Most tests
+    script exact traffic and have no pedal files, so they run without that read; the tests of the installed
+    state (``test_ui_install_indicators``) put it back."""
+    from zoomstudio.ui.main_window import MainWindow
+
+    monkeypatch.setattr(MainWindow, "_load_installed_state", lambda self: None)

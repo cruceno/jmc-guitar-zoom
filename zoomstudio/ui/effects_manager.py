@@ -857,18 +857,25 @@ class EffectsManager(GlassPanel):
         entry = self._entry(self._selected)
         if entry is None or entry.path is None or entry.size is None or not self.install_button.isEnabled():
             return
-        if ConfirmDialog.ask(self, S.effects_confirm_install_title(entry.name),
-                             S.effects_confirm_install(entry.name, entry.file, entry.size, self._free or 0),
-                             S.EFFECTS_INSTALL):
+        if self.confirm_install(entry):
             self.install_requested.emit(entry.file, entry.path)
+
+    def confirm_install(self, entry: Entry, parent: QWidget | None = None) -> bool:
+        """The install confirmation (file, size, backup note, free memory); the editor's quick install asks it too."""
+        return ConfirmDialog.ask(parent or self, S.effects_confirm_install_title(entry.name),
+                                 S.effects_confirm_install(entry.name, entry.file, entry.size or 0, self._free or 0),
+                                 S.EFFECTS_INSTALL)
+
+    def confirm_repair(self, entry: Entry, parent: QWidget | None = None) -> bool:
+        return ConfirmDialog.ask(parent or self, S.effects_confirm_repair_title(entry.name),
+                                 S.effects_confirm_repair(entry.name, entry.file, entry.size or 0, self._free or 0),
+                                 S.EFFECTS_REPAIR)
 
     def _on_repair(self) -> None:
         entry = self._entry(self._selected)
         if entry is None or entry.path is None or entry.size is None or not self.repair_button.isEnabled():
             return
-        if ConfirmDialog.ask(self, S.effects_confirm_repair_title(entry.name),
-                             S.effects_confirm_repair(entry.name, entry.file, entry.size, self._free or 0),
-                             S.EFFECTS_REPAIR):
+        if self.confirm_repair(entry):
             self.repair_requested.emit(entry.file, entry.path)
 
     def _on_remove(self) -> None:

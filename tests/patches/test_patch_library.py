@@ -64,3 +64,16 @@ def test_export_and_read_back_round_trip(tmp_path):
     (folder / "009.zptc").write_bytes(b"junk")
     found, problems = read_folder(folder)
     assert 9 not in found and problems and "009.zptc" in problems[0]
+
+
+def test_save_blockers_report_effects_missing_from_the_pedal_only_when_its_list_is_known():
+    patch = patch_with(0x10, 0x20, 0x10)
+    assert edit.not_installed_slots(patch, CATALOG, None) == []  # nothing known: nothing guessed
+    assert edit.save_blockers(patch, CATALOG, None, None) == edit.save_blockers(patch, CATALOG, None)
+    assert edit.not_installed_slots(patch, CATALOG, {0x10, 0x20}) == []
+    assert edit.save_blockers(patch, CATALOG, None, {0x10, 0x20}) == []
+    missing = edit.not_installed_slots(patch, CATALOG, {0x20})
+    assert [patch.effects[i].effect_id for i in missing] == [0x10, 0x10]
+    reasons = edit.save_blockers(patch, CATALOG, None, {0x20})
+    assert reasons == [f"El patch usa efectos que no están en la pedalera: {CATALOG[0x10].name}"]
+    assert edit.slot_problems(patch, CATALOG, None) == {}  # the tile's red state is a different thing

@@ -21,7 +21,7 @@ from zoomstudio.ui.painted import PaintedText
 
 EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
 SIZES = [(1440, 900), (2000, 1056)]
-STATES = ["no-patch", "patch-selected", "effects-manager", "effects-repair", "usage-many", "usage-one", "usage-none", "usage-incomplete", "tuner", "offline", "bank", "bank-empty", "bank-drag", *UPDATE_STATES]
+STATES = ["no-patch", "patch-selected", "effects-manager", "effects-repair", "not-installed", "usage-many", "usage-one", "usage-none", "usage-incomplete", "tuner", "offline", "bank", "bank-empty", "bank-drag", *UPDATE_STATES]
 SLACK = 2  # px of rounding the metrics may differ from the painted text by
 
 
@@ -150,7 +150,11 @@ def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
             w.bank_panel.positions.show_drop_target(43)
             w.bank_panel.bank_list.show_drop_target(True)
         return w
-    if state == "patch-selected":
+    if state == "not-installed":  # warning on a tile and a card, Live on, «Instalar en la pedalera» on the target card
+        from test_ui_install_indicators import show_not_installed
+
+        show_not_installed(qtbot, w)
+    elif state == "patch-selected":
         w.select_location(44)
     elif state == "effects-manager":
         w.select_location(44)

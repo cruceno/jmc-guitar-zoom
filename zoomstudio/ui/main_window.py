@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from zoomstudio.effects.catalog import EffectInfo
+from zoomstudio.effects import flst
 from zoomstudio.effects.flst import pedal_filename
 from zoomstudio.patches import edit
 from zoomstudio.patches.model import NAME_MAX_LEN, VOLUME_MAX, Patch
@@ -25,7 +26,7 @@ from . import strings as S
 from . import tokens
 from .cards import ROLE_DIRTY, ROLE_NAME, ROLE_NUMBER, ROLE_STRIP
 from .dialogs import ConfirmDialog
-from .effects_manager import EffectsManager
+from .effects_manager import Entry, EffectsManager, build_entries
 from .fonts import display_font
 from .glass import BackdropRoot, GlassMenu, GlassPanel, GlowHost
 from .icons import icon, pixmap
@@ -190,6 +191,11 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self._tuner_on = False
         self._effects_open = False
         self._effects_busy = False
+        self._installed_files: set[str] | None = None  # pedal files installed and present; None: not read (nothing guessed)
+        self._installed_ids: set[int] | None = None  # the catalog effects those files are
+        self._pedal_state: tuple[bytes, list[str]] | None = None  # the last list and file names the pedal reported
+        self._pedal_entries: list[Entry] = []  # the installed and available entries of the last read
+        self._pending_add: tuple[int, int, int] | None = None  # (location, slot, effect ID) waiting for its install
         self._patches_complete = False  # every patch of the pedal was read (and none failed)
         self._worker: PedalWorker | None = None
         self._thread: QThread | None = None
@@ -420,6 +426,7 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self.chain.power_toggled.connect(self._on_power_toggled)
         self.chain.remove_requested.connect(self.remove_effect)
         self.chain.effect_dropped.connect(self.replace_effect)
+        self.chain.install_requested.connect(self._on_tile_install)
         self.chain.tile_moved.connect(self.move_effect)
         self.params.param_changed.connect(self._on_param_changed)
 
@@ -427,6 +434,7 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
                                          self._target_name(), self._supported_pedals(), self.target_model)
         self.catalog_panel.effect_activated.connect(self._on_catalog_activated)
         self.catalog_panel.manage_requested.connect(self.open_effects_screen)
+        self.catalog_panel.install_requested.connect(self.quick_install)
         self.catalog_panel.pedal_chosen.connect(self._set_target)
 
         left_panel, catalog_panel = self._glass(left), self._glass(self.catalog_panel)
@@ -572,6 +580,8 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
                                     and not self._update_open and (self._bank_open or not self._saving))
         self.effects_action.setEnabled(self.effects_toggle.isEnabled() and not self._effects_open)
         self.catalog_panel.manage_button.setEnabled(self.effects_action.isEnabled())
+        self.catalog_panel.set_install_block(self.write_block_reason() or (
+            S.EFFECTS_BUSY_INSTALL if self._effects_busy or self._saving else None))
         blockers = self.save_blockers()
         dirty = self._location is not None and self.is_dirty(self._location)
         self.save_button.setEnabled(
@@ -630,6 +640,7 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
     def _request_effects_state(self) -> None:
         if self._worker is None or not self._is_connected:
             self.effects_panel.set_offline()
+            self._clear_installed_state()
             return
         self.effects_panel.set_loading()
         self._effects_state_requested.emit()
@@ -701,6 +712,126 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self._set_memory(usage)
         self._refresh_effects_context()
         self.effects_panel.set_state(flst_bytes, files, usage)
+        self._set_installed_state(flst_bytes, files)
+        self._resume_pending_add()
+
+    def _load_installed_state(self) -> None:
+        """After the patches were read: the editor needs what is installed (icons, warnings, Live, Save), a read."""
+        if self._is_connected and self._worker is not None:
+            self._request_effects_state()
+
+    @Slot()
+    def _on_effects_state_failed(self) -> None:
+        self._clear_installed_state()
+        self._pending_add = None
+
+    # ----------------------------------------------- what is installed (icons, warnings, Live, save, quick install)
+
+    def effect_installed(self, effect_id: int) -> bool | None:
+        """Is the catalog effect installed on the connected pedal? ``None`` while that is not known (no state read:
+        offline, not read yet, the read failed): the editor then shows no warning and blocks nothing."""
+        if self._installed_ids is None:
+            return None
+        return effect_id in self._installed_ids
+
+    def _compute_installed_ids(self) -> set[int] | None:
+        if self._installed_files is None:
+            return None
+        return {i for i, info in self.catalog.items() if pedal_filename(info.filename) in self._installed_files}
+
+    def _set_installed_state(self, flst_bytes, files) -> None:
+        """Remember what the pedal reported: installed means flagged in the list *and* the file is on the pedal."""
+        try:
+            installed, available = build_entries(self.catalog, self.allowed_ids, flst_bytes, files)
+        except flst.FlstError:
+            self._clear_installed_state()
+            return
+        self._pedal_state = (flst_bytes, list(files))
+        self._pedal_entries = installed + available
+        self._installed_files = {e.file for e in installed if not e.missing}
+        self._refresh_installed()
+
+    def _clear_installed_state(self) -> None:
+        self._installed_files, self._pedal_entries, self._pedal_state = None, [], None
+        self._refresh_installed()
+
+    def _refresh_installed(self) -> None:
+        """The installed set changed (state read, catalog reloaded, disconnect): icons, tiles and Save follow it."""
+        self._installed_ids = self._compute_installed_ids()
+        self.catalog_panel.set_installed(self._installed_ids)
+        patch = self.current_patch
+        if patch is not None:  # the tiles carry the warning: update them in place, the parameters stay as they are
+            warned = set(edit.not_installed_slots(patch, self.catalog, self._installed_ids))
+            for tile in self.chain.tiles():
+                tile.set_not_installed(tile.slot_index in warned)
+        self._update_buttons()
+
+    def _missing_effects(self) -> list[int]:
+        """Catalog IDs of the effects of the current patch that are known not to be installed (each once)."""
+        patch = self.current_patch
+        if patch is None:
+            return []
+        slots = edit.not_installed_slots(patch, self.catalog, self._installed_ids)
+        return list(dict.fromkeys(patch.effects[i].effect_id for i in slots))
+
+    def _entry_for(self, effect_id: int) -> Entry | None:
+        info = self.catalog.get(effect_id)
+        if info is None:
+            return None
+        file = pedal_filename(info.filename)
+        return next((e for e in self._pedal_entries if e.file == file), None)
+
+    def quick_install(self, effect_id: int, then_add: tuple[int, int] | None = None) -> bool:
+        """Install a catalog effect on the pedal without leaving the editor, through the effects screen's own path:
+        its confirmation, the backup, the memory check and the write gate. ``then_add``: ``(slot, effect ID)`` to add
+        once it is installed. Returns whether an install was started."""
+        info = self.catalog.get(effect_id)
+        name = info.name if info is not None else hex(effect_id)
+        reason = self.write_block_reason()
+        if reason is not None:  # a pedal the app cannot edit yet: reading only
+            self._report_error(reason)
+            return False
+        if self._worker is None or not self._is_connected:
+            self._report_error(S.INSTALL_NEEDS_PEDAL)
+            return False
+        if self._effects_busy or self._saving:
+            return False
+        entry = self._entry_for(effect_id)
+        if entry is None or entry.path is None or entry.size is None or not (entry.installable or entry.missing):
+            self._report_error(S.cannot_quick_install(name))
+            return False
+        repair = entry.missing  # flagged installed but its file is gone: only the file goes back
+        if not (self.effects_panel.confirm_repair(entry, self) if repair else self.effects_panel.confirm_install(entry, self)):
+            return False
+        self._pending_add = None if then_add is None else (self._location, *then_add)
+        self._set_effects_busy(True, S.EFFECTS_BUSY_REPAIR if repair else S.EFFECTS_BUSY_INSTALL)
+        self.statusBar().showMessage(S.EFFECTS_BUSY_REPAIR if repair else S.EFFECTS_BUSY_INSTALL)
+        self._effects_repairing = repair
+        (self._effect_repair_requested if repair else self._effect_install_requested).emit(
+            entry.file, entry.path, self.effects_backup_dir)
+        return True
+
+    def _offer_install(self, effect_id: int, reason: str, then_add: tuple[int, int] | None = None) -> None:
+        """Say why an effect cannot be used and offer to install it right here."""
+        if ConfirmDialog.ask(self, S.NOT_INSTALLED_TITLE, S.install_offer(reason), S.INSTALL_ON_PEDAL):
+            self.quick_install(effect_id, then_add)
+
+    def _on_tile_install(self, slot_index: int) -> None:
+        patch = self.current_patch
+        if patch is not None and 0 <= slot_index < len(patch.effects):
+            self.quick_install(patch.effects[slot_index].effect_id)
+
+    def _resume_pending_add(self) -> None:
+        """The install that a blocked add was waiting for finished: let the add go through."""
+        if self._pending_add is None:
+            return
+        location, slot, effect_id = self._pending_add
+        if location != self._location or self.effect_installed(effect_id) is None:
+            self._pending_add = None
+            return
+        if self.effect_installed(effect_id):
+            self._pending_add = None
+            self.replace_effect(slot, effect_id)
 
     @Slot(str, bool)
     def _on_effect_changed(self, name: str, installed: bool) -> None:
@@ -711,8 +842,10 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self.statusBar().showMessage(message(name))
 
     @Slot(bool)
-    def _on_effect_change_finished(self, _success: bool) -> None:
+    def _on_effect_change_finished(self, success: bool) -> None:
         self._effects_repairing = False
+        if not success:
+            self._pending_add = None
         self._set_effects_busy(False)
         self._request_effects_state()  # the lists and the memory always reflect the pedal, whatever happened
 
@@ -878,7 +1011,8 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self._location = location
         patch = self._patches.get(location)
         self.chain.set_patch(patch, self.catalog,
-                             None if patch is None else edit.slot_problems(patch, self.catalog, self.allowed_ids))
+                             None if patch is None else edit.slot_problems(patch, self.catalog, self.allowed_ids),
+                             None if patch is None else set(edit.not_installed_slots(patch, self.catalog, self._installed_ids)))
         self.params.clear()
         self._update_header()
         if patch is None:
@@ -951,7 +1085,7 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
     def save_blockers(self) -> list[str]:
         """Reasons the selected patch must not be written to the pedal (the model, then A1, A2, A3 and DSP checks)."""
         patch = self.current_patch
-        reasons = [] if patch is None else edit.save_blockers(patch, self.catalog, self.allowed_ids)
+        reasons = [] if patch is None else edit.save_blockers(patch, self.catalog, self.allowed_ids, self._installed_ids)
         block = self.write_block_reason()
         return ([block] if block else []) + reasons
 
@@ -1030,7 +1164,7 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         stack.push(command)
         stack.setClean()  # the baseline is the clean state; Undo leaves it again and the patch is edited once more
         if (self.live_check.isChecked() and self._is_connected and location == self._location
-                and self._live_location == location):
+                and self._live_location == location and self.write_block_reason() is None):
             for message in live_restore_messages(current, baseline):
                 self._param_requested.emit(*message)
         return True
@@ -1089,6 +1223,13 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         if self.allowed_ids is not None and effect_id not in self.allowed_ids:
             info = self.catalog.get(effect_id)
             self._report_error(S.not_runnable(info.name if info else hex(effect_id)))
+            return
+        if self.live_check.isChecked() and self.effect_installed(effect_id) is False:
+            # Live edits the pedal's own patch: an effect the pedal does not have cannot be added; offer the install
+            info = self.catalog.get(effect_id)
+            reason = S.live_blocks_uninstalled(info.name if info else hex(effect_id))
+            self._report_error(reason)
+            self._offer_install(effect_id, reason, (slot_index, effect_id))
             return
         self._edit(lambda p: edit.replace_effect(p, slot_index, effect_id, self.catalog), S.UNDO_REPLACE,
                    select=lambda after: edit.slot_index_of(
@@ -1153,8 +1294,8 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
     def _live_send(self, slot_index: int, param_index: int | None, value: int) -> None:
         patch = self.current_patch
         if (not self.live_check.isChecked() or not self._is_connected or patch is None
-                or self._live_location != self._location):
-            return
+                or self._live_location != self._location or self.write_block_reason() is not None):
+            return  # a pedal the app cannot edit gets nothing, whatever the switch says
         self._param_requested.emit(*live_message(patch, slot_index, param_index, value))
 
     # ---------------------------------------------------------------- files
@@ -1215,6 +1356,9 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         blockers = self.save_blockers()
         if blockers:
             self._report_error(S.cannot_save(blockers))
+            missing = self._missing_effects()
+            if missing and self.write_block_reason() is None:  # the way out is right here
+                self._offer_install(missing[0], S.cannot_save(blockers))
             return
         if self.backup_dir is None:
             self._report_error(S.ERR_NO_BACKUP_DIR)
@@ -1283,6 +1427,7 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self._patches.update(found)
         self._rebuild_patch_list()
         self._set_connection(S.offline(folder.name), False, "info")
+        self._clear_installed_state()
         self._set_memory(None)
         self.statusBar().showMessage(S.loaded_from_folder(len(found), folder))
         if problems:
@@ -1332,6 +1477,7 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self._effect_repair_requested.connect(w.repair_effect_file)
         w.effects_state.connect(self._on_effects_state)
         w.effects_state_failed.connect(self.effects_panel.set_failed)
+        w.effects_state_failed.connect(self._on_effects_state_failed)
         w.effect_changed.connect(self._on_effect_changed)
         w.effect_change_finished.connect(self._on_effect_change_finished)
         w.tuner_reading.connect(self.tuner_panel.show_reading)
@@ -1453,6 +1599,8 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         combo.blockSignals(False)
         self.catalog_panel.set_pedal(self.allowed_ids, self._target_name(), self.target_model)
         self._sync_effects_pedals()
+        if self._pedal_state is not None:
+            self._set_installed_state(*self._pedal_state)  # the same pedal report, read against the new catalog
         if self._location is not None:
             self._show_patch(self._location, keep=True)  # chain tiles and problems depend on the catalog
 
@@ -1487,6 +1635,8 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self.connection_label.setToolTip("")
         self.connected_model = None
         self._set_pedal_firmware(None)
+        self._pending_add = None
+        self._clear_installed_state()
         self._update_pedal_notice()
         self._set_memory(None)
         if self._effects_open:
@@ -1507,6 +1657,7 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self._patches_complete = len(self._patches) >= self._patch_count
         self._update_buttons()
         self.statusBar().showMessage(S.loaded_from_pedal(len(self._patches)))
+        self._load_installed_state()
         self.patches_loaded.emit()
 
     @Slot(object)

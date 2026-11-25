@@ -467,8 +467,12 @@ SEARCH_EFFECTS = "Buscar efectos…"
 SEARCH_EFFECTS_TIP = "Buscar efectos por nombre o grupo"
 CLEAR_SEARCH = "Borrar la búsqueda"
 DSP_AFTER = "DSP después"
-BADGE_ON_PEDAL = "En la pedalera"
-BADGE_IN_CHAIN = "En la cadena"
+ON_PEDAL_NAME = "Instalado en la pedalera"  # the pedal icon of a catalog card
+IN_CHAIN_NAME = "En la cadena del patch"  # the chain-link icon of a catalog card
+NOT_INSTALLED_TIP = "Este efecto no está instalado en la pedalera"  # the warning icon (tile and card)
+NOT_INSTALLED_TITLE = "Efecto no instalado"
+INSTALL_ON_PEDAL = "Instalar en la pedalera"
+INSTALL_NEEDS_PEDAL = "Conecte la pedalera para instalar efectos"
 NOT_IN_PEDAL_SOURCES = "-"
 
 
@@ -484,8 +488,21 @@ def unknown_effect_title(effect_id: int) -> str:
     return f"El efecto 0x{effect_id:08X} no está en el catálogo (sin rangos de parámetros)"
 
 
-def catalog_row(name: str, group: str, dsp: float, on_pedal: bool) -> str:
-    return f"{name}   {group_label(group)}   {percent(dsp)}" + (f"   {BADGE_ON_PEDAL}" if on_pedal else "")
+def catalog_row(name: str, group: str, dsp: float, badges: list[str]) -> str:
+    """The text a card says for itself (it is painted, so this is what a screen reader and a search read)."""
+    return f"{name}   {group_label(group)}   {percent(dsp)}" + "".join(f"   {b}" for b in badges)
+
+
+def live_blocks_uninstalled(name: str) -> str:
+    return f"En vivo no se puede usar {name}: no está instalado en la pedalera."
+
+
+def install_offer(reason: str) -> str:
+    return f"{reason}\n\n¿Desea instalarlo ahora, sin salir del editor?"
+
+
+def cannot_quick_install(name: str) -> str:
+    return f"{name} no se puede instalar desde el editor: falta su archivo o la pedalera no lo admite."
 
 
 def visible_count(n: int) -> str:

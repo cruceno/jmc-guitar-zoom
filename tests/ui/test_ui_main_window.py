@@ -133,7 +133,7 @@ def test_catalog_rows_show_dsp_load_installed_flag_and_svg(window):
     panel.search.setText("Hall")
     text = panel.item_of("Hall").text()
     assert "Hall" in text and "%" in text
-    assert strings.BADGE_ON_PEDAL in text  # fixture directory is labelled "pedal"
+    assert strings.ON_PEDAL_NAME not in text  # offline nothing is known about the pedal: no claim (see the S6 tests)
     panel.list.setCurrentRow(panel.row_of("Hall"))
     assert panel.preview_has_image()
     panel.search.setText("FD DLXR")  # has no SVG in the fixtures
