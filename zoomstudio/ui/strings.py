@@ -962,3 +962,20 @@ def not_compatible_with(name: str) -> str:
 
 def effects_not_compatible_reason(name: str) -> str:
     return f"Este efecto no es compatible con {name}: no se puede instalar"
+
+
+# ---- pedals the app cannot edit yet
+def pedal_readonly_banner(name: str) -> str:
+    return f"{name} detectada: la edición todavía no está verificada en este modelo; solo lectura"
+
+
+def pedal_readonly_reason(name: str) -> str:
+    return f"{name}: edición no verificada en este modelo, solo lectura"
+
+
+def pedal_unknown_banner(model_id: int) -> str:
+    return f"Pedal no reconocido (modelo 0x{model_id:08X}): solo lectura"
+
+
+def pedal_unknown_reason() -> str:
+    return "Pedal no reconocido: solo lectura"

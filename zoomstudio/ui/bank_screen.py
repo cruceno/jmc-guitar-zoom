@@ -586,7 +586,7 @@ class BankMixin:
         if self._saving or self._bank_op is not None:
             return False
         if not self._can_write:
-            self._report_error(S.ERR_BANK_OFFLINE)
+            self._report_error(self.write_block_reason() or S.ERR_BANK_OFFLINE)
             return False
         if not self._patches_complete:
             self._report_error(S.ERR_BANK_LOADING)

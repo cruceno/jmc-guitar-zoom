@@ -125,3 +125,6 @@ QProgressBar#effectsMemory { min-height: 10px; max-height: 10px; border-radius: 
 QProgressBar#effectsMemory::chunk { border-radius: 4px; }
 QLabel[role="offline"] { color: $text_secondary; font-size: 15px; }
 QPushButton[danger="true"]:disabled { background: transparent; border: 1px dashed $border_strong; color: $text_disabled; }
+QLabel[role="notice"] {
+  color: $text_primary; background: $status_info_bg; border: 1px solid $status_info; border-radius: 12px; padding: 8px 14px;
+}

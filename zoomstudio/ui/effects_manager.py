@@ -283,6 +283,7 @@ class EffectsManager(GlassPanel):
         self._models: dict = {}
         self._pedal_id: int | None = None  # the pedal the install flow is for (connected, else the target)
         self._pedal_name = ""
+        self._write_block: str | None = None  # why nothing may be written to the connected pedal
         self._flst_bytes: bytes | None = None
         self._files: list[str] = []
 
@@ -597,6 +598,11 @@ class EffectsManager(GlassPanel):
         self._patches_complete, self._unsaved, self._users = complete, unsaved, users
         self._update_actions()
 
+    def set_write_block(self, reason: str | None) -> None:
+        """A pedal the app cannot edit yet: browse and read, but install, remove and repair stay off."""
+        self._write_block = reason
+        self._update_actions()
+
     def set_busy(self, busy: bool, text: str = "") -> None:
         self._busy = busy
         self._busy_text = text
@@ -818,6 +824,10 @@ class EffectsManager(GlassPanel):
                 reason = S.EFFECTS_IN_USE_SHORT
             else:
                 enabled, reason = True, S.EFFECTS_REMOVE_OK
+        if self._write_block and entry is not None and self._loaded and not self._busy:
+            enabled = False
+            if enabled is False and not (installing and not entry.installable):
+                reason = self._write_block  # a non compatible card keeps its own, more specific reason
         self.install_button.setEnabled(enabled and installing)
         self.remove_button.setEnabled(enabled and removing)
         self.repair_button.setEnabled(enabled and repairing)

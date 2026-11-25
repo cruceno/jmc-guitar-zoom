@@ -25,7 +25,7 @@ from zoomstudio.ui.widgets import ParamRow
 
 EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
 SIZES = [(1280, 760), (1440, 900), (1600, 1000)]
-STATES = ["two-pedals", "no-patch", "gt-geq-7", "effects-manager", "effects-all-pedals", "bank", "tuner", "offline"]
+STATES = ["two-pedals", "no-patch", "gt-geq-7", "effects-manager", "effects-all-pedals", "read-only-pedal", "bank", "tuner", "offline"]
 SQUEEZE_SLACK = 1
 
 
@@ -50,12 +50,17 @@ def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
         w.load_offline(FIXTURES / "backup")
         return w
     PedalFiles(BEFORE).install(monkeypatch)
-    transport = fake_pedal(PATCHES)
+    transport = fake_pedal(PATCHES, member=0x0C if state == "read-only-pedal" else 0x11)
     for _ in range(30):
         transport.on(sysex.pc_mode(True, 0x6E), S(HDR + b"\x00\x00"))
         transport.on(sysex.pc_mode(False, 0x6E), S(HDR + b"\x00\x00"))
         transport.on(sysex.pc_mode(True, 0x6E), S(HDR + b"\x00\x00"))
     registry = pedal_registry() if state == "effects-all-pedals" else None
+    if state == "read-only-pedal":  # a G1 FOUR: the banner shows and everything stays readable
+        from zoomstudio.effects.models import PedalModel
+
+        registry = {0x6E001100: PedalModel(0x6E001100, "A1 FOUR", frozenset(catalog)),
+                    0x6E000C00: PedalModel(0x6E000C00, "G1 FOUR", frozenset(list(catalog)[:5]))}
     w = MainWindow(catalog, transport_factory=lambda: transport, backup_dir=tmp_path, bank_dir=tmp_path / "bank",
                    models=registry)
     qtbot.addWidget(w)

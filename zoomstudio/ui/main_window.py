@@ -472,7 +472,12 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         rv = QVBoxLayout(root)
         rv.setContentsMargins(12, 10, 12, 8)
         rv.setSpacing(10)
+        self.pedal_notice = QLabel("")  # a calm banner for a pedal that is detected but not editable yet
+        self.pedal_notice.setProperty("role", "notice")
+        self.pedal_notice.setWordWrap(True)
+        self.pedal_notice.hide()
         rv.addWidget(header)
+        rv.addWidget(self.pedal_notice)
         rv.addWidget(splitter, stretch=1)
         rv.addWidget(self.tuner_panel, stretch=1)
         rv.addWidget(self.effects_panel, stretch=1)
@@ -534,7 +539,7 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         patch = self.current_patch
         self.open_file_button.setEnabled(self._location is not None and not self._saving)
         self.save_file_button.setEnabled(patch is not None)
-        self.live_check.setEnabled(self._is_connected)
+        self.live_check.setEnabled(self._can_write)
         self.tuner_button.setEnabled(self._is_connected and self._worker is not None and not self._saving
                                      and not self._effects_open and not self._bank_open)
         self.effects_toggle.setEnabled(not self._tuner_on and not self._saving and not self._effects_busy
@@ -632,6 +637,9 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         return autosave_dir() / "effects"
 
     def _on_effect_install(self, name: str, path) -> None:
+        if self.write_block_reason() is not None:  # a pedal the app cannot edit yet: reading only
+            self._report_error(self.write_block_reason())
+            return
         if self._worker is not None and self._is_connected:
             self._set_effects_busy(True, S.EFFECTS_BUSY_INSTALL)
             self._effects_repairing = False
@@ -643,12 +651,18 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.select_location(location)
 
     def _on_effect_repair(self, name: str, path) -> None:
+        if self.write_block_reason() is not None:  # a pedal the app cannot edit yet: reading only
+            self._report_error(self.write_block_reason())
+            return
         if self._worker is not None and self._is_connected:
             self._set_effects_busy(True, S.EFFECTS_BUSY_REPAIR)
             self._effects_repairing = True  # the worker reports a repair as an install: name it right
             self._effect_repair_requested.emit(name, path, self.effects_backup_dir)
 
     def _on_effect_remove(self, name: str) -> None:
+        if self.write_block_reason() is not None:  # a pedal the app cannot edit yet: reading only
+            self._report_error(self.write_block_reason())
+            return
         if self._worker is not None and self._is_connected:
             self._set_effects_busy(True, S.EFFECTS_BUSY_REMOVE)
             in_use = {file: [user[0] for user in patches] for file, patches in self.effects_usage().items()}
@@ -912,9 +926,11 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
             widget.style().polish(widget)
 
     def save_blockers(self) -> list[str]:
-        """Reasons the selected patch must not be written to the pedal (A1, A2, A3 and DSP checks)."""
+        """Reasons the selected patch must not be written to the pedal (the model, then A1, A2, A3 and DSP checks)."""
         patch = self.current_patch
-        return [] if patch is None else edit.save_blockers(patch, self.catalog, self.allowed_ids)
+        reasons = [] if patch is None else edit.save_blockers(patch, self.catalog, self.allowed_ids)
+        block = self.write_block_reason()
+        return ([block] if block else []) + reasons
 
     def dsp_percent(self) -> float:
         patch = self.current_patch
@@ -1354,17 +1370,41 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         return model.name if model is not None else ""
 
     def apply_pedal_identity(self, identity) -> None:
-        """Remember which pedal is connected; when the app supports it, it becomes the target."""
+        """Remember which pedal is connected. A model Guitar Lab lists becomes the target, supported or not, so the
+        lists and every text follow it; an unknown one leaves the last target. Only supported pedals are edited."""
         self.connected_model = model_id_from_identity(identity)
-        if self.connected_model in {mid for mid, _name in self._supported_pedals()}:
+        if self.connected_model in self.models:
             self._set_target(self.connected_model)
+        else:
+            self._sync_effects_pedals()
+        self._update_pedal_notice()
+
+    def _pedal_supported(self) -> bool:
+        return self.connected_model in pedal_models.SUPPORTED_MODELS
+
+    def write_block_reason(self) -> str | None:
+        """Why nothing may be written to the connected pedal (None: it is a supported model, or none is connected)."""
+        if self.connected_model is None or self._pedal_supported():
+            return None
+        known = self.models.get(self.connected_model)
+        return S.pedal_readonly_reason(known.name) if known is not None else S.pedal_unknown_reason()
+
+    def _update_pedal_notice(self) -> None:
+        reason = self.write_block_reason()
+        known = self.models.get(self.connected_model) if self.connected_model is not None else None
+        text = "" if reason is None else (S.pedal_readonly_banner(known.name) if known is not None
+                                          else S.pedal_unknown_banner(self.connected_model))
+        self.pedal_notice.setText(text)
+        self.pedal_notice.setVisible(bool(text))
+        self.effects_panel.set_write_block(reason)
 
     def _set_target(self, model_id: int) -> None:
         """Make ``model_id`` the pedal the editor targets: the catalog shows only what it runs; remembered."""
         if model_id != self.target_model:
             self.target_model = model_id
             self.allowed_ids = self._ids_for(model_id)
-            self.target_store.set_target(model_id)
+            if model_id in pedal_models.SUPPORTED_MODELS:
+                self.target_store.set_target(model_id)  # only a pedal the app can edit is worth remembering
             if self._location is not None:
                 self._show_patch(self._location, keep=True)  # which effects the pedal cannot run changed
         self.catalog_panel.set_pedal(self.allowed_ids, self._target_name(), self.target_model)
@@ -1382,7 +1422,8 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self._is_connected = True
         self._offline_dir = None
         self._patch_count = info.count
-        model = MODEL_NAMES.get(identity.model, S.unknown_model(identity.model))
+        known = self.models.get(model_id_from_identity(identity))
+        model = known.name if known is not None else MODEL_NAMES.get(identity.model, S.unknown_model(identity.model))
         firmware = bytes(identity.version).decode("ascii", "replace").strip("\x00 ")
         self._set_connection(S.connected(model), True)
         self.connection_label.setToolTip(S.firmware_tip(firmware or "?"))
@@ -1397,6 +1438,8 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.live_check.setChecked(False)
         self._set_connection(S.NOT_CONNECTED, False)
         self.connection_label.setToolTip("")
+        self.connected_model = None
+        self._update_pedal_notice()
         self._set_memory(None)
         if self._effects_open:
             self.effects_panel.set_offline()

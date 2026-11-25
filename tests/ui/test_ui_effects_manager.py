@@ -64,9 +64,9 @@ def catalog():
     return load_catalog(("pedal", FIXTURES / "catalog"), ("Guitar Lab", EFFECTS / "lib"))
 
 
-def connected_window(qtbot, monkeypatch, catalog, tmp_path, pedal_files: PedalFiles, a1_ids=None, **kw):
+def connected_window(qtbot, monkeypatch, catalog, tmp_path, pedal_files: PedalFiles, a1_ids=None, member=0x11, **kw):
     pedal_files.install(monkeypatch)
-    transport = fake_pedal(PATCHES)
+    transport = fake_pedal(PATCHES, member=member)
     for _ in range(30):  # every state read, install and removal runs in its own PC mode
         transport.on(sysex.pc_mode(True, 0x6E), S(HDR + b"\x00\x00"))
         transport.on(sysex.pc_mode(False, 0x6E), S(HDR + b"\x00\x00"))

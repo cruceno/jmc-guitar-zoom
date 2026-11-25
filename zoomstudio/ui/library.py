@@ -149,8 +149,13 @@ class LibraryMixin:
         return ConfirmDialog.ask(self, title, text, S.CONFIRM)
 
     @property
-    def _can_write(self) -> bool:
+    def _can_read(self) -> bool:
         return self._is_connected and self._worker is not None
+
+    @property
+    def _can_write(self) -> bool:
+        """Connected, and the pedal is one the app can edit (any other model is read only)."""
+        return self._can_read and self.write_block_reason() is None
 
     # ------------------------------------------------------- applying changes
 
@@ -332,7 +337,7 @@ class LibraryMixin:
         if self._saving:
             return
         if not self._can_write:
-            self._report_error(S.ERR_CONNECT_TO_WRITE)
+            self._report_error(self.write_block_reason() or S.ERR_CONNECT_TO_WRITE)
             return
         dirty = {loc: copy.deepcopy(self._patches[loc]) for loc in sorted(self._stacks)
                  if self.is_dirty(loc) and loc in self._patches}
@@ -350,7 +355,7 @@ class LibraryMixin:
     # ------------------------------------------------------------ backup all
 
     def backup_all(self, with_files: bool = False, stamp: str | None = None) -> None:
-        if not self._can_write:
+        if not self._can_read:  # a backup only reads: it works on any pedal
             self._report_error(S.ERR_CONNECT_TO_BACKUP)
             return
         if self._saving:
