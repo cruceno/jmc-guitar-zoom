@@ -54,6 +54,23 @@ Only the A1 FOUR has been tested. The write paths are deliberately blocked for e
 
 ## Install
 
+### Download
+
+Each version is published on the [Releases page](https://github.com/cruceno/jmc-guitar-zoom/releases):
+
+- **Linux:** `JMC_Guitar_Zoom-<version>-x86_64.AppImage`, one file that needs no installation. Make it executable
+  (`chmod +x JMC_Guitar_Zoom-*.AppImage`, or the file's Properties > Permissions) and open it. If it does not start
+  because your system lacks FUSE, run it with `--appimage-extract-and-run`.
+- **Windows:** `JMC_Guitar_Zoom-<version>-Setup.exe`. It installs for your user only, needs no administrator rights,
+  and adds a Start-menu shortcut and an uninstaller. The installer is not code-signed, so the first time Windows
+  SmartScreen shows "Windows protected your PC": choose **More info** > **Run anyway**.
+
+The packaged app keeps its data (backups, the patch bank, the effect library) in `~/.local/share/JMC Guitar Zoom`
+on Linux and `%APPDATA%\JMC Guitar Zoom` on Windows. It reads Guitar Lab's effect cache, when there is one, from
+`%APPDATA%\GL` on Windows or from a Wine or Bottles prefix on Linux, and never writes there.
+
+### From source
+
 You need Python 3.12 or 3.13 and [uv](https://docs.astral.sh/uv/).
 
 ```sh
@@ -69,8 +86,8 @@ Biblioteca > "Actualizar biblioteca de efectos…") to download the effects for 
 
 Useful options: `--no-connect` (do not talk to the pedal), `--offline DIR` (open a folder of `NNN.zptc` backups).
 
-Data (autosave backups, the patch bank, the effect library) is kept in folders **next to the repository folder**
-(`../patches`, `../library`), not inside it.
+Run from source, the app keeps its data (autosave backups, the patch bank, the effect library) in folders **next to
+the repository folder** (`../patches`, `../library`), not inside it, and also reads `../guitarlab/GL`.
 
 ### Linux and MIDI
 

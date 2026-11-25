@@ -35,8 +35,23 @@ def _dist_file(dist, wanted):
     raise SystemExit(f"{wanted} not found in the installed {dist} distribution")
 
 
+def _python_licence():
+    """CPython's own licence (PSF), from the interpreter the bundle embeds; its folder differs per platform."""
+    base = Path(sys.base_prefix)
+    candidates = [base / "LICENSE.txt", base / "Lib" / "LICENSE.txt",
+                  base / "lib" / f"python{sys.version_info[0]}.{sys.version_info[1]}" / "LICENSE.txt"]
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    raise SystemExit(f"CPython's LICENSE.txt not found under {base}")
+
+
 datas += [
+    (_python_licence(), "licenses/python"),  # the embedded CPython interpreter (PSF License)
     (_dist_file("python-rtmidi", "LICENSE.md"), "licenses/python-rtmidi"),  # python-rtmidi / RtMidi (MIT)
+    (_dist_file("mido", "LICENSE"), "licenses/mido"),  # mido (MIT)
+    (_dist_file("construct", "LICENSE"), "licenses/construct"),  # construct (MIT)
+    (_dist_file("crcmod", "LICENSE"), "licenses/crcmod"),  # crcmod (MIT)
     (_dist_file("pyinstaller", "COPYING.txt"), "licenses/pyinstaller"),  # PyInstaller bootloader (GPLv2 + exception)
 ]
 

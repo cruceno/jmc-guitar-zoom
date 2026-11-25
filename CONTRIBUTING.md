@@ -12,6 +12,27 @@ QT_QPA_PLATFORM=offscreen uv run pytest
 The suite runs offscreen and without a pedal. To also run the tests that compare the synthetic fixtures with Zoom's
 real files, download them once with `uv run python scripts/fetch_test_fixtures.py` (they are skipped otherwise).
 
+## Build the packages
+
+```sh
+uv sync --group build
+bash packaging/linux/build_appimage.sh          # Linux: dist/JMC_Guitar_Zoom-<version>-x86_64.AppImage
+QT_QPA_PLATFORM=offscreen ./dist/JMC_Guitar_Zoom-*-x86_64.AppImage --self-check
+```
+
+On Windows, `uv run pyinstaller --noconfirm packaging/jmc-guitar-zoom.spec` builds `dist\jmc-guitar-zoom\`, and
+Inno Setup 6 (`ISCC /DAppVersion=<version> packaging\windows\jmc-guitar-zoom.iss`) turns it into the installer.
+The hidden `--self-check [PATH]` option prints (and writes to PATH) the version, the data folder, the fonts, the MIDI
+ports and the Guitar Lab folder, and exits non-zero when Qt or the MIDI backend did not load.
+
+## Make a release
+
+1. Set the new version in `pyproject.toml` and `jmc_guitar_zoom/__init__.py` (a test checks they match).
+2. Commit, then tag and push the tag: `git tag v0.2.0 && git push origin v0.2.0`.
+3. The `release` workflow runs the tests on Linux and Windows, checks the tag against the version, builds the
+   AppImage and the installer, and publishes a GitHub Release with both (a prerelease when the tag has a `-`, such
+   as `v0.2.0-rc1`). Pull requests and manual runs build the same packages as workflow artifacts only.
+
 ## Safety rules
 
 - **Tests never write to a pedal and never open a MIDI port.** Use `FakeTransport` and the in-memory pedal file

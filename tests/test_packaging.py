@@ -115,3 +115,16 @@ def test_appimagetool_is_pinned_with_a_sha256():
 def test_the_tag_check_compares_against_the_app_version():
     assert "jmc_guitar_zoom.__version__" in WORKFLOW
     assert __version__ in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+
+def test_every_bundled_runtime_dependency_carries_its_licence_text():
+    # MIT and LGPL ask for the notice to travel with the binaries: one licence entry per runtime dependency
+    import tomllib
+
+    deps = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["dependencies"]
+    names = [re.split(r"[<>=!~ \[]", d, maxsplit=1)[0] for d in deps]
+    for name in names:
+        if name.lower() == "pyside6":
+            assert "LGPL-3.0.txt" in SPEC  # the PySide6 wheels ship no licence file
+        else:
+            assert f'_dist_file("{name}"' in SPEC, name

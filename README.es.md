@@ -58,6 +58,25 @@ Solo se ha probado la A1 FOUR. La escritura está bloqueada a propósito para cu
 
 ## Instalación
 
+### Descarga
+
+Cada versión se publica en la [página de Releases](https://github.com/cruceno/jmc-guitar-zoom/releases):
+
+- **Linux:** `JMC_Guitar_Zoom-<versión>-x86_64.AppImage`, un solo archivo que no requiere instalación. Márquelo
+  como ejecutable (`chmod +x JMC_Guitar_Zoom-*.AppImage`, o Propiedades > Permisos en el administrador de archivos) y
+  ábralo. Si no arranca porque el sistema no tiene FUSE, ejecútelo con `--appimage-extract-and-run`.
+- **Windows:** `JMC_Guitar_Zoom-<versión>-Setup.exe`. Se instala solo para su usuario, sin permisos de
+  administrador, y agrega un acceso directo en el menú Inicio y un desinstalador. El instalador no tiene firma
+  digital, así que la primera vez Windows SmartScreen muestra «Windows protegió su PC»: elija **Más información** >
+  **Ejecutar de todas formas**.
+
+La aplicación instalada guarda sus datos (copias, banco de patches, biblioteca de efectos) en
+`~/.local/share/JMC Guitar Zoom` en Linux y en `%APPDATA%\JMC Guitar Zoom` en Windows. Lee la caché de efectos de
+Guitar Lab, si existe, desde `%APPDATA%\GL` en Windows o desde un prefijo de Wine o Bottles en Linux, y nunca
+escribe allí.
+
+### Desde el código fuente
+
 Necesita Python 3.12 o 3.13 y [uv](https://docs.astral.sh/uv/).
 
 ```sh
@@ -74,8 +93,9 @@ carpetas con archivos `.zd2` mediante `--catalog [ETIQUETA=]CARPETA`.
 Opciones útiles: `--no-connect` (no conectar con la pedalera) y `--offline CARPETA` (abrir una carpeta de copias
 `NNN.zptc`).
 
-Los datos (copias automáticas, banco de patches, biblioteca de efectos) se guardan en carpetas **junto a la carpeta
-del repositorio** (`../patches`, `../library`), no dentro de ella.
+Desde el código fuente, los datos (copias automáticas, banco de patches, biblioteca de efectos) se guardan en
+carpetas **junto a la carpeta del repositorio** (`../patches`, `../library`), no dentro de ella, y también se lee
+`../guitarlab/GL`.
 
 ### Linux y MIDI
 

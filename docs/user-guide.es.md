@@ -1,7 +1,9 @@
 # Guía de usuario de JMC Guitar Zoom
 
 JMC Guitar Zoom es un editor no oficial para la pedalera **Zoom A1 FOUR** (no afiliado a Zoom Corporation). Esta
-guía recorre cada pantalla y función. Para instalar la aplicación, véase el [README](../README.es.md).
+guía recorre cada pantalla y función. Para instalar la aplicación (AppImage en Linux, instalador en Windows), véase
+el [README](../README.es.md). La aplicación instalada guarda copias, banco y biblioteca en
+`~/.local/share/JMC Guitar Zoom` (Linux) o `%APPDATA%\JMC Guitar Zoom` (Windows).
 
 > **Antes de empezar:** haga una copia de seguridad de todos los patches (menú Biblioteca) y cierre Guitar Lab u
 > otros programas que usen el puerto MIDI de la pedalera.
