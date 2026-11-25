@@ -747,9 +747,9 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         """Where the effect list is backed up before it changes."""
         if self.backup_dir is not None:
             return self.backup_dir / "effects"
-        from jmc_guitar_zoom.__main__ import autosave_dir
+        from jmc_guitar_zoom import paths
 
-        return autosave_dir() / "effects"
+        return paths.data_root() / "patches" / "autosave" / "effects"
 
     def _on_effect_install(self, name: str, path) -> None:
         if self.write_block_reason() is not None:  # a pedal the app cannot edit yet: reading only

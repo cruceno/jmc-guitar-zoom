@@ -1,0 +1,33 @@
+import mido
+import pytest
+
+from jmc_guitar_zoom import __version__
+from jmc_guitar_zoom.__main__ import build_parser, main
+
+
+def test_self_check_prints_the_report_and_exits_zero(monkeypatch, capsys):
+    monkeypatch.setattr(mido, "get_output_names", lambda: ["Zoom A1 FOUR MIDI 1"])
+    assert main(["--self-check"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == f"jmc-guitar-zoom {__version__}"
+    assert out[1].startswith("data folder: ")
+    assert int(out[2].rsplit(": ", 1)[1]) >= 1
+    assert out[3] == "MIDI outputs: Zoom A1 FOUR MIDI 1"
+    assert out[4].startswith("Guitar Lab: ")
+
+
+def test_self_check_fails_with_an_error_line_when_midi_does_not_load(monkeypatch, capsys):
+    def boom():
+        raise ImportError("no rtmidi")
+
+    monkeypatch.setattr(mido, "get_output_names", boom)
+    assert main(["--self-check"]) == 1
+    captured = capsys.readouterr()
+    assert "self-check failed" in captured.err and "no rtmidi" in captured.err
+    assert captured.out == ""
+
+
+def test_self_check_flag_is_hidden_from_help(capsys):
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["--help"])
+    assert "--self-check" not in capsys.readouterr().out

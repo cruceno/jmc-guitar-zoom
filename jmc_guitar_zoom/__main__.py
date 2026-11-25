@@ -6,6 +6,8 @@ import argparse
 import sys
 from pathlib import Path
 
+from jmc_guitar_zoom import __version__, paths
+
 PEDAL_LABEL = "pedal"
 GUITARLAB_LABEL = "Guitar Lab"
 LIBRARY_LABEL = "Biblioteca"  # the app's own effects, downloaded from Zoom's channel
@@ -15,17 +17,17 @@ A1_LIST = Path("cache") / LIST_NAME
 
 def workspace_root() -> Path:
     """The folder that holds the jmc-guitar-zoom repo and its sibling data folders."""
-    return Path(__file__).resolve().parents[2]
+    return paths.source_root()
 
 
 def library_dir(root: Path | None = None) -> Path:
     """The app's own effect library: the effects and lists the updater downloads (never Guitar Lab's folder)."""
-    return (root or workspace_root()) / "library" / "effects"
+    return (root or paths.data_root()) / "library" / "effects"
 
 
 def autosave_dir(root: Path | None = None) -> Path:
     """Where SAVE stores the pedal's previous content of a slot before overwriting it."""
-    return (root or workspace_root()) / "patches" / "autosave"
+    return (root or paths.data_root()) / "patches" / "autosave"
 
 
 def offerable_effect_ids(catalog: dict, a1_ids: set[int] | None, installed_label: str = PEDAL_LABEL) -> set[int] | None:
@@ -39,7 +41,8 @@ def offerable_effect_ids(catalog: dict, a1_ids: set[int] | None, installed_label
 
 
 def default_catalogs(root: Path | None = None) -> list[tuple[str, Path]]:
-    root = root or workspace_root()
+    explicit_root = root is not None
+    root = root or paths.data_root()
     found: list[tuple[str, Path]] = []
     pedal = sorted((root / "patches").glob("pedal-files-*"))
     if pedal:
@@ -47,8 +50,9 @@ def default_catalogs(root: Path | None = None) -> list[tuple[str, Path]]:
     library = library_dir(root)
     if library.is_dir() and any(p.suffix.lower() == ".zd2" for p in library.iterdir()):
         found.append((LIBRARY_LABEL, library))  # before Guitar Lab: the newest version wins either way
-    gl = root / "guitarlab" / "GL"
-    if gl.is_dir():
+    # An explicit root (tests, tools) looks only at its own guitarlab/GL; the default also searches Wine/Bottles.
+    gl = root / "guitarlab" / "GL" if explicit_root else paths.guitarlab_dir()
+    if gl is not None and gl.is_dir():
         found.append((GUITARLAB_LABEL, gl))
     return found
 
@@ -56,7 +60,7 @@ def default_catalogs(root: Path | None = None) -> list[tuple[str, Path]]:
 def catalog_sources(explicit: list[tuple[str, Path]] | None = None, root: Path | None = None) -> list[tuple[str, Path]]:
     """The catalog folders in use now: the ``--catalog`` ones or the defaults, with the app library first when the
     command line named folders (the defaults already include it). Read again after a download."""
-    root = root or workspace_root()
+    root = root or paths.data_root()
     found = list(explicit) if explicit else default_catalogs(root)
     library = library_dir(root)
     if explicit and library.is_dir() and any(p.suffix.lower() == ".zd2" for p in library.iterdir()):
@@ -107,12 +111,41 @@ def build_parser() -> argparse.ArgumentParser:
                         "guitarlab/GL next to the repository")
     p.add_argument("--offline", metavar="DIR", help="open a backup folder of NNN.zptc files instead of connecting")
     p.add_argument("--no-connect", action="store_true", help="do not connect to the pedal at start-up")
+    p.add_argument("--self-check", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--screenshot", metavar="PATH", help=argparse.SUPPRESS)
     return p
 
 
+def self_check() -> int:
+    """Prove Qt, the bundled fonts and the MIDI backend load; opens no window and no port."""
+    try:
+        from PySide6.QtWidgets import QApplication
+
+        paths.set_app_names()
+        app = QApplication.instance() or QApplication(sys.argv[:1])
+        from jmc_guitar_zoom.ui.fonts import register_fonts
+
+        fonts = register_fonts()
+        import mido
+
+        ports = mido.get_output_names()
+        gl = paths.guitarlab_dir()
+        print(f"jmc-guitar-zoom {__version__}")
+        print(f"data folder: {paths.data_root()}")
+        print(f"fonts registered: {len(fonts)}")
+        print(f"MIDI outputs: {', '.join(ports) if ports else 'none'}")
+        print(f"Guitar Lab: {gl if gl else 'none'}")
+        del app
+        return 0
+    except Exception as exc:  # noqa: BLE001 - any load failure must be reported as a failed check
+        print(f"self-check failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.self_check:
+        return self_check()
 
     from PySide6.QtWidgets import QApplication
 
@@ -138,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
 
     updater = LibraryUpdater(library, extra_dirs=[f for label, f in catalogs if label != LIBRARY_LABEL])
 
+    paths.set_app_names()
     app = QApplication(sys.argv[:1])
     from jmc_guitar_zoom.ui import gc_guard
 
@@ -155,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
 
     window = MainWindow(catalog, models=registry, extra_ids=pedal_ids, transport_factory=MidoTransport.open,
                         installed_label=PEDAL_LABEL, backup_dir=autosave_dir(),
-                        library_dir=workspace_root() / "patches", updater=updater, reload_sources=reload_sources)
+                        library_dir=paths.data_root() / "patches", updater=updater, reload_sources=reload_sources)
     if not catalogs:
         window.statusBar().showMessage("No se encontró un catálogo de efectos: indique --catalog DIR")
     if args.offline:

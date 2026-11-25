@@ -39,9 +39,9 @@ class BankEntry:
 
 
 def default_dir() -> Path:
-    from jmc_guitar_zoom.__main__ import workspace_root  # late: the entry point imports the UI
+    from jmc_guitar_zoom import paths
 
-    return workspace_root() / "patches" / "bank"
+    return paths.data_root() / "patches" / "bank"
 
 
 def write_exclusive(path: Path, data: bytes) -> None:
