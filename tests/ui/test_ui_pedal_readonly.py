@@ -117,3 +117,20 @@ def test_the_a1_four_is_unchanged_and_writable(qtbot, monkeypatch, catalog, tmp_
     screen.select_effect("MDL_12ST.ZD2")
     assert screen.install_button.isEnabled()
     assert "A1 FOUR (conectada)" == screen.pedal_combo.itemText(0)
+
+
+def test_live_sends_nothing_to_a_read_only_pedal_even_with_the_switch_forced_on(qtbot, monkeypatch, catalog, tmp_path, registry):
+    """The switch is disabled and a disconnect unchecks it, but the two live send paths must not rely on that."""
+    w, _files = connect(qtbot, monkeypatch, catalog, tmp_path, registry, 0x0C)
+    assert w.write_block_reason() is not None
+    sent = w._worker._transport.sent
+    w.select_location(2)
+    w.live_check.setChecked(True)  # forced: the UI cannot reach this
+    w._live_location = w._location
+    qtbot.wait(100)
+    start = len(sent)
+    w.set_param(0, 0, 1)  # an edit: its live send is gated
+    w._live_send(0, 0, 1)
+    w.discard_changes()  # the Live branch of the discard restores the pedal's edit buffer: gated too
+    qtbot.wait(200)
+    assert not any(hasattr(m, "data") and b"\x64\x03" in bytes(m.data)[:6] for m in sent[start:])  # no set_param
