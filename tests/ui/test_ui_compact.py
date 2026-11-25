@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (QAbstractScrollArea, QLabel, QScrollBar, QSizePol
 from test_ui_effects_manager import AFTER, BEFORE, PATCHES, PedalFiles, pedal_registry
 from test_ui_clipping import SLACK, clipped, themed  # noqa: F401 (themed is a fixture)
 from ui_replies import FIXTURES, HDR, S, fake_pedal
+from update_support import UPDATE_STATES, update_state
 from zoomstudio.device import sysex
 from zoomstudio.effects.catalog import load_catalog
 from zoomstudio.ui.main_window import MainWindow
@@ -25,7 +26,7 @@ from zoomstudio.ui.widgets import ParamRow
 
 EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
 SIZES = [(1280, 760), (1440, 900), (1600, 1000)]
-STATES = ["two-pedals", "no-patch", "gt-geq-7", "effects-manager", "effects-all-pedals", "read-only-pedal", "bank", "tuner", "offline"]
+STATES = ["two-pedals", "no-patch", "gt-geq-7", "effects-manager", "effects-all-pedals", "read-only-pedal", "bank", "tuner", "offline", *UPDATE_STATES]
 SQUEEZE_SLACK = 1
 
 
@@ -35,6 +36,8 @@ def catalog():
 
 
 def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
+    if state.startswith("update-"):  # the effect-library update flow (a private library, a fake channel)
+        return update_state(qtbot, tmp_path, catalog, state)
     if state == "two-pedals":  # the pedal selector of the catalog shows when more than one pedal is supported
         from zoomstudio.effects import models as pedal_models
 

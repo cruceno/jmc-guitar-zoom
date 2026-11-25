@@ -231,6 +231,7 @@ class EffectsManager(GlassPanel):
     patch_requested = Signal(int)  # a patch card of «Usado en»: location to open in the editor
     repair_requested = Signal(str, object)  # pedal file name, local .zd2 path: upload only the missing file
     close_requested = Signal()
+    update_requested = Signal()  # «Actualizar biblioteca…»: open the effect-library update view
 
     def __init__(self, root: BackdropRoot, catalog: dict[int, EffectInfo], allowed_ids: set[int] | None,
                  favorites: FavoritesStore | None = None) -> None:
@@ -253,6 +254,11 @@ class EffectsManager(GlassPanel):
         self.close_button = QPushButton(S.EFFECTS_CLOSE)
         self.close_button.setIcon(icon("x"))
         self.close_button.clicked.connect(self.close_requested)
+        self.update_button = QPushButton(S.UPDATE_BUTTON)
+        self.update_button.setIcon(icon("reload"))
+        self.update_button.setToolTip(S.UPDATE_BUTTON_TIP)
+        self.update_button.clicked.connect(self.update_requested)
+        self.update_button.hide()
         self.memory_bar = QProgressBar()
         self.memory_bar.setObjectName("effectsMemory")
         self.memory_bar.setRange(0, 100)
@@ -371,6 +377,7 @@ class EffectsManager(GlassPanel):
         title = QHBoxLayout()
         title.addWidget(SectionLabel(S.EFFECTS_TITLE))
         title.addStretch(1)
+        title.addWidget(self.update_button)
         title.addWidget(self.close_button)
         memory = QHBoxLayout()
         memory.setSpacing(12)
@@ -603,12 +610,17 @@ class EffectsManager(GlassPanel):
         self._write_block = reason
         self._update_actions()
 
+    def set_update_available(self, available: bool) -> None:
+        """The window has an updater: show the «Actualizar biblioteca…» button."""
+        self.update_button.setVisible(available)
+
     def set_busy(self, busy: bool, text: str = "") -> None:
         self._busy = busy
         self._busy_text = text
         self.search.setEnabled(not busy)
         self.group_combo.setEnabled(not busy)
         self.close_button.setEnabled(not busy)
+        self.update_button.setEnabled(not busy)
         self.installed_list.setEnabled(not busy)
         self.available_list.setEnabled(not busy)
         self._update_actions()

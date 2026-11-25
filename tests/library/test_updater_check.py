@@ -138,3 +138,21 @@ def test_the_default_local_state_is_read_from_the_library_and_extra_folders(tmp_
     result = up.check(model_id=0x6E001100)
     assert [u.effect_id for u in result.new] == [0x2000054]
     assert sorted(u.effect_id for u in result.current) == [0x1000010, 0x9000030]
+
+
+def test_every_models_firmware_is_listed_so_a_later_connection_can_compare(tmp_path):
+    up, _ = make(tmp_path, standard_routes(versions={A1: "1.02", G5N: "3.00"}))
+    assert up.check(model_id=0x6E001100, local={}).firmware_versions == {0x6E001100: "1.02", 0x6E000000: "3.00"}
+
+
+def test_the_update_flag_of_the_channel_makes_the_firmware_an_update_even_at_the_same_version(tmp_path):
+    flagged, _ = make(tmp_path, standard_routes(versions={A1: ("1.01", True)}))
+    status = flagged.check(model_id=0x6E001100, firmware="1.01", local={}).firmware
+    assert (status.remote, status.newer, status.update) == ("1.01", True, True)
+
+
+def test_the_same_version_without_the_update_flag_is_not_an_update(tmp_path):
+    same, _ = make(tmp_path, standard_routes(versions={A1: ("1.01", False)}))
+    status = same.check(model_id=0x6E001100, firmware="1.01", local={}).firmware
+    assert (status.newer, status.update) == (False, False)
+    assert same.check(model_id=0x6E001100, firmware="1.01", local={}).firmware_updates == set()

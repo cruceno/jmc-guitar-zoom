@@ -53,6 +53,17 @@ def default_catalogs(root: Path | None = None) -> list[tuple[str, Path]]:
     return found
 
 
+def catalog_sources(explicit: list[tuple[str, Path]] | None = None, root: Path | None = None) -> list[tuple[str, Path]]:
+    """The catalog folders in use now: the ``--catalog`` ones or the defaults, with the app library first when the
+    command line named folders (the defaults already include it). Read again after a download."""
+    root = root or workspace_root()
+    found = list(explicit) if explicit else default_catalogs(root)
+    library = library_dir(root)
+    if explicit and library.is_dir() and any(p.suffix.lower() == ".zd2" for p in library.iterdir()):
+        found.insert(0, (LIBRARY_LABEL, library))
+    return [(label, folder) for label, folder in found if folder.is_dir()]
+
+
 def parse_catalog_arg(value: str) -> tuple[str, Path]:
     """``DIR`` or ``LABEL=DIR``; a bare DIR is labelled with its folder name."""
     label, sep, folder = value.partition("=")
@@ -96,12 +107,23 @@ def main(argv: list[str] | None = None) -> int:
     from zoomstudio.ui.fonts import install_spanish, register_fonts
     from zoomstudio.ui.theme import apply_dark_theme
 
-    catalogs = [parse_catalog_arg(c) for c in args.catalog] or default_catalogs()
-    catalogs = [(label, folder) for label, folder in catalogs if folder.is_dir()]
+    from zoomstudio.library.updater import LibraryUpdater
+
+    explicit = [parse_catalog_arg(c) for c in args.catalog]
+    library = library_dir()
+    catalogs = catalog_sources(explicit)
     catalog = load_catalog(*catalogs) if catalogs else {}
-    a1_list = find_a1_list(catalogs)
+    a1_list = find_a1_list(catalogs, library)
     registry = load_models(a1_list) if a1_list else {}
     pedal_ids = {i for i, e in catalog.items() if PEDAL_LABEL in e.sources}  # the pedal ships some the list omits
+
+    def reload_sources():
+        """Catalog and model list after the updater saved new files (runs on the updater's thread: no widgets)."""
+        sources = catalog_sources(explicit)
+        saved = find_a1_list(sources, library)
+        return (load_catalog(*sources) if sources else {}), (load_models(saved) if saved else {})
+
+    updater = LibraryUpdater(library, extra_dirs=[f for label, f in catalogs if label != LIBRARY_LABEL])
 
     app = QApplication(sys.argv[:1])
     app.setApplicationName("Zoom Studio")
@@ -111,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
 
     window = MainWindow(catalog, models=registry, extra_ids=pedal_ids, transport_factory=MidoTransport.open,
                         installed_label=PEDAL_LABEL, backup_dir=autosave_dir(),
-                        library_dir=workspace_root() / "patches")
+                        library_dir=workspace_root() / "patches", updater=updater, reload_sources=reload_sources)
     if not catalogs:
         window.statusBar().showMessage("No se encontró un catálogo de efectos: indique --catalog DIR")
     if args.offline:
@@ -124,6 +146,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if not args.offline and not args.no_connect:
         window.start_connect()
+    window.start_update_check()  # at most once a day, only when online, quiet when it fails
     return app.exec()
 
 

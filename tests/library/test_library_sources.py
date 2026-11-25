@@ -91,3 +91,14 @@ def test_a_bumped_copy_is_a_valid_newer_effect(tmp_path):
     path = tmp_path / "c.zd2"
     path.write_bytes(newer_comp())
     assert load_zd2(path).version == "1.50"
+
+
+def test_catalog_sources_follow_the_defaults_and_add_the_library_to_explicit_folders(tmp_path):
+    gl, lib = workspace(tmp_path)
+    assert entry.catalog_sources(None, tmp_path) == [("Biblioteca", lib), ("Guitar Lab", gl)]
+    mine = tmp_path / "mine"
+    mine.mkdir()
+    assert entry.catalog_sources([("mine", mine)], tmp_path) == [("Biblioteca", lib), ("mine", mine)]
+    (lib / "COMP_150.zd2").unlink()
+    assert entry.catalog_sources([("mine", mine)], tmp_path) == [("mine", mine)]  # an empty library changes nothing
+    assert entry.catalog_sources([("gone", tmp_path / "gone")], tmp_path) == []

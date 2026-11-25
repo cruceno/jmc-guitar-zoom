@@ -979,3 +979,121 @@ def pedal_unknown_banner(model_id: int) -> str:
 
 def pedal_unknown_reason() -> str:
     return "Pedal no reconocido: solo lectura"
+
+
+# ---- effect library updates (Zoom's Guitar Lab channel)
+LIBRARY_UPDATE = "Actualizar biblioteca de efectos…"
+UPDATE_BUTTON = "Actualizar biblioteca…"
+UPDATE_BUTTON_TIP = "Busca efectos nuevos o actualizados en el canal público de Zoom y los descarga a la biblioteca de la aplicación"
+UPDATE_TITLE = "Biblioteca de efectos"
+UPDATE_CLOSE = "Cerrar"
+UPDATE_ALL_MODELS = "Todos los modelos"
+UPDATE_ALL_MODELS_TIP = "Incluye los efectos de todos los modelos de pedalera que Zoom publica, no solo los del modelo elegido"
+UPDATE_CHECK = "Buscar de nuevo"
+UPDATE_CHECK_TIP = "Vuelve a consultar el canal de Zoom"
+UPDATE_NEW_TITLE = "Nuevos"
+UPDATE_UPDATED_TITLE = "Actualizados"
+UPDATE_NEW_LIST = "Efectos nuevos"
+UPDATE_UPDATED_LIST = "Efectos con una versión más reciente"
+UPDATE_CHECKING = "Consultando el canal de Zoom…"
+UPDATE_UP_TO_DATE = "La biblioteca de efectos está al día."
+UPDATE_NO_NEW = "No hay efectos nuevos."
+UPDATE_NO_UPDATED = "No hay efectos con una versión más reciente."
+UPDATE_ERROR_OFFLINE = ("No se pudo consultar el canal de Zoom. Compruebe la conexión a internet y vuelva a "
+                        "intentarlo; la biblioteca actual no se ha tocado.")
+UPDATE_DOWNLOAD = "Descargar"
+UPDATE_DOWNLOAD_TIP = "Descarga los efectos de las listas y los guarda en la biblioteca de la aplicación"
+UPDATE_CANCEL = "Cancelar"
+UPDATE_CANCEL_TIP = "Detiene la descarga después del efecto en curso; lo ya descargado se conserva"
+UPDATE_NOTICE_VIEW = "Ver"
+UPDATE_NOTICE_VIEW_TIP = "Abre la biblioteca de efectos para ver y descargar las novedades"
+UPDATE_NOTICE_DISMISS = "Descartar el aviso"
+UPDATE_SIZE_UNKNOWN = "Tamaño sin determinar"
+UPDATE_PROGRESS_LIST = "Progreso de la descarga"
+UPDATE_NEW_LIST_NAME = "Efectos nuevos disponibles"
+UPDATE_UPDATED_LIST_NAME = "Efectos con actualización disponible"
+UPDATE_SUMMARY_FAILED_LIST = "Efectos que no se pudieron descargar"
+
+UPDATE_REASONS = {
+    "bad_name": "el nombre del archivo no es válido",
+    "bad_version": "la versión indicada no es válida",
+    "network": "falló la descarga",
+    "too_large": "el archivo es más grande de lo permitido",
+    "bad_zip": "el archivo comprimido está dañado",
+    "no_zd2": "el archivo comprimido no contiene el efecto",
+    "many_zd2": "el archivo comprimido contiene más de un efecto",
+    "oversized": "el efecto pesa más de lo permitido",
+    "bad_zd2": "el archivo no es un efecto válido",
+    "id_mismatch": "el efecto descargado no es el que anuncia la lista",
+    "version_mismatch": "la versión descargada no es la que anuncia la lista",
+    "exists": "ya existe un archivo con ese nombre en la biblioteca",
+    "write_failed": "no se pudo escribir en la carpeta de la biblioteca",
+}
+
+
+def _plural(count: int, one: str, many: str) -> str:
+    return one if count == 1 else many
+
+
+def update_scope(pedal: str, all_models: bool) -> str:
+    return "Efectos de todos los modelos" if all_models or not pedal else f"Efectos para {pedal}"
+
+
+def update_count(count: int) -> str:
+    return _plural(count, "1 efecto", f"{count} efectos")
+
+
+def update_notice(count: int, pedal: str) -> str:
+    noun = _plural(count, "un efecto nuevo o actualizado", f"{count} efectos nuevos o actualizados")
+    return f"Hay {noun} para {pedal}" if pedal else f"Hay {noun}"
+
+
+def firmware_notice(remote: str, pedal: str, current: str | None) -> str:
+    own = f" (la pedalera tiene {current})" if current else ""
+    return (f"Zoom publica firmware {remote} para {pedal}{own}. "
+            "La actualización se hace con Guitar Lab o con el actualizador de Zoom en Windows o macOS.")
+
+
+def update_card_version(version: str, local: str | None) -> str:
+    return f"Versión {version}" if local is None else f"Versión {local} → {version}"
+
+
+def update_card_line(group: str, version: str, local: str | None, size: int | None) -> str:
+    parts = [group_label(group)] if group else []
+    parts.append(update_card_version(version, local))
+    if size is not None:
+        parts.append(f"{number(size / 1024)} KB")
+    return " · ".join(parts)
+
+
+def update_progress(done: int, total: int, name: str) -> str:
+    return f"Descargando {done + 1} de {total}: {name}"
+
+
+def update_summary(ok: int, failed: int, cancelled: bool) -> str:
+    parts = []
+    if ok:
+        parts.append(_plural(ok, "Se descargó 1 efecto", f"Se descargaron {ok} efectos"))
+    if failed:
+        parts.append(_plural(failed, "1 efecto no se pudo descargar", f"{failed} efectos no se pudieron descargar"))
+    if not parts:
+        parts.append("No se descargó ningún efecto")
+    text = "; ".join(parts) + "."
+    return text + (" La descarga se canceló." if cancelled else "")
+
+
+def update_failure(name: str, reason: str) -> str:
+    return f"{name}: {UPDATE_REASONS.get(reason, 'error desconocido')}"
+
+
+def update_more_failures(count: int) -> str:
+    return f"y {_plural(count, '1 más', f'{count} más')}"
+
+
+def update_reloaded(ok: int) -> str:
+    return _plural(ok, "Biblioteca actualizada: 1 efecto nuevo ya está en el catálogo",
+                   f"Biblioteca actualizada: {ok} efectos ya están en el catálogo")
+
+
+def update_library_folder(path: object) -> str:
+    return f"Se guardan en {path}"

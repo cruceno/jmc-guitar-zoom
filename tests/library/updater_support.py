@@ -28,7 +28,9 @@ def effects_lst(models: dict[str, list[dict]], garbage: bytes = GARBAGE) -> byte
 
 
 def versions_lst(versions: dict[str, str], garbage: bytes = GARBAGE) -> bytes:
-    doc = {"models": [{"modelId": mid, "modelVersion": v, "update": False} for mid, v in versions.items()]}
+    """``versions``: model id -> version, or (version, update flag)."""
+    pairs = {mid: (v if isinstance(v, tuple) else (v, False)) for mid, v in versions.items()}
+    doc = {"models": [{"modelId": mid, "modelVersion": v, "update": u} for mid, (v, u) in pairs.items()]}
     return json.dumps(doc).encode() + garbage
 
 

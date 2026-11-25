@@ -33,6 +33,7 @@ from .painted import ConnectionPill, DotLabel, KeyChipButton, LiveSwitch, Painte
 from .bank_screen import BankMixin, BankScreen
 from .library import LibraryMixin
 from .tuner import TunerPanel
+from .update_view import UpdateMixin
 from . import favorites as favorites_module
 from zoomstudio.effects import models as pedal_models
 from zoomstudio.effects.models import A1_FOUR, PedalModel, model_id_from_identity
@@ -123,7 +124,7 @@ class PatchEdit(QUndoCommand):
         self._window._store(self.location, self.before, self.sel_before)
 
 
-class MainWindow(BankMixin, LibraryMixin, QMainWindow):
+class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
     patches_loaded = Signal()  # a full read (pedal) or folder load finished
     error_shown = Signal(str)
     save_finished = Signal(bool)  # a SAVE to the pedal ended (True: verified by read-back)
@@ -140,13 +141,21 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
     _effect_install_requested = Signal(str, object, object)
     _effect_remove_requested = Signal(str, object, object)
     _effect_repair_requested = Signal(str, object, object)
+    _update_check_requested = Signal(object, bool, object, bool)  # model id, all models, firmware, background
+    _update_download_requested = Signal(object)
+    _update_checked_relay = Signal(object, str, bool, bool)  # the updater thread's results, delivered in this thread
+    _update_progress_relay = Signal(int, int, str)
+    _update_downloaded_relay = Signal(object, object, str)
+    update_checked = Signal()  # an effect-channel check ended (whatever its outcome)
+    update_downloaded = Signal()  # an effect download ended and the catalog was reloaded
 
     def __init__(self, catalog: dict[int, EffectInfo], a1_ids: set[int] | None = None,
                  transport_factory: TransportFactory | None = None, installed_label: str = "pedal",
                  pedal_timeout: float = 3.0, backup_dir: Path | None = None,
                  library_dir: Path | None = None, favorites: FavoritesStore | None = None,
                  bank_dir: Path | None = None, models: dict[int, PedalModel] | None = None,
-                 target_store: TargetStore | None = None, extra_ids: set[int] | None = None) -> None:
+                 target_store: TargetStore | None = None, extra_ids: set[int] | None = None,
+                 updater=None, reload_sources=None, update_store=None, online=None, update_clock=None) -> None:
         super().__init__()
         self.setWindowTitle("Zoom Studio")
         self.resize(1440, 900)
@@ -164,6 +173,7 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.backup_dir = Path(backup_dir) if backup_dir is not None else None
         self.library_dir = Path(library_dir) if library_dir is not None else None  # parent of backup-* folders
         self._init_library()
+        self._init_updates(updater, reload_sources, update_store, online, update_clock)
         self._init_bank(Path(bank_dir) if bank_dir is not None else None)
         self._patches: dict[int, Patch] = {}
         self._stacks: dict[int, QUndoStack] = {}
@@ -240,6 +250,9 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         # catalog's «Administrar» button, the Biblioteca menu entry and the screen's own «Cerrar»
         self.effects_toggle = QAction(S.EFFECTS_BUTTON, self)
         self.effects_toggle.setCheckable(True)
+        self.update_toggle = QAction(S.LIBRARY_UPDATE, self)  # the update view's open state (no button in the bar)
+        self.update_toggle.setCheckable(True)
+        self.update_toggle.toggled.connect(self._on_update_toggled)
         self.bank_button = self._icon_button("bank", S.BANK_TIP)  # icon only: the 1280 px header has no room for a word
         self.bank_button.setCheckable(True)
         self.bank_button.setAccessibleName(S.BANK_TITLE)
@@ -446,6 +459,8 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.effects_panel.hide()
         self.effects_panel.close_requested.connect(lambda: self.effects_toggle.setChecked(False))
         self.effects_panel.refresh_requested.connect(self._request_effects_state)
+        self.effects_panel.update_requested.connect(self.open_update_view)
+        self.effects_panel.set_update_available(self._updater is not None)
         self.effects_panel.install_requested.connect(self._on_effect_install)
         self.effects_panel.remove_requested.connect(self._on_effect_remove)
         self.effects_panel.repair_requested.connect(self._on_effect_repair)
@@ -458,6 +473,7 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.bank_panel.load_requested.connect(self.load_from_bank)
         self.bank_panel.rename_requested.connect(self.rename_entry)
         self.bank_panel.delete_requested.connect(self.delete_entry)
+        self.update_panel = self._build_update_panel(backdrop_root)
         self.header = header
         self._header_level = 0
         self._fitting_header = False
@@ -482,9 +498,11 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         rv.addWidget(self.tuner_panel, stretch=1)
         rv.addWidget(self.effects_panel, stretch=1)
         rv.addWidget(self.bank_panel, stretch=1)
+        rv.addWidget(self.update_panel, stretch=1)
         rv.addWidget(status_panel)
         self.setCentralWidget(root)
         self._build_library_ui()
+        self._build_update_ui()
         self.statusBar().showMessage(S.READY)
 
     def statusBar(self) -> QStatusBar:  # noqa: N802 (Qt API)
@@ -541,13 +559,17 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.save_file_button.setEnabled(patch is not None)
         self.live_check.setEnabled(self._can_write)
         self.tuner_button.setEnabled(self._is_connected and self._worker is not None and not self._saving
-                                     and not self._effects_open and not self._bank_open)
+                                     and not self._effects_open and not self._bank_open and not self._update_open)
         self.effects_toggle.setEnabled(not self._tuner_on and not self._saving and not self._effects_busy
-                                       and not self._bank_open)
+                                       and not self._bank_open and not self._update_open)
+        self.update_toggle.setEnabled(self._updater is not None and not self._tuner_on and not self._saving
+                                      and not self._effects_busy and not self._bank_open
+                                      and not self._update_busy)
+        self.update_action.setEnabled(self.update_toggle.isEnabled() and not self._update_open)
         self.bank_button.setVisible(not self._tuner_on)  # the tuner's «Salir del afinador» needs the room at 1440 px
         # the bank screen stays closable while its own write runs; it never opens over the tuner or the effects screen
         self.bank_button.setEnabled(not self._tuner_on and not self._effects_open and not self._effects_busy
-                                    and (self._bank_open or not self._saving))
+                                    and not self._update_open and (self._bank_open or not self._saving))
         self.effects_action.setEnabled(self.effects_toggle.isEnabled() and not self._effects_open)
         self.catalog_panel.manage_button.setEnabled(self.effects_action.isEnabled())
         blockers = self.save_blockers()
@@ -567,7 +589,8 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.save_button.setAccessibleName(S.save_button_name(shown))
         self.save_button.setAccessibleDescription(tip)
         self.dirty_label.setVisible(dirty)
-        can_discard = dirty and not self._saving and not (self._tuner_on or self._effects_open or self._bank_open)
+        can_discard = dirty and not self._saving and not (self._tuner_on or self._effects_open or self._bank_open
+                                                          or self._update_open)
         self.discard_button.setEnabled(can_discard)
         self.discard_action.setEnabled(can_discard)
         self.discard_button.setToolTip(S.discard_tooltip(DISCARD_SHORTCUT, "" if dirty else S.DISCARD_NOTHING))
@@ -575,7 +598,7 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.patches_caption.setText(S.patches_caption(in_use, self._display(1), self._display(self._patch_count)))
         self.centralWidget().update()
         self._update_library_actions()
-        if self._tuner_on or self._effects_open or self._bank_open:  # the tuner mutes the pedal; each screen owns the window
+        if self._tuner_on or self._effects_open or self._bank_open or self._update_open:  # the tuner mutes the pedal; each screen owns the window
             for w in (self.save_button, self.discard_button, self.open_file_button, self.save_file_button, self.live_check,
                       self.reload_button, self.connect_button, self.open_button):
                 w.setEnabled(False)
@@ -1410,6 +1433,29 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.catalog_panel.set_pedal(self.allowed_ids, self._target_name(), self.target_model)
         self._sync_effects_pedals()
 
+    def _apply_loaded_catalog(self, catalog: dict[int, EffectInfo], models: dict[int, PedalModel]) -> None:
+        """The library changed on disk: bring the catalog and the model list up to date in place, so every screen
+        that holds them (editor catalog, effects screen, chain) shows the new effects without a restart."""
+        self.catalog.clear()
+        self.catalog.update(catalog)
+        if models:
+            self.models = models
+        self.allowed_ids = self._ids_for(self.target_model)
+        combo = self.catalog_panel.group_combo  # the groups may have grown with the new effects
+        chosen = combo.currentData()
+        combo.blockSignals(True)
+        while combo.count() > 2:
+            combo.removeItem(2)
+        for group in sorted({e.group for e in self.catalog.values()}):
+            combo.addItem(S.group_label(group), group)
+        index = combo.findData(chosen) if chosen is not None else 0
+        combo.setCurrentIndex(max(index, 0))
+        combo.blockSignals(False)
+        self.catalog_panel.set_pedal(self.allowed_ids, self._target_name(), self.target_model)
+        self._sync_effects_pedals()
+        if self._location is not None:
+            self._show_patch(self._location, keep=True)  # chain tiles and problems depend on the catalog
+
     def _sync_effects_pedals(self) -> None:
         """The effects screen installs on the connected pedal (else the target); its filter names it."""
         pedal = self.connected_model if self.connected_model in self.models else self.target_model
@@ -1427,6 +1473,7 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         firmware = bytes(identity.version).decode("ascii", "replace").strip("\x00 ")
         self._set_connection(S.connected(model), True)
         self.connection_label.setToolTip(S.firmware_tip(firmware or "?"))
+        self._set_pedal_firmware(firmware)
         self._update_buttons()
         self._begin_pedal_read()
 
@@ -1439,6 +1486,7 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self._set_connection(S.NOT_CONNECTED, False)
         self.connection_label.setToolTip("")
         self.connected_model = None
+        self._set_pedal_firmware(None)
         self._update_pedal_notice()
         self._set_memory(None)
         if self._effects_open:
@@ -1542,6 +1590,7 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
                 event.ignore()
                 return
             self._closed = True
+            self._shutdown_updates()
             if self._worker is not None and self._thread is not None:
                 self._worker.cancel()
                 if self._thread.isRunning():

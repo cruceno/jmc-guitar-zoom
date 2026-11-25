@@ -163,12 +163,17 @@ def _parse_effects(data: bytes) -> tuple[dict[int, list[RemoteEffect]], int]:
 
 def parse_version_list(data: bytes) -> dict[int, str]:
     """Model id -> the firmware version Zoom publishes."""
-    out: dict[int, str] = {}
+    return {mid: version for mid, (version, _flag) in _parse_versions(data).items()}
+
+
+def _parse_versions(data: bytes) -> dict[int, tuple[str, bool]]:
+    """Model id -> (published firmware version, ``update`` flag). Guitar Lab offers a firmware update from the flag."""
+    out: dict[int, tuple[str, bool]] = {}
     for model in _document(data)["models"]:
         model_id = _hex(model.get("modelId")) if isinstance(model, dict) else None
         version = model.get("modelVersion") if isinstance(model, dict) else None
         if model_id is not None and isinstance(version, str) and version_key(version):
-            out[model_id] = version
+            out[model_id] = (version, model.get("update") is True)
     return out
 
 
@@ -194,7 +199,8 @@ class FirmwareStatus:
     model_id: int
     remote: str
     current: str | None  # the connected pedal's version (None: unknown)
-    newer: bool
+    newer: bool  # an update is on offer: the published version is greater than the pedal's, or the channel says so
+    update: bool = False  # the channel's own ``update`` flag for this model
 
 
 @dataclass
@@ -203,6 +209,8 @@ class CheckResult:
     updated: list[EffectUpdate] = field(default_factory=list)
     current: list[EffectUpdate] = field(default_factory=list)  # up to date: kind "current"
     firmware: FirmwareStatus | None = None
+    firmware_versions: dict[int, str] = field(default_factory=dict)  # every model's published firmware
+    firmware_updates: set[int] = field(default_factory=set)  # models whose ``update`` flag is set
     skipped: int = 0  # list entries that could not be used
 
     @property
@@ -336,7 +344,7 @@ class LibraryUpdater:
             effects_raw = self._get(EFFECTS_LIST_URL, MAX_LIST_BYTES)
             versions_raw = self._get(VERSIONS_LIST_URL, MAX_LIST_BYTES)
             remote, skipped = _parse_effects(effects_raw)
-            firmware_versions = parse_version_list(versions_raw)
+            firmware_info = _parse_versions(versions_raw)
         except UpdateError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -352,7 +360,8 @@ class LibraryUpdater:
                 best = wanted.get(item.effect_id)
                 if best is None or version_key(item.version) > version_key(best.version):
                     wanted[item.effect_id] = item
-        result = CheckResult(skipped=skipped)
+        result = CheckResult(skipped=skipped, firmware_versions={m: v for m, (v, _f) in firmware_info.items()},
+                             firmware_updates={m for m, (_v, flag) in firmware_info.items() if flag})
         for item in sorted(wanted.values(), key=lambda e: (e.file_name.lower(), e.effect_id)):
             have = held.get(item.effect_id)
             stem = item.file_name[:-4]
@@ -365,11 +374,11 @@ class LibraryUpdater:
             else:
                 result.current.append(EffectUpdate(item.effect_id, item.file_name, item.version, "current",
                                                    have.name or stem, have.group, have.version))
-        if model_id is not None and model_id in firmware_versions:
-            remote_version = firmware_versions[model_id]
-            newer = bool(firmware) and version_key(firmware) != () and \
+        if model_id is not None and model_id in firmware_info:
+            remote_version, flag = firmware_info[model_id]
+            greater = bool(firmware) and version_key(firmware) != () and \
                 version_key(remote_version) > version_key(firmware)
-            result.firmware = FirmwareStatus(model_id, remote_version, firmware or None, newer)
+            result.firmware = FirmwareStatus(model_id, remote_version, firmware or None, greater or flag, flag)
         return result
 
     def _save_lists(self, effects_raw: bytes, versions_raw: bytes) -> None:

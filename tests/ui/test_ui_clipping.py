@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (QAbstractButton, QAbstractScrollArea, QCheckBox, 
 
 from test_ui_effects_manager import AFTER, BEFORE, ON_PEDAL, PedalFiles, connected_window, open_screen
 from ui_replies import FIXTURES
+from update_support import UPDATE_STATES, update_state
 from zoomstudio.effects.catalog import load_catalog
 from zoomstudio.ui import strings as S
 from zoomstudio.ui.main_window import MainWindow
@@ -20,7 +21,7 @@ from zoomstudio.ui.painted import PaintedText
 
 EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
 SIZES = [(1440, 900), (2000, 1056)]
-STATES = ["no-patch", "patch-selected", "effects-manager", "effects-repair", "usage-many", "usage-one", "usage-none", "usage-incomplete", "tuner", "offline", "bank", "bank-empty", "bank-drag"]
+STATES = ["no-patch", "patch-selected", "effects-manager", "effects-repair", "usage-many", "usage-one", "usage-none", "usage-incomplete", "tuner", "offline", "bank", "bank-empty", "bank-drag", *UPDATE_STATES]
 SLACK = 2  # px of rounding the metrics may differ from the painted text by
 
 
@@ -110,6 +111,8 @@ def settle(qtbot, w: MainWindow, size) -> None:
 
 
 def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
+    if state.startswith("update-"):  # the effect-library update flow (a private library, a fake channel)
+        return update_state(qtbot, tmp_path, catalog, state)
     if state == "offline":
         w = MainWindow(catalog)
         qtbot.addWidget(w)
