@@ -131,6 +131,8 @@ def test_live_sends_nothing_to_a_read_only_pedal_even_with_the_switch_forced_on(
     start = len(sent)
     w.set_param(0, 0, 1)  # an edit: its live send is gated
     w._live_send(0, 0, 1)
+    w._on_volume_changed(50)  # the volume and name live paths are gated the same way
+    w._on_name_edited("X")
     w.discard_changes()  # the Live branch of the discard restores the pedal's edit buffer: gated too
     qtbot.wait(200)
     assert not any(hasattr(m, "data") and b"\x64\x03" in bytes(m.data)[:6] for m in sent[start:])  # no set_param

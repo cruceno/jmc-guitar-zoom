@@ -71,6 +71,9 @@ Two special slots address the patch itself:
 | `0x09` | 0..9 | character `n` of the patch name (ASCII) |
 | `0x0A` | `0x00` | patch volume |
 
+Both verified on a real A1 FOUR (firmware 1.01, 2026-11-25): the current-patch read (`64 13`) returned the new volume
+and the new first character, and sending the old values back restored the patch byte for byte.
+
 A parameter message cannot swap the effect in a slot, so swapping an effect is only possible by writing the patch.
 
 ## Tuner

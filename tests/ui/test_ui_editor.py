@@ -426,6 +426,35 @@ def test_live_edit_is_off_by_default_and_sends_nothing(qtbot, catalog, tmp_path)
     w.select_tile(1)
     w.param_rows()[1].spin.setValue(50)
     w.chain_tiles()[0].power.click()
+    w.volume_spin.setValue(70)
+    w.name_edit.textEdited.emit("Live")
+    assert len(t.sent) == before
+    w.close()
+
+
+def test_live_edit_sends_volume_and_name_when_enabled(qtbot, catalog, tmp_path):
+    # verified on a real A1 FOUR (fw 1.01, 2026-11-25): slot 10 param 0 is the patch volume, slot 9 the name
+    w, t = connected(qtbot, catalog, tmp_path)
+    w.live_check.setChecked(True)
+    qtbot.waitUntil(lambda: len(t.sent) > 0 and t.sent[-1].__class__.__name__ == "ProgramChange", timeout=3000)
+    w.volume_spin.setValue(70)
+    w.name_edit.setText("Live")
+    w.name_edit.textEdited.emit("Live")
+    qtbot.waitUntil(lambda: sysex.set_param(0x09, 9, ord(" "), 0x6E) in wire(t), timeout=3000)
+    sent = wire(t)
+    assert sysex.set_param(0x0A, 0, 70, 0x6E) in sent
+    name = [m for m in sent if m.startswith(bytes([0x52, 0x00, 0x6E, 0x64, 0x03, 0x00, 0x09]))]
+    assert name == [sysex.set_param(0x09, i, ord(c), 0x6E) for i, c in enumerate("Live      ")]
+    w.close()
+
+
+def test_an_invalid_name_is_not_sent_live(qtbot, catalog, tmp_path):
+    w, t = connected(qtbot, catalog, tmp_path)
+    w.live_check.setChecked(True)
+    qtbot.waitUntil(lambda: len(t.sent) > 0 and t.sent[-1].__class__.__name__ == "ProgramChange", timeout=3000)
+    before = len(t.sent)
+    w.name_edit.textEdited.emit("Ñandú")  # not ASCII: the edit is refused, so the pedal gets nothing
+    qtbot.wait(200)
     assert len(t.sent) == before
     w.close()
 

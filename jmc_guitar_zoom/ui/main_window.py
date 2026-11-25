@@ -87,10 +87,21 @@ def live_restore_messages(current: Patch, baseline: Patch) -> list[tuple[int, in
             continue
         messages.append((index, 0, 1 if base.enabled else 0))
         messages.extend((index, i + 2, value) for i, value in enumerate(base.params))
-    for position, char in enumerate(baseline.name.ljust(NAME_MAX_LEN)[:NAME_MAX_LEN]):
-        messages.append((0x09, position, ord(char)))
-    messages.append((0x0A, 0, baseline.volume))
+    messages.extend(live_name_messages(baseline.name))
+    messages.append(live_volume_message(baseline.volume))
     return messages
+
+
+def live_name_messages(name: str) -> list[tuple[int, int, int]]:
+    """The patch name for ``set_param``: slot 9, one character per position 0-9, padded with spaces.
+
+    Verified on a real A1 FOUR (fw 1.01, 2026-11-25): the current patch read back the new character."""
+    return [(0x09, position, ord(char)) for position, char in enumerate(name.ljust(NAME_MAX_LEN)[:NAME_MAX_LEN])]
+
+
+def live_volume_message(volume: int) -> tuple[int, int, int]:
+    """The patch volume for ``set_param``: slot 10, parameter 0 (verified like the name, 2026-11-25)."""
+    return 0x0A, 0, volume
 
 
 class PatchEdit(QUndoCommand):
@@ -1369,9 +1380,13 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
 
     def _on_name_edited(self, text: str) -> None:
         self.rename_patch(text, widget=True)
+        if self.current_patch is not None and self.current_patch.name == text:  # a refused name is not sent
+            self._live_emit(live_name_messages(text))
 
     def _on_volume_changed(self, value: int) -> None:
         self.set_patch_volume(value, widget=True)
+        if self.current_patch is not None and self.current_patch.volume == value:
+            self._live_emit([live_volume_message(value)])
 
     def _on_param_changed(self, index: int, value: int) -> None:
         slot_index = self.chain.selected_slot
@@ -1413,10 +1428,16 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
 
     def _live_send(self, slot_index: int, param_index: int | None, value: int) -> None:
         patch = self.current_patch
-        if (not self.live_check.isChecked() or not self._is_connected or patch is None
+        if patch is not None:
+            self._live_emit([live_message(patch, slot_index, param_index, value)])
+
+    def _live_emit(self, messages: list[tuple[int, int, int]]) -> None:
+        """Send ``(slot, param, value)`` live edits to the pedal's current patch, only when Live may edit it."""
+        if (not self.live_check.isChecked() or not self._is_connected or self.current_patch is None
                 or self._live_location != self._location or self.write_block_reason() is not None):
             return  # a pedal the app cannot edit gets nothing, whatever the switch says
-        self._param_requested.emit(*live_message(patch, slot_index, param_index, value))
+        for message in messages:
+            self._param_requested.emit(*message)
 
     # ---------------------------------------------------------------- files
 

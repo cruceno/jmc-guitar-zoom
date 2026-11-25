@@ -51,8 +51,8 @@ roja, «No funciona en la A1 FOUR», marca un efecto que esa pedalera no puede e
 
 ## 3. Edición en vivo
 
-Con el interruptor **En vivo** en «SÍ», los cambios de parámetros y de encendido se envían a la pedalera mientras
-edita, y se oye el resultado al instante. Esto no guarda nada en la memoria de la pedalera: para conservar el
+Con el interruptor **En vivo** en «SÍ», los cambios de parámetros, de encendido, de volumen y de nombre del patch se
+envían a la pedalera mientras edita, y se oye el resultado al instante. Esto no guarda nada en la memoria de la pedalera: para conservar el
 cambio hay que guardar el patch. Si descarta los cambios, la pedalera vuelve a su valor anterior. Con «NO» solo
 cambia lo que se ve en pantalla.
 
