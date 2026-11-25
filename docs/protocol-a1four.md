@@ -126,7 +126,11 @@ group, the effect id, the effect name and group name, 11 bytes each), then tagge
 Parameter ranges and defaults are not in the container: they are a table of 56-byte records inside `DATA`
 (`name(12) | max u32 | default u32 | padding`), `OnOff` first, then the effect's own name, then one record per
 parameter; trailing `Dummy` records mean a wide (two-slot) effect. The pedal stores the file as `NAME.ZD2`; Guitar
-Lab caches it as `NAME_VVV.zd2`. Zoom's channel serves each effect as `<NAME>.zip` containing the `.ZD2`.
+Lab caches it as `NAME_VVV.zd2`. Zoom's channel serves each effect as `<NAME>.zip` containing the `.ZD2`, in
+`archive/GUITAR_LAB/ZDLF7_2/` for the `AllZDL7_2.lst` list: Guitar Lab 7.3's cache matches those files byte for
+byte. The list's own `zdl_url` field still names `ZDLF3/`, whose files date from 2019 and are older than the list
+(Comp 1.30 against 1.40). A few files are newer than the list says (Gt GEQ 7: list 1.10, file 1.20), and Guitar Lab
+caches them under the list's version.
 
 ## What does not work
 

@@ -117,8 +117,8 @@ edición de patches mientras está abierto.
 efectos que ya tiene:
 
 - **Nuevos** y **Actualizados**: se listan con su tamaño; marque los que quiera y pulse **Descargar**. Cada archivo se
-  verifica (que sea un efecto válido, con el identificador y la versión anunciados) antes de guardarse en la
-  biblioteca de la aplicación. Nunca se sobrescribe un archivo existente. **Cancelar** detiene la descarga tras el
+  verifica (que sea un efecto válido, con el identificador anunciado y una versión igual o posterior a la anunciada)
+  antes de guardarse en la biblioteca de la aplicación. Nunca se sobrescribe un archivo existente. **Cancelar** detiene la descarga tras el
   efecto en curso.
 - **Todos los modelos** incluye los efectos de todas las pedaleras que Zoom publica, no solo de la elegida.
 - Muestra también si Zoom publica un **firmware** más reciente que el de su pedalera. El firmware no se descarga ni se

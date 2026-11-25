@@ -47,11 +47,31 @@ def test_an_effect_id_that_differs_from_the_list_is_refused(tmp_path):
     assert list((tmp_path / "lib").glob("*")) == []
 
 
-def test_a_version_that_differs_from_the_list_is_refused(tmp_path):
+def test_a_version_older_than_the_list_is_refused(tmp_path):
     up, _ = make(tmp_path)
     [r] = up.download([entry(COMP, version="1.50")]).results  # the file says 1.40
     assert not r.ok and r.reason == "version_mismatch"
     assert list((tmp_path / "lib").glob("*.zd2")) == []
+
+
+def test_a_version_newer_than_the_list_is_saved_under_its_own_version(tmp_path):
+    # Zoom ships some files newer than the list says (Gt GEQ 7: list 1.10, file 1.20); Guitar Lab keeps them
+    up, _ = make(tmp_path)
+    [r] = up.download([entry(COMP, version="1.30")]).results  # the file says 1.40
+    assert r.ok and r.reason is None
+    saved = tmp_path / "lib" / "COMP_140.zd2"
+    assert r.path == saved and saved.read_bytes() == COMP[3].read_bytes()
+    assert sorted(p.name for p in (tmp_path / "lib").iterdir()) == ["COMP_140.zd2"]
+
+
+def test_a_newer_file_never_replaces_a_held_file_of_that_version(tmp_path):
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    (lib / "COMP_140.zd2").write_bytes(b"held")
+    up, _ = make(tmp_path)
+    [r] = up.download([entry(COMP, version="1.30")]).results
+    assert not r.ok and r.reason == "exists"
+    assert (lib / "COMP_140.zd2").read_bytes() == b"held"
 
 
 def test_a_path_in_the_member_name_is_ignored(tmp_path):
@@ -183,7 +203,8 @@ def test_a_file_name_that_is_not_plain_is_refused_before_any_request(tmp_path, n
 
 
 def test_valid_names_build_urls_only_under_the_channel():
-    assert updater.zip_url("ANDLY_3S.zip") == "https://www.zoom.co.jp/archive/GUITAR_LAB/ZDLF3/ANDLY_3S.zip"
+    # ZDLF7_2/ goes with AllZDL7_2.lst; the list's own zdl_url (ZDLF3/) holds 2019 files older than the list
+    assert updater.zip_url("ANDLY_3S.zip") == "https://www.zoom.co.jp/archive/GUITAR_LAB/ZDLF7_2/ANDLY_3S.zip"
     for bad in ("../a.zip", "a/b.zip", "a.zip/..", "https://evil.example/a.zip"):
         with pytest.raises(updater.UpdateError):
             updater.zip_url(bad)

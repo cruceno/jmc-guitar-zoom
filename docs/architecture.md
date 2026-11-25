@@ -61,8 +61,8 @@ Writing to the pedal is the only irreversible thing the application does, so it 
    first; the bank entry is removed only after the pedal's read-back matched. On any failure a duplicate stays in the
    bank. Deleting a bank entry moves it to a trash folder.
 6. **Untrusted downloads.** The updater only talks to the Guitar Lab channel (https, fixed host, no redirects out of
-   it, no `..`), limits sizes, reads a zip in memory, takes one `.ZD2`, parses it and requires the id and version the
-   list announced before publishing it atomically under a new name.
+   it, no `..`), limits sizes, reads a zip in memory, takes one `.ZD2`, parses it and requires the id the list
+   announced and a version no older than the list's before publishing it atomically under a new name.
 
 ## Testing approach
 

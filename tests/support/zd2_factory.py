@@ -128,7 +128,7 @@ EFFECTS: dict[str, Effect] = {e.name: e for e in (
             _p("Mix", 100, 46, "Adjusts the amount of effect sound."), _p("Tail", 1, 0, "Lets the tail ring out when ON.")),
            size=17933),
     Effect(0x1000020, "RackComp", "DYNAMICS", "1.40", 18.25, "A rack compressor.",
-           (_p("THRSH", 60, 38), _p("Ratio", 90, 30), _p("Knee", 1, 1), _p("VOL", 100, 80)),
+           (_p("THRSH", 50, 40), _p("Ratio", 9, 5), _p("ATTCK", 9, 6), _p("VOL", 100, 80)),
            size=45595, prme="invalid"),
     Effect(0x1800030, "160 Comp", "DYNAMICS", "1.40", 31.58, "A compressor with a threshold and a ratio.",
            (_p("THRSH", 60, 38, "Adjusts the threshold."), _p("Ratio", 90, 30, "Adjusts the compression ratio."),

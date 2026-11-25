@@ -56,7 +56,7 @@ def test_hall_ranges():
 def test_prme_with_invalid_json_falls_back_to_elf_names():
     e = load_zd2(FIX / "RACKCOMP.ZD2")  # PRME missing or unparseable
     assert len(e.params) == 4
-    assert e.params[0].name == "THRSH" and (e.params[0].max, e.params[0].default) == (60, 38)
+    assert e.params[0].name == "THRSH" and (e.params[0].max, e.params[0].default) == (50, 40)
     assert e.params[0].explanation == ""
 
 

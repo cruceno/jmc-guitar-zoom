@@ -2,13 +2,15 @@
 
 The channel is three public files under ``https://www.zoom.co.jp/archive/GUITAR_LAB/``: ``AllZDL7_2.lst`` (per
 model, the effects with ``type``, ``fileName`` and ``version``), ``ModelVersion7_2.lst`` (the current firmware per
-model) and ``ZDLF3/<fileName>`` (a zip with the effect's ``.ZD2``). Both lists are JSON followed by garbage.
+model) and ``ZDLF7_2/<fileName>`` (a zip with the effect's ``.ZD2``). Both lists are JSON followed by garbage.
+The list's ``zdl_url`` field is ignored: it still names ``ZDLF3/``, a 2019 folder older than the list.
 
 Everything fetched is untrusted. URLs are built only from the channel base and a validated file name; a zip is
 read in memory with a size limit, only one ``.ZD2`` member is taken and its path is ignored, its bytes are parsed
-and must carry the id and version the list announced, and the file is published atomically under a new name,
-never over an existing file. The library keeps the names Guitar Lab's cache uses, ``<STEM>_<VVV>.zd2``, so the
-catalog and ``flst.pedal_filename`` work on it unchanged.
+and must carry the id the list announced and a version no older than the list's (Zoom ships a few files newer than
+the list says), and the file is published atomically under a new name, never over an existing file. The library
+keeps Guitar Lab's cache naming, ``<STEM>_<VVV>.zd2``, with the file's own version, so the catalog and
+``flst.pedal_filename`` work on it unchanged.
 """
 
 from __future__ import annotations
@@ -35,7 +37,9 @@ EFFECTS_LIST_NAME = "AllZDL7_2.lst"
 VERSIONS_LIST_NAME = "ModelVersion7_2.lst"
 EFFECTS_LIST_URL = BASE_URL + EFFECTS_LIST_NAME
 VERSIONS_LIST_URL = BASE_URL + VERSIONS_LIST_NAME
-ZIP_BASE_URL = BASE_URL + "ZDLF3/"
+# The zips for AllZDL7_2.lst live in ZDLF7_2/, the folder Guitar Lab 7.3 downloads from (its cache matches it byte
+# for byte). The list's own ``zdl_url`` still names ZDLF3/, whose files date from 2019 and are older than the list.
+ZIP_BASE_URL = BASE_URL + "ZDLF7_2/"
 USER_AGENT = "jmc-guitar-zoom"
 TIMEOUT_SECONDS = 15
 MAX_LIST_BYTES = 4_000_000  # the real effects list is about 0.5 MB
@@ -240,7 +244,8 @@ class DownloadResult:
     entry: EffectUpdate
     ok: bool
     reason: str | None = None  # a code: bad_name, bad_version, network, too_large, bad_zip, no_zd2, many_zd2,
-    #                           oversized, bad_zd2, id_mismatch, version_mismatch, exists, write_failed
+    #                           oversized, bad_zd2, id_mismatch, version_mismatch (older than the list), exists,
+    #                           write_failed
     path: Path | None = None
 
 
@@ -441,10 +446,9 @@ class LibraryUpdater:
             body = _extract_zd2(zipped)
         except _Refused as refused:
             return fail(refused.reason)
-        final = self.library_dir / library_name(item.file_name, item.version)
         try:
             self.library_dir.mkdir(parents=True, exist_ok=True)
-            fd, name = tempfile.mkstemp(dir=self.library_dir, prefix=f".{final.name}.", suffix=".part")
+            fd, name = tempfile.mkstemp(dir=self.library_dir, prefix=f".{item.file_name[:-4]}.", suffix=".part")
         except OSError:
             return fail("write_failed")
         temp = Path(name)
@@ -457,8 +461,10 @@ class LibraryUpdater:
                 return fail("bad_zd2")
             if info.effect_id != item.effect_id:
                 return fail("id_mismatch")
-            if version_key(info.version) != version_key(item.version):
+            # Zoom ships a few files newer than the list says (list 1.10, file 1.20); an older one is stale
+            if not _VERSION.fullmatch(info.version) or version_key(info.version) < version_key(item.version):
                 return fail("version_mismatch")
+            final = self.library_dir / library_name(item.file_name, info.version)
             if not _publish(temp, final):
                 return fail("exists")
             return DownloadResult(item, True, None, final)

@@ -4,8 +4,8 @@
 Zoom's effect files (``.ZD2``) and Guitar Lab's effect list are Zoom's property, so the repository does not carry
 them. This script fetches a small set from Zoom's public Guitar Lab channel, for your own use, with the app's own
 updater (``jmc_guitar_zoom.library.updater``): the same URL confinement (https, the channel host, no ``..``), the same
-size limits and the same verification (the ``.ZD2`` inside each zip must parse and carry the id and version the
-list announced). Nothing is written outside the destination folder and nothing already there is overwritten.
+size limits and the same verification (the ``.ZD2`` inside each zip must parse and carry the id the list announced
+and a version no older than the list's). Nothing is written outside the destination folder and nothing already there is overwritten.
 
     uv run python scripts/fetch_test_fixtures.py [--dest DIR]
 
@@ -62,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
         if item.ok:
             print(f"  saved {item.path.name}")
         elif item.reason in ("version_mismatch", "id_mismatch"):
-            # the zip holds another version than the list announces; the updater refuses it, and so do we
+            # the zip holds another effect, or an older version than the list announces; the updater refuses it
             print(f"  skipped {item.entry.file_name}: {item.reason} (the channel's list and zip disagree)")
         else:
             failures += 1

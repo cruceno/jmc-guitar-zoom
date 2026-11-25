@@ -1121,7 +1121,7 @@ UPDATE_REASONS = {
     "oversized": "el efecto pesa más de lo permitido",
     "bad_zd2": "el archivo no es un efecto válido",
     "id_mismatch": "el efecto descargado no es el que anuncia la lista",
-    "version_mismatch": "la versión descargada no es la que anuncia la lista",
+    "version_mismatch": "la versión descargada es anterior a la que anuncia la lista",
     "exists": "ya existe un archivo con ese nombre en la biblioteca",
     "write_failed": "no se pudo escribir en la carpeta de la biblioteca",
 }
