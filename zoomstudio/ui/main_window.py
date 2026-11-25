@@ -154,8 +154,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.tuner_button.setCheckable(True)
         self.tuner_button.setToolTip("Turn the pedal tuner on or off (T). The pedal is muted while it is on")
         self.live_check = QCheckBox("Live")
-        self.live_check.setToolTip("Also send parameter and on/off changes to the pedal while editing "
-                                   "(experimental: slot numbering is not verified on hardware)")
+        self.live_check.setToolTip("Also send parameter and on/off changes to the pedal while editing")
         h.addWidget(self.connection_label)
         h.addWidget(self.memory_bar)
         h.addStretch(1)

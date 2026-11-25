@@ -447,7 +447,7 @@ def test_live_edit_sends_param_and_on_off_when_enabled(qtbot, catalog, tmp_path)
 def test_live_slot_mapping_is_isolated():
     from zoomstudio.ui.main_window import live_message
 
-    # HYPOTHESIS (not verified on hardware): the slot is the index in the chain with fillers
+    # verified on a real A1 FOUR (2026-11-24): the slot is the index in the chain with fillers
     patch = parse_zptc(HB_BYTES)
     assert live_message(patch, 4, 2, 50) == (4, 4, 50)  # dial 2 is parameter 4 (0 = on/off, 1 reserved)
     assert live_message(patch, 4, None, 0) == (4, 0, 0)  # on/off is parameter 0
