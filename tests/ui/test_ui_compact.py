@@ -267,3 +267,14 @@ def test_every_search_field_has_a_centred_magnifier(qtbot, monkeypatch, catalog,
     for field in fields:
         icon = field.icon_rect()
         assert abs(icon.center().y() - (field.height() - 1) / 2) <= 1
+
+
+def test_the_save_and_discard_buttons_fit_the_header_at_every_size(qtbot, monkeypatch, catalog, tmp_path, themed):
+    w = build(qtbot, monkeypatch, catalog, tmp_path, "gt-geq-7")
+    w.rename_patch("Edited")  # dirty: the status chip and both buttons show together
+    for size in SIZES:
+        settle(qtbot, w, size)
+        for button in (w.save_button, w.discard_button):
+            assert button.isVisibleTo(w) and button.width() >= 40 and button.text() == ""
+            assert button.accessibleName() and button.toolTip()
+        assert problems(audit(w)) == []

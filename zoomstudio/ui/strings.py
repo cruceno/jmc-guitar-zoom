@@ -916,3 +916,23 @@ def err_bank_rename(why: object) -> str:
 
 def err_bank_delete(why: object) -> str:
     return f"No se pudo eliminar el patch del banco: {why}"
+
+
+# ---- discard the changes of a patch
+DISCARD_CHANGES_TIP = "Descartar cambios y volver a la última versión guardada"
+DISCARD_NOTHING = "No hay cambios sin guardar en este patch"
+
+
+def discard_tooltip(shortcut: str, reason: str = "") -> str:
+    base = f"{DISCARD_CHANGES_TIP} ({shortcut})"
+    return f"{base}\n{reason}" if reason else base
+
+
+def discard_patch_title(display: int, name: str) -> str:
+    return f"¿Descartar los cambios del patch {display}" + (f" «{name}»?" if name else "?")
+
+
+def discard_patch_text(display: int, name: str) -> str:
+    label = f"{display} «{name}»" if name else str(display)
+    return (f"Se descartan los cambios sin guardar del patch {label}: vuelve a su última versión guardada. "
+            "Puede recuperarlos con Deshacer.")

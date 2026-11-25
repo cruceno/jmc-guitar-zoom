@@ -40,6 +40,7 @@ from .worker import PedalWorker, TransportFactory
 
 PATCHES_WIDTH, CATALOG_WIDTH = 248, 368  # the prototype's column widths (their maximum: compact windows narrow them)
 PATCHES_MIN, CATALOG_MIN = 220, 330
+DISCARD_SHORTCUT = "Ctrl+R"  # revert the current patch to its last saved version (Ctrl+Z/Y/C/V and T are taken)
 DEFAULT_PATCH_COUNT = 50
 DISPLAY_OFFSET = 9  # the pedal shows locations 1..50 as 10..59
 MODEL_NAMES = {0x6E: "A1 FOUR"}
@@ -63,6 +64,24 @@ def live_message(patch: Patch, slot_index: int, param_index: int | None, value: 
     if param_index is None:
         return slot, 0, value
     return slot, param_index + 2, value
+
+
+def live_restore_messages(current: Patch, baseline: Patch) -> list[tuple[int, int, int]]:
+    """``(slot, param, value)`` triples that put the pedal's edit buffer back to ``baseline`` (live path only).
+
+    Slots whose effect differs from ``current`` are skipped: a parameter message cannot swap an effect.
+    The name is sent character by character (slot 9) and the volume as slot 10, as in ``PedalClient``.
+    """
+    messages: list[tuple[int, int, int]] = []
+    for index, (now, base) in enumerate(zip(current.effects, baseline.effects)):
+        if base.is_empty or base.is_wide_filler or base.is_placeholder or now.effect_id != base.effect_id:
+            continue
+        messages.append((index, 0, 1 if base.enabled else 0))
+        messages.extend((index, i + 2, value) for i, value in enumerate(base.params))
+    for position, char in enumerate(baseline.name.ljust(NAME_MAX_LEN)[:NAME_MAX_LEN]):
+        messages.append((0x09, position, ord(char)))
+    messages.append((0x0A, 0, baseline.volume))
+    return messages
 
 
 class PatchEdit(QUndoCommand):
@@ -135,6 +154,7 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self._init_bank(Path(bank_dir) if bank_dir is not None else None)
         self._patches: dict[int, Patch] = {}
         self._stacks: dict[int, QUndoStack] = {}
+        self._baselines: dict[int, Patch] = {}  # location -> last saved version (while it has unsaved edits)
         self.undo_group = QUndoGroup(self)
         self._suppress_refresh = False
         self._saving = False
@@ -190,6 +210,15 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.save_button.setIcon(icon("save", "on-accent", 24))
         self.save_button.setIconSize(QSize(24, 24))
         self.save_button.setAccessibleName(S.SAVE_TO_PEDAL)
+        # the revert button: a different shape (counter-clockwise arrow) and the warning family, never red
+        self.discard_button = QPushButton()
+        self.discard_button.setProperty("revert", True)
+        self.discard_button.setProperty("iconOnly", True)
+        self.discard_button.setIcon(icon("reset", "status-warn", 24))
+        self.discard_button.setIconSize(QSize(24, 24))
+        self.discard_button.setAccessibleName(S.DISCARD_CHANGES_TIP)
+        self.discard_button.setToolTip(S.discard_tooltip(DISCARD_SHORTCUT))
+        self.discard_button.clicked.connect(lambda: self.discard_changes())
         self.tuner_button = KeyChipButton(S.TUNER, S.TUNER_KEY)
         self.tuner_button.setIcon(icon("tuner"))
         self.tuner_button.setCheckable(True)
@@ -241,6 +270,12 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.edit_button.setMenu(edit_menu)
         edit_menu.addAction(self.undo_action)
         edit_menu.addAction(self.redo_action)
+        self.discard_action = QAction(S.DISCARD_ACCEPT, self)
+        self.discard_action.setShortcut(QKeySequence(DISCARD_SHORTCUT))
+        self.discard_action.setIcon(icon("reset", "status-warn"))
+        self.discard_action.triggered.connect(lambda _c=False: self.discard_changes())
+        self.addAction(self.discard_action)  # the shortcut must not depend on the menu being shown
+        edit_menu.addAction(self.discard_action)
         edit_menu.addSeparator()
         note = edit_menu.addAction(S.EDIT_MENU_NOTE)
         note.setEnabled(False)
@@ -317,10 +352,11 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         left_col.setSpacing(0)
         left_col.addLayout(title_row)
         left_col.addLayout(meta_row)
-        right_col = QVBoxLayout()
+        right_col = QHBoxLayout()
         right_col.setSpacing(0)
-        right_col.addWidget(GlowHost(self.save_button, margin=8))
-        right_col.addStretch(1)
+        right_col.setAlignment(Qt.AlignmentFlag.AlignTop)
+        right_col.addWidget(GlowHost(self.save_button, margin=8), alignment=Qt.AlignmentFlag.AlignTop)
+        right_col.addWidget(GlowHost(self.discard_button, token="glow-accent", margin=8), alignment=Qt.AlignmentFlag.AlignTop)
         head = QWidget()
         head_lay = QHBoxLayout(head)
         head_lay.setContentsMargins(0, 0, 0, 0)
@@ -510,12 +546,16 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.save_button.setAccessibleName(S.save_button_name(shown))
         self.save_button.setAccessibleDescription(tip)
         self.dirty_label.setVisible(dirty)
+        can_discard = dirty and not self._saving and not (self._tuner_on or self._effects_open or self._bank_open)
+        self.discard_button.setEnabled(can_discard)
+        self.discard_action.setEnabled(can_discard)
+        self.discard_button.setToolTip(S.discard_tooltip(DISCARD_SHORTCUT, "" if dirty else S.DISCARD_NOTHING))
         in_use = sum(1 for pt in self._patches.values() if any(not e.is_placeholder for e in pt.effects))
         self.patches_caption.setText(S.patches_caption(in_use, self._display(1), self._display(self._patch_count)))
         self.centralWidget().update()
         self._update_library_actions()
         if self._tuner_on or self._effects_open or self._bank_open:  # the tuner mutes the pedal; each screen owns the window
-            for w in (self.save_button, self.open_file_button, self.save_file_button, self.live_check,
+            for w in (self.save_button, self.discard_button, self.open_file_button, self.save_file_button, self.live_check,
                       self.reload_button, self.connect_button, self.open_button):
                 w.setEnabled(False)
             for act in (self.backup_action, self.backup_files_action, self.write_dirty_action, self.copy_action,
@@ -755,6 +795,7 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
             self.undo_group.removeStack(stack)
             stack.deleteLater()
         self._stacks = {}
+        self._baselines = {}
 
     def _set_patch(self, location: int, patch: Patch) -> None:
         """Replace a patch with content that is on the pedal (or a file): clean, no undo history."""
@@ -903,11 +944,49 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
                 self._show_patch(location, select, keep=True)
         self._update_buttons()
 
+    def discard_changes(self, location: int | None = None) -> bool:
+        """Revert a patch to its last saved version as ONE undoable step («Descartar cambios»).
+
+        The baseline is the patch as it was when its first unsaved edit began: what the app last read from the
+        pedal, or last wrote and verified (SAVE, a library write, a bank load), or the file it was opened
+        from. It asks first; the revert is an ordinary undo step (Ctrl+Z brings the edits back) and the
+        patch is clean afterwards.
+
+        With «En vivo» on and this patch selected on the pedal, the baseline's values (every slot's on/off and
+        parameters, the name and the volume) are also sent through the live path so the pedal's edit buffer
+        matches again. Nothing is ever written to pedal memory here. Note that a pedal with auto-save ON may
+        already have stored the live edits, and that a live message cannot change which effect sits in a slot:
+        slots whose effect changed since the baseline are not sent.
+        """
+        location = self._location if location is None else location
+        baseline = self._baselines.get(location) if location is not None else None
+        if location is None or baseline is None or not self.is_dirty(location) or self._saving:
+            return False
+        current = self._patches.get(location)
+        if current is None:
+            return False
+        display = self._display(location)
+        if not ConfirmDialog.ask(self, S.discard_patch_title(display, current.name),
+                                 S.discard_patch_text(display, current.name), S.DISCARD_ACCEPT, danger=True):
+            return False
+        selected = self.chain.selected_slot if location == self._location else None
+        command = PatchEdit(self, location, current, baseline, S.DISCARD_ACCEPT, None, selected, selected)
+        stack = self._stack(location)
+        stack.push(command)
+        stack.setClean()  # the baseline is the clean state; Undo leaves it again and the patch is edited once more
+        if (self.live_check.isChecked() and self._is_connected and location == self._location
+                and self._live_location == location):
+            for message in live_restore_messages(current, baseline):
+                self._param_requested.emit(*message)
+        return True
+
     def _push(self, after: Patch, text: str, key: tuple | None = None, select: int | None = None,
               widget: bool = False) -> None:
         location = self._location
         assert location is not None
         before = self._patches.get(location)
+        if before is not None and not self.is_dirty(location):
+            self._baselines[location] = copy.deepcopy(before)  # the last saved version, kept for «Descartar cambios»
         command = PatchEdit(self, location, before, after, text, key, self.chain.selected_slot, select)
         self._suppress_refresh = widget  # the widget that made the edit already shows it
         try:

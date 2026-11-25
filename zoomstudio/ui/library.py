@@ -120,14 +120,24 @@ class LibraryMixin:
         if item is None:
             return
         self.patch_list.setCurrentItem(item)
+        menu = self.patch_menu(item.data(Qt.ItemDataRole.UserRole))
+        menu.exec(self.patch_list.viewport().mapToGlobal(pos))
+
+    def patch_menu(self, location: int) -> GlassMenu:
+        """The patch list's context menu for ``location``; «Descartar cambios» is there for any edited patch."""
         menu = GlassMenu(self, self.backdrop_root)
+        if self.is_dirty(location):
+            revert = menu.addAction(S.DISCARD_ACCEPT)
+            revert.setIcon(icon("reset", "status-warn"))
+            revert.triggered.connect(lambda _c=False, loc=location: self.discard_changes(loc))
+            menu.addSeparator()
         for act in (self.copy_action, self.paste_action, self.clear_action, self.stash_from_menu_action, None,
                     self.export_selected_action, self.import_file_action):
             if act is None:
                 menu.addSeparator()
             else:
                 menu.addAction(act)
-        menu.exec(self.patch_list.viewport().mapToGlobal(pos))
+        return menu
 
     def _with_selected(self, operation) -> None:
         if self._location is None:

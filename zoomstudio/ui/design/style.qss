@@ -33,7 +33,14 @@ QPushButton[primary="true"] {
   color: $on_accent; border: none; border-radius: 24px; min-height: 48px; font-size: 15px; font-weight: 700;
 }
 QPushButton[primary="true"]:disabled { background: transparent; border: 1px dashed $border_strong; color: $text_disabled; }
+QPushButton[primary="true"]:focus { border: 2px solid $focus_ring; }
 QPushButton[iconOnly="true"] { min-width: 48px; max-width: 48px; padding: 0; }
+QPushButton[revert="true"] {
+  background: $status_warn_bg; border: 1px solid $status_warn; border-radius: 24px; min-height: 48px; padding: 0;
+}
+QPushButton[revert="true"]:hover { background: $status_warn_bg; border: 2px solid $status_warn; }
+QPushButton[revert="true"]:focus { border: 2px solid $focus_ring; }
+QPushButton[revert="true"]:disabled { background: transparent; border: 1px dashed $border_strong; }
 QPushButton[danger="true"] { background: $status_danger_bg; border: 1px solid $status_danger; color: $status_danger; }
 QToolButton[ghost="true"] { background: transparent; border: 1px solid transparent; }
 QToolButton[ghost="true"]:hover { background: $card_hover; }
