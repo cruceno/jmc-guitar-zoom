@@ -22,6 +22,7 @@ from zoomstudio.patches.zptc import build_zptc, parse_zptc
 
 from . import strings as S
 from .dialogs import ConfirmDialog
+from .glass import BackdropRoot, GlassPanel
 from .library import LibraryMixin
 from .tuner import TunerPanel
 from .widgets import CatalogPanel, ChainView, EffectTile, ParamPanel, ParamRow, PatchList
@@ -105,7 +106,8 @@ class MainWindow(LibraryMixin, QMainWindow):
                  library_dir: Path | None = None) -> None:
         super().__init__()
         self.setWindowTitle("Zoom Studio")
-        self.resize(1400, 780)
+        self.resize(1440, 900)
+        self.setMinimumSize(1280, 760)
         self.catalog = catalog
         self.allowed_ids = a1_ids  # effects that run on the A1 FOUR (None: no restriction)
         self.backup_dir = Path(backup_dir) if backup_dir is not None else None
@@ -135,9 +137,11 @@ class MainWindow(LibraryMixin, QMainWindow):
     # ---------------------------------------------------------------- UI
 
     def _build_ui(self, a1_ids: set[int] | None, installed_label: str) -> None:
-        header = QFrame()
-        header.setFrameShape(QFrame.Shape.StyledPanel)
+        backdrop_root = BackdropRoot()
+        self.backdrop_root = backdrop_root
+        header = GlassPanel(backdrop_root, "strong")
         h = QHBoxLayout(header)
+        h.setContentsMargins(16, 8, 16, 8)
         self.connection_label = QLabel(S.NOT_CONNECTED)
         self.connection_label.setMinimumWidth(260)
         self.memory_bar = QProgressBar()
@@ -240,9 +244,9 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.catalog_panel.effect_activated.connect(self._on_catalog_activated)
 
         splitter = QSplitter()
-        splitter.addWidget(left)
-        splitter.addWidget(centre)
-        splitter.addWidget(self.catalog_panel)
+        splitter.addWidget(self._glass(left))
+        splitter.addWidget(self._glass(centre))
+        splitter.addWidget(self._glass(self.catalog_panel))
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 3)
         splitter.setStretchFactor(2, 1)
@@ -252,14 +256,24 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.tuner_panel = TunerPanel()
         self.tuner_panel.hide()
         self.header = header
-        root = QWidget()
+        root = backdrop_root
         rv = QVBoxLayout(root)
+        rv.setContentsMargins(12, 10, 12, 8)
+        rv.setSpacing(10)
         rv.addWidget(header)
         rv.addWidget(splitter, stretch=1)
         rv.addWidget(self.tuner_panel, stretch=1)
         self.setCentralWidget(root)
         self._build_library_ui()
         self.statusBar().showMessage(S.READY)
+
+    def _glass(self, content: QWidget) -> GlassPanel:
+        """Put ``content`` on a glass panel (the content keeps its own layout and signals)."""
+        panel = GlassPanel(self.backdrop_root)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.addWidget(content)
+        return panel
 
     def _update_buttons(self) -> None:
         can_connect = self._worker is not None
