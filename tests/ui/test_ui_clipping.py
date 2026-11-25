@@ -20,7 +20,7 @@ from zoomstudio.ui.painted import PaintedText
 
 EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
 SIZES = [(1440, 900), (2000, 1056)]
-STATES = ["no-patch", "patch-selected", "effects-manager", "effects-repair", "tuner", "offline"]
+STATES = ["no-patch", "patch-selected", "effects-manager", "effects-repair", "usage-many", "usage-one", "usage-none", "usage-incomplete", "tuner", "offline"]
 SLACK = 2  # px of rounding the metrics may differ from the painted text by
 
 
@@ -119,6 +119,17 @@ def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
         w = connected_window(qtbot, monkeypatch, catalog, tmp_path, PedalFiles(AFTER, ON_PEDAL))
         open_screen(qtbot, w)
         w.effects_panel.select_effect("MDL_12ST.ZD2")
+        return w
+    if state.startswith("usage-"):  # «Usado en»: several patches (the list scrolls), one, none, not confirmed yet
+        if state == "usage-many":
+            import test_ui_effects_manager as manager
+
+            monkeypatch.setattr(manager, "PATCHES", manager.PATCHES * 3)
+        w = connected_window(qtbot, monkeypatch, catalog, tmp_path, PedalFiles(BEFORE))
+        open_screen(qtbot, w)
+        w.effects_panel.select_effect({"usage-many": "OPTCOMP.ZD2", "usage-one": "HALL.ZD2"}.get(state, "COMP.ZD2"))
+        if state == "usage-incomplete":
+            w.reload()
         return w
     w = connected_window(qtbot, monkeypatch, catalog, tmp_path, PedalFiles(BEFORE))
     if state == "patch-selected":

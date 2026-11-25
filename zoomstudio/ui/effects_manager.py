@@ -23,7 +23,7 @@ from zoomstudio.effects.installer import MEMORY_MARGIN
 
 from . import strings as S
 from . import tokens
-from .cards import ROLE_FAV, STAR_ROOM, FavoriteList, card_path, paint_star, star_rect, pedal_thumbnail, svg_thumbnail, with_alpha
+from .cards import CARD_HEIGHT, ROLE_DIRTY, ROLE_FAV, ROLE_NAME, ROLE_NUMBER, ROLE_STRIP, PatchCardDelegate, STAR_ROOM, FavoriteList, card_path, paint_star, star_rect, pedal_thumbnail, svg_thumbnail, with_alpha
 from .dialogs import ConfirmDialog
 from .favorites import FavoritesStore
 from .fonts import display_font, ui_font
@@ -258,6 +258,7 @@ class EffectsManager(GlassPanel):
     refresh_requested = Signal()  # read the pedal's state again
     install_requested = Signal(str, object)  # pedal file name, local .zd2 path
     remove_requested = Signal(str)  # pedal file name
+    patch_requested = Signal(int)  # a patch card of «Usado en»: location to open in the editor
     repair_requested = Signal(str, object)  # pedal file name, local .zd2 path: upload only the missing file
     close_requested = Signal()
 
@@ -276,7 +277,7 @@ class EffectsManager(GlassPanel):
         self._loaded = False  # the lists show data read from the pedal
         self._patches_complete = False
         self._unsaved = False
-        self._users: dict[str, list[tuple[int, str]]] = {}
+        self._users: dict[str, list[tuple]] = {}  # file -> (display number, name, location, chain strip)
         self._collapsed: dict[str, set[str]] = {"installed": set(), "available": set()}  # kept while the screen lives
 
         self.close_button = QPushButton(S.EFFECTS_CLOSE)
@@ -353,6 +354,39 @@ class EffectsManager(GlassPanel):
         self.repair_button.setProperty("primary", True)
         self.repair_button.setIcon(icon("reload", "on-accent"))
         self.repair_button.clicked.connect(self._on_repair)
+        self.usage_title = QLabel("")
+        self.usage_title.setProperty("role", "strong")
+        self.usage_list = QListWidget()
+        self.usage_list.setItemDelegate(PatchCardDelegate(self.usage_list))
+        self.usage_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.usage_list.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
+        self.usage_list.setMouseTracking(True)
+        self.usage_list.setAccessibleName(S.EFFECTS_USAGE_LIST)
+        self.usage_list.itemClicked.connect(self._on_usage_card)
+        self.usage_list.itemActivated.connect(self._on_usage_card)
+        self.usage_note = QLabel("")
+        self.usage_note.setProperty("role", "secondary")
+        self.usage_note.setWordWrap(True)
+        self.usage_empty_icon = QLabel()
+        self.usage_empty_icon.setPixmap(icon("check", "text-secondary", 22).pixmap(22, 22))
+        self.usage_empty_note = QLabel(S.EFFECTS_USAGE_NONE_NOTE)
+        self.usage_empty_note.setProperty("role", "secondary")
+        self.usage_empty_note.setWordWrap(True)
+        self.usage_empty = QWidget()
+        empty = QHBoxLayout(self.usage_empty)
+        empty.setContentsMargins(4, 2, 0, 2)
+        empty.setSpacing(10)
+        empty.addWidget(self.usage_empty_icon, alignment=Qt.AlignmentFlag.AlignTop)
+        empty.addWidget(self.usage_empty_note, stretch=1)
+        self.usage_box = QWidget()
+        usage = QVBoxLayout(self.usage_box)
+        usage.setContentsMargins(0, 0, 0, 0)
+        usage.setSpacing(6)
+        usage.addWidget(self.usage_title)
+        usage.addWidget(self.usage_list)
+        usage.addWidget(self.usage_empty)
+        usage.addWidget(self.usage_note)
+        self.usage_box.hide()
         self.install_button.clicked.connect(self._on_install)
         self.remove_button.clicked.connect(self._on_remove)
 
@@ -397,9 +431,9 @@ class EffectsManager(GlassPanel):
         head.addLayout(names, stretch=1)
         dl.addLayout(head)
         dl.addWidget(scroll, stretch=1)
-        dl.addWidget(self.reason_label)
+        dl.addWidget(self.usage_box)
         buttons = QHBoxLayout()
-        buttons.addStretch(1)
+        buttons.addWidget(self.reason_label, stretch=1)
         buttons.addWidget(self.remove_button)
         buttons.addWidget(self.repair_button)
         buttons.addWidget(self.install_button)
@@ -553,7 +587,7 @@ class EffectsManager(GlassPanel):
         self._populate()
         self.state_shown.emit()
 
-    def set_patch_usage(self, complete: bool, unsaved: bool, users: dict[str, list[tuple[int, str]]]) -> None:
+    def set_patch_usage(self, complete: bool, unsaved: bool, users: dict[str, list[tuple]]) -> None:
         """What the editor knows: every patch read, any unsaved edit, and the patches (number, name) using each file."""
         self._patches_complete, self._unsaved, self._users = complete, unsaved, users
         self._update_actions()
@@ -682,6 +716,45 @@ class EffectsManager(GlassPanel):
             self.preview.setPixmap(thumb or pedal_thumbnail(entry.name, entry.group, 64, 90, self.devicePixelRatioF()))
         self._update_actions()
 
+    # ------------------------------------------------------------ where the effect is used
+
+    def usage_locations(self) -> list[int]:
+        return [self.usage_list.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.usage_list.count())]
+
+    def _on_usage_card(self, item: QListWidgetItem) -> None:
+        self.patch_requested.emit(item.data(Qt.ItemDataRole.UserRole))
+
+    def _update_usage(self) -> None:
+        """«Usado en N patches» as small patch cards; a calm message when none, a neutral note when unconfirmed."""
+        entry = self._entry(self._selected)
+        show = entry is not None and self._loaded and not any(e.file == entry.file for e in self._available)
+        self.usage_box.setVisible(show)
+        if not show:
+            return
+        confirmed = self._patches_complete and not self._unsaved
+        users = self._users.get(entry.file, []) if confirmed else []
+        self.usage_list.clear()
+        for display, name, location, strip in users:
+            item = QListWidgetItem()
+            item.setData(Qt.ItemDataRole.UserRole, location)
+            item.setData(ROLE_NUMBER, display)
+            item.setData(ROLE_NAME, name)
+            item.setData(ROLE_STRIP, strip)
+            item.setData(ROLE_DIRTY, False)
+            item.setData(Qt.ItemDataRole.AccessibleTextRole, S.effects_usage_card_name(display, name))
+            item.setToolTip(S.effects_usage_card_name(display, name))
+            self.usage_list.addItem(item)
+        self.usage_list.setFixedHeight(min(len(users), 3) * CARD_HEIGHT + 4)
+        if not confirmed:
+            self.usage_title.setText(S.EFFECTS_USAGE_PENDING_TITLE)
+            self.usage_note.setText(S.EFFECTS_PATCHES_INCOMPLETE if not self._patches_complete
+                                    else S.EFFECTS_UNSAVED_PATCHES)
+        else:
+            self.usage_title.setText(S.effects_usage_title(len(users)) if users else S.EFFECTS_USAGE_NONE)
+        self.usage_note.setVisible(not confirmed)
+        self.usage_list.setVisible(confirmed and bool(users))
+        self.usage_empty.setVisible(confirmed and not users)
+
     # ------------------------------------------------------------ actions
 
     def _update_actions(self) -> None:
@@ -716,18 +789,16 @@ class EffectsManager(GlassPanel):
             enabled, reason = False, ""
             if entry.info is None:
                 reason = S.EFFECTS_NOT_IN_CATALOG
-            elif not self._patches_complete:
-                reason = S.EFFECTS_PATCHES_INCOMPLETE
-            elif self._unsaved:
-                reason = S.EFFECTS_UNSAVED_PATCHES
+            elif not self._patches_complete or self._unsaved:
+                reason = S.EFFECTS_USAGE_PENDING_SHORT
             elif self._users.get(entry.file):
-                reason = S.effects_in_use(self._users[entry.file])
+                reason = S.EFFECTS_IN_USE_SHORT
             else:
                 enabled, reason = True, S.EFFECTS_REMOVE_OK
-            blocking = not enabled
         self.install_button.setEnabled(enabled and installing)
         self.remove_button.setEnabled(enabled and removing)
         self.repair_button.setEnabled(enabled and repairing)
+        self._update_usage()
         self.reason_label.setText(reason)
         self.reason_label.setProperty("blocking", blocking)
         self.reason_label.style().unpolish(self.reason_label)

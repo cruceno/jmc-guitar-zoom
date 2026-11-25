@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QWidget
 
 from ui_replies import FIXTURES, HDR, S, fake_pedal, patch_reply
 from zoomstudio.device import PedalClient
@@ -176,16 +177,74 @@ def test_install_is_enabled_with_exactly_the_margin(qtbot, monkeypatch, catalog,
     assert panel.install_button.isEnabled()
 
 
-def test_remove_is_disabled_and_names_the_patches_that_use_the_effect(screen):
+def test_remove_is_blocked_for_an_effect_in_use_with_a_short_neutral_reason(screen):
     _w, panel, _files = screen
     panel.select_effect("HALL.ZD2")  # the second patch (display 11, "HB Jazz") uses it
     assert not panel.remove_button.isEnabled()
-    assert "11 (HB Jazz)" in panel.reason_label.text()
+    assert panel.reason_label.text() == ST.EFFECTS_IN_USE_SHORT == "En uso: no se puede quitar"
+    assert panel.reason_label.property("blocking") is False  # not red: the list above says which patches
     panel.select_effect("OPTCOMP.ZD2")  # both patches
     assert not panel.remove_button.isEnabled()
-    assert "10 (AG D-28)" in panel.reason_label.text() and "11 (HB Jazz)" in panel.reason_label.text()
     panel.select_effect("COMP.ZD2")
     assert panel.remove_button.isEnabled()
+
+
+def test_the_usage_list_shows_exactly_the_patches_using_the_effect_in_order(screen):
+    _w, panel, _files = screen
+    panel.select_effect("OPTCOMP.ZD2")
+    assert panel.usage_locations() == [1, 2]
+    assert panel.usage_title.text() == "Usado en 2 patches"
+    assert panel.usage_list.isVisibleTo(panel) and not panel.usage_empty.isVisibleTo(panel)
+    first = panel.usage_list.item(0)
+    assert first.data(Qt.ItemDataRole.AccessibleTextRole) == ST.effects_usage_card_name(10, "AG D-28")
+    panel.select_effect("HALL.ZD2")
+    assert panel.usage_locations() == [2] and panel.usage_title.text() == "Usado en 1 patch"
+
+
+def click_usage_card(panel, row=0):
+    from PySide6.QtTest import QTest
+
+    item = panel.usage_list.item(row)
+    QTest.mouseClick(panel.usage_list.viewport(), Qt.MouseButton.LeftButton,
+                     pos=panel.usage_list.visualItemRect(item).center())
+
+
+def test_clicking_a_patch_card_closes_the_screen_and_selects_that_patch(screen):
+    w, panel, _files = screen
+    panel.select_effect("HALL.ZD2")
+    click_usage_card(panel)
+    assert not w.effects_button.isChecked() and not panel.isVisibleTo(w)
+    assert w.patch_list.currentRow() == 1  # location 2 (display 11, "HB Jazz")
+
+
+def test_enter_on_a_patch_card_does_the_same(screen, qtbot):
+    w, panel, _files = screen
+    panel.select_effect("OPTCOMP.ZD2")
+    panel.usage_list.setFocus()
+    panel.usage_list.setCurrentRow(0)
+    qtbot.keyClick(panel.usage_list, Qt.Key.Key_Return)
+    assert not w.effects_button.isChecked() and w.patch_list.currentRow() == 0
+
+
+def test_an_effect_no_patch_uses_gets_a_calm_message_that_is_not_red(screen):
+    _w, panel, _files = screen
+    panel.select_effect("COMP.ZD2")
+    assert panel.usage_empty.isVisibleTo(panel) and not panel.usage_list.isVisibleTo(panel)
+    assert panel.usage_title.text() == ST.EFFECTS_USAGE_NONE == "Ningún patch usa este efecto"
+    assert ST.EFFECTS_USAGE_NONE_NOTE in panel.usage_empty_note.text()
+    assert not panel.usage_empty_icon.pixmap().isNull()
+    for widget in panel.usage_box.findChildren(QWidget) + [panel.reason_label]:
+        assert not widget.property("blocking") and widget.property("role") != "error"
+
+
+def test_while_patches_are_not_all_read_the_section_says_why_not_in_red(screen):
+    w, panel, _files = screen
+    panel.select_effect("COMP.ZD2")
+    w.reload()
+    assert panel.usage_note.isVisibleTo(panel) and panel.usage_note.text() == ST.EFFECTS_PATCHES_INCOMPLETE
+    assert not panel.usage_list.isVisibleTo(panel) and not panel.usage_empty.isVisibleTo(panel)
+    assert not panel.usage_note.property("blocking")
+    assert not panel.remove_button.isEnabled()
 
 
 def test_remove_is_blocked_until_every_patch_is_loaded(screen, qtbot):
@@ -194,7 +253,7 @@ def test_remove_is_blocked_until_every_patch_is_loaded(screen, qtbot):
     assert panel.remove_button.isEnabled()
     w.reload()  # a reload empties the list before the patches come back (the button itself is locked)
     assert not panel.remove_button.isEnabled()
-    assert panel.reason_label.text() == ST.EFFECTS_PATCHES_INCOMPLETE
+    assert panel.reason_label.text() == ST.EFFECTS_USAGE_PENDING_SHORT
 
 
 def test_remove_is_blocked_while_a_patch_has_unsaved_edits(screen):
@@ -204,7 +263,8 @@ def test_remove_is_blocked_while_a_patch_has_unsaved_edits(screen):
     w.name_edit.textEdited.emit("Otro")
     panel.select_effect("COMP.ZD2")
     assert not panel.remove_button.isEnabled()
-    assert panel.reason_label.text() == ST.EFFECTS_UNSAVED_PATCHES
+    assert panel.reason_label.text() == ST.EFFECTS_USAGE_PENDING_SHORT
+    assert panel.usage_note.text() == ST.EFFECTS_UNSAVED_PATCHES
 
 
 def test_install_asks_first_then_uploads_and_refreshes_the_state(screen, qtbot, monkeypatch, tmp_path):

@@ -382,6 +382,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.effects_panel.install_requested.connect(self._on_effect_install)
         self.effects_panel.remove_requested.connect(self._on_effect_remove)
         self.effects_panel.repair_requested.connect(self._on_effect_repair)
+        self.effects_panel.patch_requested.connect(self._open_patch_from_effects)
         self.header = header
         self._status_bar = StatusBar()
         status_panel = GlassPanel(backdrop_root, "strong")
@@ -516,13 +517,14 @@ class MainWindow(LibraryMixin, QMainWindow):
 
     def effects_usage(self) -> dict[str, list[tuple[int, str]]]:
         """Pedal file name -> (display number, name) of the loaded patches that use the effect."""
-        users: dict[str, list[tuple[int, str]]] = {}
+        users: dict[str, list[tuple]] = {}
         for location in sorted(self._patches):
             patch = self._patches[location]
             files = {pedal_filename(info.filename) for slot in patch.effects
                      if (info := self.catalog.get(slot.effect_id)) is not None}
             for file in sorted(files):
-                users.setdefault(file, []).append((self._display(location), patch.name))
+                users.setdefault(file, []).append((self._display(location), patch.name, location,
+                                                   self._chain_strip(patch)))
         return users
 
     def _refresh_effects_context(self) -> None:
@@ -544,6 +546,11 @@ class MainWindow(LibraryMixin, QMainWindow):
             self._effects_repairing = False
             self._effect_install_requested.emit(name, path, self.effects_backup_dir)
 
+    def _open_patch_from_effects(self, location: int) -> None:
+        """A patch card of the effects screen: leave the screen (through its toggle) and select that patch."""
+        self.effects_button.setChecked(False)
+        self.select_location(location)
+
     def _on_effect_repair(self, name: str, path) -> None:
         if self._worker is not None and self._is_connected:
             self._set_effects_busy(True, S.EFFECTS_BUSY_REPAIR)
@@ -553,7 +560,7 @@ class MainWindow(LibraryMixin, QMainWindow):
     def _on_effect_remove(self, name: str) -> None:
         if self._worker is not None and self._is_connected:
             self._set_effects_busy(True, S.EFFECTS_BUSY_REMOVE)
-            in_use = {file: [number for number, _name in patches] for file, patches in self.effects_usage().items()}
+            in_use = {file: [user[0] for user in patches] for file, patches in self.effects_usage().items()}
             self._effect_remove_requested.emit(name, self.effects_backup_dir, in_use)
 
     def _set_effects_busy(self, busy: bool, text: str = "") -> None:

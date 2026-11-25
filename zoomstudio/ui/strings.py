@@ -645,10 +645,19 @@ def effects_install_blocked(need: int, size: int, margin: int, free: int) -> str
             f"más {_ES.toString(margin)} de margen) y quedan {_ES.toString(free)}.")
 
 
-def effects_in_use(patches: list[tuple[int, str]]) -> str:
-    names = ", ".join(f"{display} ({name})" if name else str(display) for display, name in patches)
-    return f"No se puede quitar: lo usan los patches {names}." if len(patches) > 1 else (
-        f"No se puede quitar: lo usa el patch {names}.")
+EFFECTS_IN_USE_SHORT = "En uso: no se puede quitar"
+EFFECTS_USAGE_PENDING_SHORT = "Uso sin confirmar: no se puede quitar todavía"
+EFFECTS_USAGE_PENDING_TITLE = "Uso sin confirmar"
+EFFECTS_USAGE_NONE = "Ningún patch usa este efecto"
+EFFECTS_USAGE_NONE_NOTE = "Se puede quitar sin afectar a ningún patch."
+
+
+def effects_usage_title(count: int) -> str:
+    return f"Usado en {count} patch" + ("" if count == 1 else "es")
+
+
+def effects_usage_card_name(display: int, name: str) -> str:
+    return f"Patch {display}, {name or 'sin nombre'}. Pulse Intro para abrirlo en el editor"
 
 
 def effects_confirm_install_title(name: str) -> str:
@@ -723,3 +732,4 @@ def effects_confirm_repair(name: str, file: str, size: int, free: int) -> str:
     return (f"La lista de la pedalera marca {name} como instalado, pero falta su archivo {file}. "
             f"Solo se sube el archivo ({effects_size(size)}); no se modifica la lista de efectos. "
             f"Antes de escribir se guarda una copia de seguridad de la lista (FLST_SEQ.ZT2).")
+EFFECTS_USAGE_LIST = "Patches que usan el efecto"
