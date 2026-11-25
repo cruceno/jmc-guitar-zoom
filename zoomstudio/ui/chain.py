@@ -116,8 +116,9 @@ class PedalBody(QFrame):
         inner = rect.adjusted(10, 9, -10, -8)
         p.setFont(ui_font(12))
         p.setPen(tokens.color("text-secondary"))
-        p.drawText(QRectF(inner.left(), inner.top(), inner.width() - 22, 16), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                   S.slot_label(t.slot_index, t.is_wide))
+        slot_w = inner.width() - 22
+        p.drawText(QRectF(inner.left(), inner.top(), slot_w, 16), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                   p.fontMetrics().elidedText(S.slot_label(t.slot_index, t.is_wide), Qt.TextElideMode.ElideRight, int(slot_w)))
         if t.is_empty:
             p.setFont(ui_font(14))
             p.drawText(QRectF(inner.left(), inner.top() + 24, inner.width(), 20), Qt.AlignmentFlag.AlignLeft, S.PEDAL_EMPTY)
@@ -128,8 +129,10 @@ class PedalBody(QFrame):
         else:
             p.setFont(display_font(16, 500))
             p.setPen(tokens.color("text-primary" if t.is_enabled_effect else "text-secondary"))
-            p.drawText(QRectF(inner.left(), inner.top() + 20, inner.width(), 40),
-                       Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap, t.effect_name)
+            # one line, elided: a wrapped name ran into the group line below it in a narrow tile
+            p.drawText(QRectF(inner.left(), inner.top() + 22, inner.width(), 22),
+                       Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                       p.fontMetrics().elidedText(t.effect_name, Qt.TextElideMode.ElideRight, int(inner.width())))
             p.setFont(ui_font(12))
             if t.problem:  # the group line gives way to why this effect cannot be written to the pedal
                 p.setPen(tokens.color("status-danger"))
@@ -139,7 +142,7 @@ class PedalBody(QFrame):
             else:
                 p.setPen(t.text_colour)
                 p.drawText(QRectF(inner.left(), inner.top() + 50, inner.width(), 16), Qt.AlignmentFlag.AlignLeft,
-                           S.group_label(t.group))
+                           p.fontMetrics().elidedText(S.group_label(t.group), Qt.TextElideMode.ElideRight, int(inner.width())))
             if self.badge_text() and not t.problem:
                 badge = QRectF(inner.left(), inner.top() + 67, 52, 15)
                 p.setPen(QPen(QColor(255, 255, 255, 46), 1))
@@ -160,8 +163,10 @@ class PedalBody(QFrame):
             p.drawEllipse(led, 4.5, 4.5)
             p.setFont(ui_font(12))
             p.setPen(tokens.color("text-secondary"))
-            p.drawText(QRectF(led.x() + 11, inner.bottom() - 16, inner.width() - 16, 16), Qt.AlignmentFlag.AlignVCenter,
-                       S.POWER_ON if t.is_enabled_effect else S.POWER_OFF)
+            power_w = inner.width() - 16
+            p.drawText(QRectF(led.x() + 11, inner.bottom() - 16, power_w, 16), Qt.AlignmentFlag.AlignVCenter,
+                       p.fontMetrics().elidedText(S.POWER_ON if t.is_enabled_effect else S.POWER_OFF,
+                                                  Qt.TextElideMode.ElideRight, int(power_w)))
         if t.selected:
             paint_glow(p, rect, "glow-accent", 12, 4)
             p.setBrush(Qt.BrushStyle.NoBrush)

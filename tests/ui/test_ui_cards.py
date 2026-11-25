@@ -50,7 +50,7 @@ def test_parameter_cards_show_range_and_default_and_keep_dial_and_spin_in_sync(w
     window.select_location(44)
     window.select_tile(1)
     rows = window.param_rows()
-    assert len(rows) == 7 and window.params.COLUMNS == 7
+    assert len(rows) == 7 and 1 <= window.params.columns <= 7  # the cards reflow with the width
     assert rows[1].range_label.text() == strings.param_range(rows[1].maximum, rows[1].default)
     rows[1].dial.setValue(60)
     assert rows[1].spin.value() == 60 and rows[1].dial.default_value == rows[1].default

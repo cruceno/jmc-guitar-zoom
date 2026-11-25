@@ -80,7 +80,7 @@ def connected_window(qtbot, monkeypatch, catalog, tmp_path, pedal_files: PedalFi
 def open_screen(qtbot, w):
     panel = w.effects_panel
     with qtbot.waitSignal(panel.state_shown, timeout=5000):
-        w.effects_button.click()
+        w.open_effects_screen()
     return panel
 
 
@@ -213,7 +213,7 @@ def test_clicking_a_patch_card_closes_the_screen_and_selects_that_patch(screen):
     w, panel, _files = screen
     panel.select_effect("HALL.ZD2")
     click_usage_card(panel)
-    assert not w.effects_button.isChecked() and not panel.isVisibleTo(w)
+    assert not w.effects_toggle.isChecked() and not panel.isVisibleTo(w)
     assert w.patch_list.currentRow() == 1  # location 2 (display 11, "HB Jazz")
 
 
@@ -223,7 +223,7 @@ def test_enter_on_a_patch_card_does_the_same(screen, qtbot):
     panel.usage_list.setFocus()
     panel.usage_list.setCurrentRow(0)
     qtbot.keyClick(panel.usage_list, Qt.Key.Key_Return)
-    assert not w.effects_button.isChecked() and w.patch_list.currentRow() == 0
+    assert not w.effects_toggle.isChecked() and w.patch_list.currentRow() == 0
 
 
 def test_an_effect_no_patch_uses_gets_a_calm_message_that_is_not_red(screen):
@@ -328,7 +328,7 @@ def test_a_failed_install_goes_through_the_error_path(qtbot, monkeypatch, catalo
 def test_without_a_connection_the_screen_explains_it_and_offers_nothing(qtbot, catalog, tmp_path):
     w = MainWindow(catalog, a1_ids=None, backup_dir=tmp_path)
     qtbot.addWidget(w)
-    w.effects_button.click()
+    w.open_effects_screen()
     panel = w.effects_panel
     assert panel.message_label.text() == ST.EFFECTS_OFFLINE
     assert panel.message_label.isVisibleTo(panel)
@@ -349,10 +349,10 @@ def test_editing_is_locked_while_the_screen_is_open(screen):
     assert not w.splitter.isEnabled()
     assert not w.edit_button.isEnabled() and not w.library_button.isEnabled()
     assert not w.save_button.isEnabled() and not w.tuner_button.isEnabled()
-    assert w.effects_button.isChecked()
+    assert w.effects_toggle.isChecked()
     panel.close_button.click()
     assert not panel.isVisibleTo(w) and w.splitter.isVisibleTo(w) and w.splitter.isEnabled()
-    assert w.edit_button.isEnabled() and w.library_button.isEnabled() and not w.effects_button.isChecked()
+    assert w.edit_button.isEnabled() and w.library_button.isEnabled() and not w.effects_toggle.isChecked()
 
 
 def test_the_tuner_cannot_start_while_the_screen_is_open(screen):
@@ -369,7 +369,7 @@ def test_the_library_menu_opens_the_screen_through_the_top_bar_toggle(qtbot, mon
     assert action.isEnabled()
     with qtbot.waitSignal(w.effects_panel.state_shown, timeout=5000):
         action.trigger()
-    assert w.effects_button.isChecked() and w.effects_panel.isVisibleTo(w)
+    assert w.effects_toggle.isChecked() and w.effects_panel.isVisibleTo(w)
 
 
 def test_the_catalog_button_opens_the_screen_through_the_top_bar_toggle(qtbot, monkeypatch, catalog, tmp_path):
@@ -379,8 +379,8 @@ def test_the_catalog_button_opens_the_screen_through_the_top_bar_toggle(qtbot, m
     assert "instala o quita efectos" in button.toolTip().lower()
     with qtbot.waitSignal(w.effects_panel.state_shown, timeout=5000):
         button.click()
-    assert w.effects_button.isChecked() and w.effects_panel.isVisibleTo(w)
-    assert w.effects_button.toolTip() == ST.EFFECTS_TIP
+    assert w.effects_toggle.isChecked() and w.effects_panel.isVisibleTo(w)
+    assert not hasattr(w, "effects_button")  # the bar has no «Efectos» button any more
 
 
 # ---------------------------------------------------------------- groups

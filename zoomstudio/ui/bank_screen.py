@@ -33,7 +33,7 @@ from .cards import (
 from .dialogs import ConfirmDialog
 from .glass import BackdropRoot, GlassMenu, GlassPanel
 from .icons import icon
-from .painted import SectionLabel
+from .painted import SearchField, SectionLabel
 from .widgets import MIME_PATCH, PatchList
 
 MIME_BANK = "application/x-zoomstudio-bank-entry"  # payload: bank entry id (UTF-8 text)
@@ -254,11 +254,7 @@ class BankScreen(GlassPanel):
         self.bank_list.delete_key.connect(self._on_delete_clicked)
         self.bank_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.bank_list.customContextMenuRequested.connect(self._show_entry_menu)
-        self.search = QLineEdit()
-        self.search.setPlaceholderText(S.BANK_SEARCH)
-        self.search.setClearButtonEnabled(True)
-        self.search.setAccessibleName(S.BANK_SEARCH_TIP)
-        self.search.addAction(icon("search", "text-secondary", 17), QLineEdit.ActionPosition.LeadingPosition)
+        self.search = SearchField(S.BANK_SEARCH, S.BANK_SEARCH_TIP)
         self.search.textChanged.connect(lambda _text: self._populate_entries())
         self.positions_caption = QLabel("")
         self.positions_caption.setProperty("role", "secondary")

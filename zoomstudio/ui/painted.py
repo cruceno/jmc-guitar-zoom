@@ -7,13 +7,14 @@ the style sheet does not touch (the way the cards do it).
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt
+from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen, QRadialGradient
-from PySide6.QtWidgets import QAbstractButton, QLabel, QPushButton, QSizePolicy, QStatusBar, QWidget
+from PySide6.QtWidgets import QAbstractButton, QLabel, QLineEdit, QPushButton, QSizePolicy, QStatusBar, QWidget
 
 from . import strings as S
 from . import tokens
 from .fonts import display_font, ui_font
+from .icons import pixmap
 
 
 def _resolve(color: QColor | str) -> QColor:
@@ -95,6 +96,9 @@ class KeyChipButton(QPushButton):
     def sizeHint(self) -> QSize:  # noqa: N802 (Qt API)
         hint = super().sizeHint()
         return QSize(hint.width() + self.CHIP_W + 4, hint.height())
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 (Qt API)
+        return self.sizeHint()  # the chip is painted over the button: it needs its room
 
     def paintEvent(self, event) -> None:  # noqa: N802 (Qt API)
         super().paintEvent(event)
@@ -215,10 +219,58 @@ class ConnectionPill(QLabel):
 
     DOT_TOKENS = {"ok": "status-ok", "info": "status-info", "none": None}
 
+    PAD = 52  # the style sheet's padding (14 + 30), the border and a little air
+    MIN_W = 150
+
     def __init__(self, text: str = "") -> None:
-        super().__init__(text)
+        super().__init__("")
         self.setObjectName("connectionPill")
         self.kind = "none"
+        self._full = ""
+        self._detail = ""
+        self.setMinimumWidth(self.MIN_W)
+        self.setText(text)
+
+    def setText(self, text: str) -> None:  # noqa: N802 (Qt API)
+        """Keep the full text; show it elided when the pill is narrower than it (the tooltip has all of it)."""
+        self._full = text
+        self._refresh_tip()
+        self._elide()
+        self.updateGeometry()
+
+    def setToolTip(self, detail: str) -> None:  # noqa: N802 (Qt API)
+        """The tooltip always starts with the full text (it may be elided); ``detail`` follows it."""
+        self._detail = detail
+        self._refresh_tip()
+
+    def _refresh_tip(self) -> None:
+        QLabel.setToolTip(self, f"{self._full}\n{self._detail}" if self._detail else self._full)
+
+    def text(self) -> str:
+        return self._full
+
+    def shown_text(self) -> str:
+        """What the pill paints right now (the full text, or its elided form)."""
+        return QLabel.text(self)
+
+    def _elide(self) -> None:
+        room = max(self.width() - self.PAD, 0)
+        fm = self.fontMetrics()
+        shown = self._full if self.width() <= 0 or fm.horizontalAdvance(self._full) <= room else \
+            fm.elidedText(self._full, Qt.TextElideMode.ElideRight, room)
+        if shown != QLabel.text(self):
+            QLabel.setText(self, shown)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        super().resizeEvent(event)
+        self._elide()
+
+    def sizeHint(self) -> QSize:  # noqa: N802 (Qt API)
+        base = super().sizeHint()
+        return QSize(max(self.fontMetrics().horizontalAdvance(self._full) + self.PAD, self.MIN_W), base.height())
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 (Qt API)
+        return QSize(self.MIN_W, super().minimumSizeHint().height())
 
     def set_kind(self, kind: str) -> None:
         self.kind = kind
@@ -300,3 +352,33 @@ class GroupChip(QWidget):
         p.setFont(self._font)
         p.setPen(group_text_color(self._group))
         p.drawText(rect, Qt.AlignmentFlag.AlignCenter, self._text)
+
+
+class SearchField(QLineEdit):
+    """A search box with its magnifier painted inside: centred vertically, one left padding everywhere.
+
+    Qt's own leading-action button drifted downwards in a taller, style-sheet-padded field, so the icon is
+    painted here and the text is moved right of it with a text margin.
+    """
+
+    ICON = 16
+    LEFT = 12  # the style sheet's left padding; the icon starts there
+    GAP = 8
+
+    def __init__(self, placeholder: str = "", accessible: str = "") -> None:
+        super().__init__()
+        self.setPlaceholderText(placeholder)
+        self.setClearButtonEnabled(True)
+        if accessible:
+            self.setAccessibleName(accessible)
+        self.setTextMargins(self.ICON + self.GAP, 0, 0, 0)
+
+    def icon_rect(self) -> QRect:
+        """Where the magnifier is painted (the audit checks it is centred and apart from the text)."""
+        return QRect(self.LEFT, (self.height() - self.ICON) // 2, self.ICON, self.ICON)
+
+    def paintEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        super().paintEvent(event)
+        p = QPainter(self)
+        color = tokens.color("text-secondary" if self.isEnabled() else "text-disabled")
+        p.drawPixmap(self.icon_rect(), pixmap("search", color.name(), self.ICON * 2))

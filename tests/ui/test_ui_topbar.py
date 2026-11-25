@@ -34,7 +34,7 @@ def test_icon_only_buttons_have_names_and_tooltips(window):
 
 def test_save_button_glows_only_through_its_host_and_shows_the_reason(window):
     assert isinstance(window.save_button.parentWidget(), GlowHost)
-    assert not window.save_button.isEnabled() and window.save_reason.text() == strings.SAVE_NEEDS_CONNECTION
+    assert not window.save_button.isEnabled() and strings.SAVE_NEEDS_CONNECTION in window.save_button.toolTip()
 
 
 def test_every_icon_renders():

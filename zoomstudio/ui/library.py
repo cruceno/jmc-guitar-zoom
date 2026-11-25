@@ -30,8 +30,8 @@ class LibraryMixin:
 
     def open_effects_screen(self) -> None:
         """The effects screen through the top-bar toggle, so every way in leaves the same state."""
-        if self.effects_button.isEnabled():
-            self.effects_button.setChecked(True)
+        if self.effects_toggle.isEnabled():
+            self.effects_toggle.setChecked(True)
 
     def _init_library(self) -> None:
         self._clipboard: Patch | None = None

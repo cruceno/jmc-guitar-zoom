@@ -33,6 +33,7 @@ QPushButton[primary="true"] {
   color: $on_accent; border: none; border-radius: 24px; min-height: 48px; font-size: 15px; font-weight: 700;
 }
 QPushButton[primary="true"]:disabled { background: transparent; border: 1px dashed $border_strong; color: $text_disabled; }
+QPushButton[iconOnly="true"] { min-width: 48px; max-width: 48px; padding: 0; }
 QPushButton[danger="true"] { background: $status_danger_bg; border: 1px solid $status_danger; color: $status_danger; }
 QToolButton[ghost="true"] { background: transparent; border: 1px solid transparent; }
 QToolButton[ghost="true"]:hover { background: $card_hover; }

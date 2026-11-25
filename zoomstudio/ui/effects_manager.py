@@ -33,7 +33,7 @@ from .favorites import FavoritesStore
 from .fonts import display_font, ui_font
 from .glass import BackdropRoot, GlassPanel
 from .icons import icon
-from .painted import SectionLabel
+from .painted import SearchField, SectionLabel
 from .theme import group_color, group_fill_color, group_text_color
 
 ROLE_ENTRY = Qt.ItemDataRole.UserRole + 30  # the Entry behind a card
@@ -238,11 +238,7 @@ class EffectsManager(GlassPanel):
         self.message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.retry_button = QPushButton(S.EFFECTS_RETRY)
         self.retry_button.clicked.connect(self.refresh_requested)
-        self.search = QLineEdit()
-        self.search.setPlaceholderText(S.SEARCH_EFFECTS)
-        self.search.setClearButtonEnabled(True)
-        self.search.setAccessibleName(S.EFFECTS_SEARCH_TIP)
-        self.search.addAction(icon("search", "text-secondary", 17), QLineEdit.ActionPosition.LeadingPosition)
+        self.search = SearchField(S.SEARCH_EFFECTS, S.EFFECTS_SEARCH_TIP)
         self.search.textChanged.connect(lambda _text: self._populate())
         self.group_combo = QComboBox()
         self.group_combo.setToolTip(S.EFFECTS_GROUP_TIP)

@@ -6,7 +6,7 @@ from PySide6.QtCore import QByteArray, QEvent, QMimeData, QRectF, QSize, Qt, Sig
 from PySide6.QtGui import QColor, QDrag, QFont, QFontMetrics, QImage, QLinearGradient, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDial, QFrame, QGridLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QProgressBar, QScrollArea, QSizePolicy, QSpinBox, QToolButton, QVBoxLayout, QWidget,
+    QListWidget, QListWidgetItem, QProgressBar, QScrollArea, QSizePolicy, QSpinBox, QStyle, QToolButton, QVBoxLayout, QWidget,
 )
 
 from zoomstudio.effects.catalog import EffectInfo
@@ -19,7 +19,7 @@ from .cards import ROLE_EFFECT, ROLE_FAV, ROLE_SECTION, FAVORITES_KEY, SectionLi
 from .favorites import FavoritesStore
 from .fonts import display_font, ui_font
 from .icons import icon, pixmap
-from .painted import GroupChip, SectionLabel
+from .painted import GroupChip, SearchField, SectionLabel
 from .chain import CHAIN_MIN_TILES, ChainView, EffectTile, PedalTile  # noqa: F401  (re-exported)
 from .mime import MIME_EFFECT, MIME_PATCH, MIME_SLOT  # noqa: F401  (re-exported)
 from .theme import group_color
@@ -171,12 +171,25 @@ class DetailCard(QFrame):
             p.drawLine(divider, int(rect.top() + 14), divider, int(rect.bottom() - 14))
 
 
+class _GridScroll(QScrollArea):
+    """Scroller of the parameter cards: as tall as the cards when there is room, one row of cards at least."""
+
+    ROW_MIN = 150  # replaced by the real card height once cards exist
+
+    def sizeHint(self) -> QSize:  # noqa: N802 (Qt API)
+        inner = self.widget().sizeHint() if self.widget() is not None else QSize()
+        return QSize(inner.width(), inner.height() + 2 * self.frameWidth())
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 (Qt API)
+        return QSize(0, min(self.sizeHint().height(), self.ROW_MIN + 2 * self.frameWidth()))
+
+
 class ParamPanel(QWidget):
     """Parameter cards of the selected effect and, below them, the detail card (parameter | effect)."""
 
     param_changed = Signal(int, int)  # parameter index, value
 
-    COLUMNS = 7
+    GAP = 8
 
     def __init__(self, installed_label: str = "") -> None:
         super().__init__()
@@ -204,7 +217,15 @@ class ParamPanel(QWidget):
         self._grid_host = QWidget()
         self._grid = QGridLayout(self._grid_host)
         self._grid.setContentsMargins(0, 0, 0, 0)
-        self._grid.setSpacing(8)
+        self._grid.setSpacing(self.GAP)
+        self._columns = 0
+        self._grid_scroll = _GridScroll()  # cards keep a minimum size: they reflow into columns and scroll
+        self._grid_scroll.setWidget(self._grid_host)
+        self._grid_scroll.setWidgetResizable(True)
+        self._grid_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._grid_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._grid_scroll.viewport().setAutoFillBackground(False)
+        self._grid_host.setAutoFillBackground(False)
         # empty slot: instructions instead of knobs
         self.empty_title = QLabel("")
         self.empty_title.setProperty("role", "strong")
@@ -267,13 +288,42 @@ class ParamPanel(QWidget):
         card_lay.addLayout(left, stretch=1)  # equal columns, as in the prototype
         card_lay.addLayout(right, stretch=1)
         outer.addLayout(head)
-        outer.addWidget(self._grid_host)
+        outer.addWidget(self._grid_scroll)
         outer.addWidget(self._empty)
         outer.addWidget(self.card, stretch=1)
         outer.addStretch(0)
         self._rows: list[ParamRow] = []
         self._current: ParamRow | None = None
         self.clear()
+
+    @property
+    def columns(self) -> int:
+        """Cards per row right now (as many as fit at their minimum width)."""
+        return self._columns
+
+    def _reflow(self) -> None:
+        """As many columns as fit at the cards' minimum width; the rest wrap into rows (the area scrolls)."""
+        if not self._rows:
+            return
+        need = max(r.minimumSizeHint().width() for r in self._rows)
+        scrollbar = self.style().pixelMetric(QStyle.PixelMetric.PM_ScrollBarExtent)
+        room = max(self._grid_scroll.width() - 2 * self._grid_scroll.frameWidth() - scrollbar, need)
+        columns = max(1, min(len(self._rows), (room + self.GAP) // (need + self.GAP)))
+        self._grid_scroll.ROW_MIN = max(r.minimumSizeHint().height() for r in self._rows)
+        self._grid_scroll.setMinimumHeight(self._grid_scroll.ROW_MIN + 2 * self._grid_scroll.frameWidth())  # one row
+        if columns == self._columns:
+            return
+        self._columns = columns
+        for i, row in enumerate(self._rows):
+            self._grid.removeWidget(row)
+            self._grid.addWidget(row, i // columns, i % columns)
+        for c in range(max(columns, 7)):
+            self._grid.setColumnStretch(c, 1 if c < columns else 0)
+        self._grid_scroll.updateGeometry()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        super().resizeEvent(event)
+        self._reflow()
 
     def rows(self) -> list[ParamRow]:
         return list(self._rows)
@@ -284,6 +334,8 @@ class ParamPanel(QWidget):
             row.setParent(None)
             row.deleteLater()
         self._rows = []
+        self._columns = 0
+        self._grid_scroll.setMinimumHeight(0)
         self._current = None
         for w in (self.chip, self.off_caption):
             w.hide()
@@ -294,7 +346,7 @@ class ParamPanel(QWidget):
         self.reset_button.setVisible(True)
         self.param_icon.hide()
         self._empty.hide()
-        self._grid_host.show()
+        self._grid_scroll.show()
         self.card.show()
 
     def clear(self, message: str = S.SELECT_EFFECT) -> None:
@@ -305,7 +357,7 @@ class ParamPanel(QWidget):
     def show_empty(self, slot_index: int) -> None:
         """An empty pedal is selected: say what it takes to fill it (no knobs, no detail card)."""
         self._reset_view()
-        self._grid_host.hide()
+        self._grid_scroll.hide()
         self.card.hide()
         self.empty_title.setText(S.empty_slot_title(slot_index + 1))
         self.empty_text.setText(S.empty_slot_instructions(slot_index + 1))
@@ -334,8 +386,9 @@ class ParamPanel(QWidget):
             row.changed.connect(self.param_changed)
             row.changed.connect(lambda _i, _v, r=row: self._refresh_param(r))
             row.activated.connect(lambda _idx, r=row: self._select(r) if r in self._rows else None)
-            self._grid.addWidget(row, i // self.COLUMNS, i % self.COLUMNS)
             self._rows.append(row)
+        self._columns = 0
+        self._reflow()
         if self._rows:
             self._select(self._rows[0])
 
@@ -460,11 +513,7 @@ class CatalogPanel(QWidget):
         self._selected_group: str | None = None  # group of the effect selected in the chain: starts open
         self._target_enabled = False
         self._has_svg = False
-        self.search = QLineEdit()
-        self.search.setPlaceholderText(S.SEARCH_EFFECTS)
-        self.search.setClearButtonEnabled(True)
-        self.search.setAccessibleName(S.SEARCH_EFFECTS_TIP)
-        self.search.addAction(icon("search", "text-secondary", 17), QLineEdit.ActionPosition.LeadingPosition)
+        self.search = SearchField(S.SEARCH_EFFECTS, S.SEARCH_EFFECTS_TIP)
         self.group_combo = QComboBox()
         self.group_combo.addItem(ALL_GROUPS)
         self.group_combo.addItem(S.FAVORITES, FAVORITES_FILTER)

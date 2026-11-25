@@ -61,6 +61,16 @@ RELOAD = "Recargar"
 OPEN_FILE = "Abrir archivo…"
 SAVE_FILE = "Guardar como archivo…"
 SAVE_TO_PEDAL = "Guardar en la pedalera"
+
+
+def save_button_name(display: int | None) -> str:
+    """Accessible name of the icon-only save button."""
+    return SAVE_TO_PEDAL if display is None else f"{SAVE_TO_PEDAL} (escribe el patch en la posición {display})"
+
+
+def save_tooltip(display: int | None, reason: str) -> str:
+    return f"{save_button_name(display)}\n{reason}"
+
 TUNER = "Afinador"
 SWITCH_ON = "SÍ"
 SWITCH_OFF = "NO"

@@ -6,7 +6,7 @@ import copy
 import re
 from pathlib import Path
 
-from PySide6.QtCore import QMetaObject, QRegularExpression, QThread, Qt, Signal, Slot
+from PySide6.QtCore import QEvent, QMetaObject, QRegularExpression, QSize, QThread, Qt, Signal, Slot
 from PySide6.QtGui import (
     QAction, QBrush, QColor, QKeySequence, QShortcut, QRegularExpressionValidator, QUndoCommand, QUndoGroup, QUndoStack,
 )
@@ -38,7 +38,8 @@ from .favorites import FavoritesStore
 from .widgets import CatalogPanel, ChainView, EffectTile, ParamPanel, ParamRow, PatchList
 from .worker import PedalWorker, TransportFactory
 
-PATCHES_WIDTH, CATALOG_WIDTH = 248, 368  # the prototype's column widths
+PATCHES_WIDTH, CATALOG_WIDTH = 248, 368  # the prototype's column widths (their maximum: compact windows narrow them)
+PATCHES_MIN, CATALOG_MIN = 220, 330
 DEFAULT_PATCH_COUNT = 50
 DISPLAY_OFFSET = 9  # the pedal shows locations 1..50 as 10..59
 MODEL_NAMES = {0x6E: "A1 FOUR"}
@@ -167,7 +168,6 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.edit_button = self._menu_button(S.EDIT_MENU)
         self.library_button = self._menu_button(S.LIBRARY_MENU)
         self.connection_label = ConnectionPill(S.NOT_CONNECTED)
-        self.connection_label.setMinimumWidth(190)
         self.memory_bar = QProgressBar()
         self.memory_bar.setRange(0, 100)
         self.memory_bar.setValue(0)
@@ -179,21 +179,25 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.connect_button = QPushButton(S.CONNECT)
         self.connect_button.setIcon(icon("plug"))
         self.disconnect_button = QPushButton(S.DISCONNECT)
+        self.disconnect_button.setIcon(icon("unplug"))
         self.open_button = self._icon_button("folder", S.OPEN_FOLDER)
         self.reload_button = self._icon_button("reload", S.RELOAD)
         self.open_file_button = self._icon_button("file", S.OPEN_FILE)
         self.save_file_button = self._icon_button("filesave", S.SAVE_FILE)
-        self.save_button = QPushButton(S.SAVE_TO_PEDAL)
+        self.save_button = QPushButton()  # icon only: its name and the reason it is (not) available are the tooltip
         self.save_button.setProperty("primary", True)
-        self.save_button.setIcon(icon("save", "on-accent"))
+        self.save_button.setProperty("iconOnly", True)
+        self.save_button.setIcon(icon("save", "on-accent", 24))
+        self.save_button.setIconSize(QSize(24, 24))
+        self.save_button.setAccessibleName(S.SAVE_TO_PEDAL)
         self.tuner_button = KeyChipButton(S.TUNER, S.TUNER_KEY)
         self.tuner_button.setIcon(icon("tuner"))
         self.tuner_button.setCheckable(True)
         self.tuner_button.setToolTip(S.TUNER_TIP)
-        self.effects_button = QPushButton(S.EFFECTS_BUTTON)
-        self.effects_button.setIcon(icon("package"))
-        self.effects_button.setCheckable(True)
-        self.effects_button.setToolTip(S.EFFECTS_TIP)
+        # the effects screen has no button in the bar: its open state is this checkable action, driven by the
+        # catalog's «Administrar» button, the Biblioteca menu entry and the screen's own «Cerrar»
+        self.effects_toggle = QAction(S.EFFECTS_BUTTON, self)
+        self.effects_toggle.setCheckable(True)
         self.bank_button = self._icon_button("bank", S.BANK_TIP)  # icon only: the 1280 px header has no room for a word
         self.bank_button.setCheckable(True)
         self.bank_button.setAccessibleName(S.BANK_TITLE)
@@ -203,11 +207,12 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         for w in (self.edit_button, self.library_button, self.connection_label):
             h.addWidget(w)
         h.addSpacing(8)
-        h.addWidget(QLabel(S.MEMORY_LABEL))
+        self.memory_caption = QLabel(S.MEMORY_LABEL)
+        h.addWidget(self.memory_caption)
         h.addWidget(self.memory_bar)
         h.addWidget(self.memory_value)
         h.addStretch(1)
-        for w in (self.bank_button, self.effects_button, self.tuner_button, self.live_check, self.open_file_button, self.save_file_button,
+        for w in (self.bank_button, self.tuner_button, self.live_check, self.open_file_button, self.save_file_button,
                   self.open_button, self.reload_button, self.connect_button, self.disconnect_button):
             h.addWidget(w)
         self.connect_button.clicked.connect(self._on_connect_clicked)
@@ -219,7 +224,7 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.open_file_button.clicked.connect(self._choose_open_file)
         self.live_check.toggled.connect(self._on_live_toggled)
         self.tuner_button.toggled.connect(self._on_tuner_toggled)
-        self.effects_button.toggled.connect(self._on_effects_toggled)
+        self.effects_toggle.toggled.connect(self._on_effects_toggled)
         self.bank_button.toggled.connect(self._on_bank_toggled)
         self.tuner_shortcut = QShortcut(QKeySequence("T"), self)
         self.tuner_shortcut.activated.connect(self._on_tuner_shortcut)
@@ -259,7 +264,7 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.name_edit.setObjectName("patchName")
         self.name_edit.setMaxLength(NAME_MAX_LEN)
         self.name_edit.setValidator(QRegularExpressionValidator(QRegularExpression(r"[ -~]*")))
-        self.name_edit.setMinimumWidth(230)
+        self.name_edit.setMinimumWidth(200)
         self.name_edit.setPlaceholderText(S.NO_PATCH_SELECTED)
         self.name_edit.setToolTip(S.name_tip(NAME_MAX_LEN))
         self.name_edit.setAccessibleName(S.name_tip(NAME_MAX_LEN))
@@ -273,7 +278,8 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.dsp_bar.setRange(0, 100)
         self.dsp_bar.setFormat(S.DSP_NA)
         self.dsp_bar.setTextVisible(False)
-        self.dsp_bar.setFixedWidth(120)
+        self.dsp_bar.setMinimumWidth(56)  # shrinks in a compact window
+        self.dsp_bar.setMaximumWidth(120)
         self.dsp_value = QLabel(S.NOT_AVAILABLE)
         self.dsp_value.setProperty("role", "value")
         self.dsp_alert = QLabel()
@@ -288,11 +294,6 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
             b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
             b.setProperty("icon-only", True)
         self.dirty_label = DotLabel(S.UNSAVED_CHANGES)
-        self.save_reason = QLabel("")
-        self.save_reason.setProperty("role", "reason")
-        self.save_reason.setWordWrap(True)
-        self.save_reason.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
-        self.save_reason.setMaximumWidth(260)
         title_row = QHBoxLayout()
         title_row.setSpacing(6)
         title_row.addWidget(self.patch_number)
@@ -319,7 +320,6 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         right_col = QVBoxLayout()
         right_col.setSpacing(0)
         right_col.addWidget(GlowHost(self.save_button, margin=8))
-        right_col.addWidget(self.save_reason)
         right_col.addStretch(1)
         head = QWidget()
         head_lay = QHBoxLayout(head)
@@ -366,13 +366,21 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.catalog_panel.manage_requested.connect(self.open_effects_screen)
 
         left_panel, catalog_panel = self._glass(left), self._glass(self.catalog_panel)
-        left_panel.setFixedWidth(PATCHES_WIDTH)
-        catalog_panel.setFixedWidth(CATALOG_WIDTH)
+        left_panel.setMinimumWidth(PATCHES_MIN)
+        left_panel.setMaximumWidth(PATCHES_WIDTH)
+        catalog_panel.setMinimumWidth(CATALOG_MIN)
+        catalog_panel.setMaximumWidth(CATALOG_WIDTH)
         splitter = QSplitter()
         splitter.setChildrenCollapsible(False)
         splitter.setHandleWidth(10)
         splitter.addWidget(left_panel)
-        splitter.addWidget(centre)
+        self.centre_scroll = QScrollArea()  # a window too short for the centre scrolls it instead of squeezing it
+        self.centre_scroll.setWidget(centre)
+        self.centre_scroll.setWidgetResizable(True)
+        self.centre_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.centre_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.centre_scroll.viewport().setAutoFillBackground(False)
+        splitter.addWidget(self.centre_scroll)
         splitter.addWidget(catalog_panel)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)  # only the centre takes the spare width: 248 / rest / 368
@@ -385,7 +393,7 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.tuner_panel.exit_requested.connect(lambda: self.tuner_button.setChecked(False))
         self.effects_panel = EffectsManager(backdrop_root, self.catalog, a1_ids, self.favorites)
         self.effects_panel.hide()
-        self.effects_panel.close_requested.connect(lambda: self.effects_button.setChecked(False))
+        self.effects_panel.close_requested.connect(lambda: self.effects_toggle.setChecked(False))
         self.effects_panel.refresh_requested.connect(self._request_effects_state)
         self.effects_panel.install_requested.connect(self._on_effect_install)
         self.effects_panel.remove_requested.connect(self._on_effect_remove)
@@ -399,6 +407,10 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.bank_panel.rename_requested.connect(self.rename_entry)
         self.bank_panel.delete_requested.connect(self.delete_entry)
         self.header = header
+        self._header_level = 0
+        self._fitting_header = False
+        header.installEventFilter(self)
+        self._fit_header()
         self._status_bar = StatusBar()
         status_panel = GlassPanel(backdrop_root, "strong")
         status_lay = QHBoxLayout(status_panel)
@@ -456,7 +468,7 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
     def _set_connection(self, text: str, connected: bool, kind: str | None = None) -> None:
         """``kind`` is the colour of the dot: ok (connected), info (a folder is loaded) or none."""
         self.connection_label.setText(text)
-        self.connection_label.setMinimumWidth(max(190, self.connection_label.sizeHint().width()))  # the text always fits
+        self._fit_header()
         self.connection_label.set_kind(kind or ("ok" if connected else "none"))
         self.connection_label.setProperty("connected", connected)
         self.connection_label.style().unpolish(self.connection_label)
@@ -473,13 +485,13 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.live_check.setEnabled(self._is_connected)
         self.tuner_button.setEnabled(self._is_connected and self._worker is not None and not self._saving
                                      and not self._effects_open and not self._bank_open)
-        self.effects_button.setEnabled(not self._tuner_on and not self._saving and not self._effects_busy
+        self.effects_toggle.setEnabled(not self._tuner_on and not self._saving and not self._effects_busy
                                        and not self._bank_open)
         self.bank_button.setVisible(not self._tuner_on)  # the tuner's «Salir del afinador» needs the room at 1440 px
         # the bank screen stays closable while its own write runs; it never opens over the tuner or the effects screen
         self.bank_button.setEnabled(not self._tuner_on and not self._effects_open and not self._effects_busy
                                     and (self._bank_open or not self._saving))
-        self.effects_action.setEnabled(self.effects_button.isEnabled() and not self._effects_open)
+        self.effects_action.setEnabled(self.effects_toggle.isEnabled() and not self._effects_open)
         self.catalog_panel.manage_button.setEnabled(self.effects_action.isEnabled())
         blockers = self.save_blockers()
         dirty = self._location is not None and self.is_dirty(self._location)
@@ -493,11 +505,10 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
             tip = S.SAVE_NO_EDITS
         else:
             tip = S.SAVE_TIP
-        self.save_button.setToolTip(tip)
-        self.save_reason.setText(tip)  # one help line under the button, whatever the state
-        self.save_reason.setProperty("blocking", bool(blockers))
-        self.save_reason.style().unpolish(self.save_reason)
-        self.save_reason.style().polish(self.save_reason)
+        shown = None if self._location is None else self._display(self._location)
+        self.save_button.setToolTip(S.save_tooltip(shown, tip))
+        self.save_button.setAccessibleName(S.save_button_name(shown))
+        self.save_button.setAccessibleDescription(tip)
         self.dirty_label.setVisible(dirty)
         in_use = sum(1 for pt in self._patches.values() if any(not e.is_placeholder for e in pt.effects))
         self.patches_caption.setText(S.patches_caption(in_use, self._display(1), self._display(self._patch_count)))
@@ -572,7 +583,7 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
 
     def _open_patch_from_effects(self, location: int) -> None:
         """A patch card of the effects screen: leave the screen (through its toggle) and select that patch."""
-        self.effects_button.setChecked(False)
+        self.effects_toggle.setChecked(False)
         self.select_location(location)
 
     def _on_effect_repair(self, name: str, path) -> None:
@@ -628,7 +639,7 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
     def _apply_tuner_state(self, on: bool) -> None:
         """Show/hide the tuner panel and lock/unlock the editor (the pedal itself is driven by the worker)."""
         self._tuner_on = on
-        self.tuner_button.setText(S.TUNER_EXIT if on else S.TUNER)
+        self._fit_header()
         if self.tuner_button.isChecked() != on:
             self.tuner_button.blockSignals(True)
             self.tuner_button.setChecked(on)
@@ -1291,6 +1302,52 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.error_shown.emit(message)
 
     # --------------------------------------------------------------- close
+
+    # ------------------------------------------------------------- compact header
+
+    HEADER_LEVELS = 4  # 0: everything with its words ... 3: icons only where an icon says it
+
+    def _set_header_level(self, level: int) -> None:
+        """Words give way before anything overlaps: the caption, then the buttons' text (their tooltips stay)."""
+        self._header_level = level
+        self.memory_caption.setVisible(level < 1)
+        for button, text in ((self.tuner_button, S.TUNER),
+                             (self.connect_button, S.CONNECT), (self.disconnect_button, S.DISCONNECT)):
+            button.setAccessibleName(text)
+        self.tuner_button.setText(S.TUNER_EXIT if self._tuner_on else ("" if level >= 2 else S.TUNER))
+        self.connect_button.setText("" if level >= 3 else S.CONNECT)
+        self.disconnect_button.setText("" if level >= 3 else S.DISCONNECT)
+        for button, tip in ((self.connect_button, S.CONNECT), (self.disconnect_button, S.DISCONNECT)):
+            button.setToolTip(tip if level >= 3 else "")
+
+    def _fit_header(self) -> None:
+        """Pick the least compact level that shows everything at its preferred width.
+
+        When even the most compact level cannot, the lowest level whose *minimum* width fits is used: the
+        connection pill then elides its text, which is better than any overlap.
+        """
+        header = getattr(self, "header", None)
+        if header is None or getattr(self, "_fitting_header", False):
+            return
+        self._fitting_header = True
+        try:
+            fallback = None
+            for level in range(self.HEADER_LEVELS):
+                self._set_header_level(level)
+                header.layout().invalidate()
+                header.layout().activate()
+                if header.layout().sizeHint().width() <= header.width():
+                    return
+                if fallback is None and header.layout().minimumSize().width() <= header.width():
+                    fallback = level
+            self._set_header_level(fallback if fallback is not None else self.HEADER_LEVELS - 1)
+        finally:
+            self._fitting_header = False
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 (Qt API)
+        if obj is getattr(self, "header", None) and event.type() == QEvent.Type.Resize:
+            self._fit_header()
+        return super().eventFilter(obj, event)
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt API)
         if not self._closed:
