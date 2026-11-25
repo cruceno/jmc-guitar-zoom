@@ -184,3 +184,40 @@ def test_remove_list_upload_timeout_restores_the_original_list(tmp_path):
     with pytest.raises(installer.EffectInstallError, match="restored"):
         installer.remove_effect(pedal, NAME, tmp_path)
     assert pedal.files == {"FLST_SEQ.ZT2": AFTER, NAME: ZD2}
+
+
+def test_repair_uploads_a_missing_file_without_touching_the_list(tmp_path):
+    # the list says installed (AFTER) but the file is missing, as B_OCTAVE was on the real pedal
+    pedal = FakePedal({"FLST_SEQ.ZT2": AFTER})
+    result = installer.repair_effect(pedal, ZD2, NAME, tmp_path)
+    assert pedal.files == {"FLST_SEQ.ZT2": AFTER, NAME: ZD2}
+    assert [w for w, _ in pedal.writes] == [NAME] and all(in_pc for _, in_pc in pedal.writes)
+    assert result.installed and result.available_after == result.available_before - len(ZD2)
+
+
+def test_repair_refuses_an_effect_that_is_not_marked_installed(tmp_path):
+    pedal = FakePedal({"FLST_SEQ.ZT2": BEFORE})
+    with pytest.raises(installer.EffectInstallError, match="not marked installed"):
+        installer.repair_effect(pedal, ZD2, NAME, tmp_path)
+    assert pedal.writes == []
+
+
+def test_repair_refuses_when_the_file_is_present(tmp_path):
+    pedal = FakePedal({"FLST_SEQ.ZT2": AFTER, NAME: ZD2})
+    with pytest.raises(installer.EffectInstallError, match="already on the pedal"):
+        installer.repair_effect(pedal, ZD2, NAME, tmp_path)
+    assert pedal.writes == []
+
+
+def test_repair_refuses_when_memory_is_short(tmp_path):
+    pedal = FakePedal({"FLST_SEQ.ZT2": AFTER}, available=len(ZD2))
+    with pytest.raises(installer.EffectInstallError, match="memory"):
+        installer.repair_effect(pedal, ZD2, NAME, tmp_path)
+    assert pedal.writes == []
+
+
+def test_repair_upload_timeout_deletes_the_partial_file(tmp_path):
+    pedal = FlakyPedal({"FLST_SEQ.ZT2": AFTER}, fail_on=NAME)
+    with pytest.raises(installer.EffectInstallError, match="upload"):
+        installer.repair_effect(pedal, ZD2, NAME, tmp_path)
+    assert pedal.files == {"FLST_SEQ.ZT2": AFTER}

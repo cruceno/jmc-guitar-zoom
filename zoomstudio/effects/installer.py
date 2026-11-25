@@ -58,23 +58,54 @@ def install_effect(pedal: FilePedal, zd2: bytes, name: str, backup_dir: Path) ->
             new_list = flst.set_installed(original, name, True)
         except flst.FlstError as exc:
             raise EffectInstallError(str(exc)) from exc
-        before = pedal.disk_usage().available
-        if before < len(zd2) + MEMORY_MARGIN:
-            raise EffectInstallError(
-                f"not enough memory for {name}: {len(zd2):,} bytes plus {MEMORY_MARGIN:,} spare, "
-                f"{before:,} available")
+        before = _check_memory(pedal, name, zd2)
         backup = write_file_backup(backup_dir, FLST_NAME, original)
-
-        try:
-            pedal.write_file(name, zd2)
-        except PedalError as exc:
-            _quietly(pedal.delete_file, name)  # never leave a partial effect taking pedal memory
-            raise EffectInstallError(f"the upload of {name} failed ({exc}); the partial file was deleted") from exc
-        if _read_back(pedal, name) != zd2:
-            _quietly(pedal.delete_file, name)
-            raise EffectInstallError(f"{name} failed its read-back check; the upload was deleted")
+        _upload_effect(pedal, name, zd2)
         _write_list(pedal, new_list, original, backup)
         return EffectChange(name, True, backup, before, pedal.disk_usage().available)
+
+
+def repair_effect(pedal: FilePedal, zd2: bytes, name: str, backup_dir: Path) -> EffectChange:
+    """Upload the missing file of an effect the list already marks installed; the list is not changed.
+
+    Found on a real A1 FOUR: ``B_OCTAVE.ZD2`` was flagged installed while its file was absent.
+    """
+    name = name.upper()
+    with pedal.pc_mode(True):
+        original = pedal.read_file(FLST_NAME)
+        try:
+            listed = flst.is_installed(original, name)
+        except flst.FlstError as exc:
+            raise EffectInstallError(str(exc)) from exc
+        if not listed:
+            raise EffectInstallError(f"{name} is not marked installed; install it instead")
+        if name in pedal.list_files():
+            raise EffectInstallError(f"{name} is already on the pedal; nothing to repair")
+        before = _check_memory(pedal, name, zd2)
+        backup = write_file_backup(backup_dir, FLST_NAME, original)  # same audit trail as install
+        _upload_effect(pedal, name, zd2)
+        return EffectChange(name, True, backup, before, pedal.disk_usage().available)
+
+
+def _check_memory(pedal: FilePedal, name: str, zd2: bytes) -> int:
+    available = pedal.disk_usage().available
+    if available < len(zd2) + MEMORY_MARGIN:
+        raise EffectInstallError(
+            f"not enough memory for {name}: {len(zd2):,} bytes plus {MEMORY_MARGIN:,} spare, "
+            f"{available:,} available")
+    return available
+
+
+def _upload_effect(pedal: FilePedal, name: str, zd2: bytes) -> None:
+    """Upload and read back; never leave a partial or wrong effect taking pedal memory."""
+    try:
+        pedal.write_file(name, zd2)
+    except PedalError as exc:
+        _quietly(pedal.delete_file, name)
+        raise EffectInstallError(f"the upload of {name} failed ({exc}); the partial file was deleted") from exc
+    if _read_back(pedal, name) != zd2:
+        _quietly(pedal.delete_file, name)
+        raise EffectInstallError(f"{name} failed its read-back check; the upload was deleted")
 
 
 def remove_effect(pedal: FilePedal, name: str, backup_dir: Path,
