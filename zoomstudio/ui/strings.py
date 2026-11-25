@@ -100,9 +100,12 @@ def name_tip(limit: int) -> str:
     return f"Nombre del patch: hasta {limit} caracteres ASCII imprimibles"
 
 
+DSP_OVER_LIMIT = "sobre el límite"
+
+
 def dsp_value(dsp: float) -> str:
-    """The value written beside the DSP bar («69 %»; over 100 % it says why the bar is red)."""
-    return f"{dsp:.0f} %" + (" · sobre el límite" if dsp > 100 else "")
+    """The value written beside the DSP bar («69 %»)."""
+    return f"{dsp:.0f} %"
 
 
 def patches_caption(in_use: int, first: int = 10, last: int = 59) -> str:

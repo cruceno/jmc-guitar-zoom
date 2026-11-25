@@ -113,9 +113,10 @@ def test_dsp_over_the_limit_marks_bar_and_value_red_through_the_over_property(wi
     assert not window.dsp_bar.property("over")
     window._set_dsp(103.0)
     assert window.dsp_bar.property("over") and window.dsp_value.property("over")
-    assert "sobre el límite" in window.dsp_value.text() and window.dsp_bar.styleSheet() == ""
+    assert window.dsp_alert.isVisible() and window.dsp_alert.toolTip() == strings.DSP_OVER_LIMIT
+    assert window.dsp_bar.styleSheet() == ""  # no inline colour: the QSS rule on the property does it
     window._set_dsp(40.0)
-    assert not window.dsp_bar.property("over")
+    assert not window.dsp_bar.property("over") and not window.dsp_alert.isVisible()
 
 
 # ------------------------------------------------------------- F04 / F05 layout

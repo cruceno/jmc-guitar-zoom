@@ -26,7 +26,7 @@ from .cards import ROLE_DIRTY, ROLE_NAME, ROLE_NUMBER, ROLE_STRIP
 from .dialogs import ConfirmDialog
 from .fonts import display_font
 from .glass import BackdropRoot, GlassMenu, GlassPanel, GlowHost
-from .icons import icon
+from .icons import icon, pixmap
 from .painted import ConnectionPill, DotLabel, KeyChipButton, LiveSwitch, PaintedText, SectionLabel, StatusBar
 from .library import LibraryMixin
 from .tuner import TunerPanel
@@ -251,6 +251,11 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.dsp_bar.setFixedWidth(120)
         self.dsp_value = QLabel(S.NOT_AVAILABLE)
         self.dsp_value.setProperty("role", "value")
+        self.dsp_alert = QLabel()
+        self.dsp_alert.setPixmap(pixmap("alert", tokens.color("status-danger").name(), 18))
+        self.dsp_alert.setToolTip(S.DSP_OVER_LIMIT)
+        self.dsp_alert.setAccessibleName(S.DSP_OVER_LIMIT)
+        self.dsp_alert.hide()
         undo_button, redo_button = QToolButton(), QToolButton()
         undo_button.setDefaultAction(self.undo_action)
         redo_button.setDefaultAction(self.redo_action)
@@ -275,7 +280,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         for widget in (QLabel(S.VOLUME), self.volume_spin):
             meta_row.addWidget(widget)
         meta_row.addSpacing(10)
-        for widget in (QLabel(S.DSP_LABEL), self.dsp_bar, self.dsp_value):
+        for widget in (QLabel(S.DSP_LABEL), self.dsp_bar, self.dsp_value, self.dsp_alert):
             meta_row.addWidget(widget)
         meta_row.addSpacing(6)
         for widget in (undo_button, redo_button):
@@ -290,7 +295,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         right_col = QVBoxLayout()
         right_col.setSpacing(0)
         right_col.addWidget(GlowHost(self.save_button, margin=8))
-        right_col.addWidget(self.save_reason, alignment=Qt.AlignmentFlag.AlignRight)
+        right_col.addWidget(self.save_reason)
         right_col.addStretch(1)
         head = QWidget()
         head_lay = QHBoxLayout(head)
@@ -387,6 +392,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         button = QToolButton()
         button.setText(text.replace("&", ""))
         button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        button.setProperty("ghost", True)
         return button
 
     def _icon_button(self, name: str, tip: str) -> QToolButton:
@@ -675,8 +681,10 @@ class MainWindow(LibraryMixin, QMainWindow):
         over = dsp is not None and dsp > 100
         self.dsp_bar.setValue(0 if dsp is None else min(100, round(dsp)))
         self.dsp_bar.setFormat(S.DSP_NA if dsp is None else S.dsp_text(dsp))
+        self.dsp_bar.setToolTip("" if dsp is None else S.dsp_text(dsp))
         self.dsp_value.setText(S.NOT_AVAILABLE if dsp is None else S.dsp_value(dsp))
-        for widget in (self.dsp_bar, self.dsp_value):
+        self.dsp_alert.setVisible(over)  # the warning mark: colour alone must not say «over the limit»
+        for widget in (self.dsp_bar, self.dsp_value, self.dsp_alert):
             widget.setProperty("over", over)
             widget.style().unpolish(widget)
             widget.style().polish(widget)

@@ -34,6 +34,9 @@ QPushButton[primary="true"] {
 }
 QPushButton[primary="true"]:disabled { background: transparent; border: 1px dashed $border_strong; color: $text_disabled; }
 QPushButton[danger="true"] { background: $status_danger_bg; border: 1px solid $status_danger; color: $status_danger; }
+QToolButton[ghost="true"] { background: transparent; border: 1px solid transparent; }
+QToolButton[ghost="true"]:hover { background: $card_hover; }
+QToolButton[ghost="true"]:disabled { border: 1px dashed $border_strong; }
 QToolButton[icon-only="true"] { padding: 0; min-width: ${control_height}px; max-width: ${control_height}px; }
 
 QLineEdit, QSpinBox, QComboBox {
