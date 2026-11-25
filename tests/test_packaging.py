@@ -128,3 +128,12 @@ def test_every_bundled_runtime_dependency_carries_its_licence_text():
             assert "LGPL-3.0.txt" in SPEC  # the PySide6 wheels ship no licence file
         else:
             assert f'_dist_file("{name}"' in SPEC, name
+
+
+@pytest.mark.parametrize("workflow", sorted((ROOT / ".github" / "workflows").glob("*.yml")), ids=lambda p: p.name)
+def test_no_workflow_has_an_unquoted_value_with_a_colon(workflow):
+    # GitHub refuses the whole file ("You have an error in your yaml syntax") and runs nothing: tests.yml line 20 did
+    plain_value_with_colon = re.compile(r"^\s*(-\s+)?[A-Za-z_][\w-]*:\s+[^\"'|>{\[#&*!\s].*:\s")
+    bad = [f"{n}: {line.strip()}" for n, line in enumerate(workflow.read_text(encoding="utf-8").splitlines(), 1)
+           if plain_value_with_colon.match(line)]
+    assert bad == []
