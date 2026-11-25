@@ -9,7 +9,7 @@ import pytest
 from update_support import (EFFECTS, FIXTURES, HALL_ID, NOW, RACKCOMP_ID, hall_newer, open_view, routes, startup_check,
                             window)
 from test_ui_effects_manager import (AFTER, BEFORE, ON_PEDAL, PedalFiles, connected_window)
-from updater_support import A1, FakeFetcher, make_zip
+from updater_support import A1, COMP, FakeFetcher, effect, make_zip  # a model lists at least one effect, as the channel does
 
 from zoomstudio.effects.catalog import load_catalog
 from zoomstudio.library import updater as lib
@@ -54,7 +54,7 @@ def test_the_notice_can_be_dismissed(qtbot, catalog, tmp_path):
 
 
 def test_no_notice_when_the_library_is_up_to_date(qtbot, catalog, tmp_path):
-    w, _, _ = window(qtbot, tmp_path, catalog, route_table=routes({A1: []}))
+    w, _, _ = window(qtbot, tmp_path, catalog, route_table=routes({A1: [effect(COMP)]}))
     w.show()
     assert startup_check(qtbot, w)
     assert not w.update_notice.isVisibleTo(w)
@@ -105,7 +105,7 @@ def pedal(w, version):
 
 
 def test_a_newer_firmware_is_an_informational_notice_without_a_button(qtbot, catalog, tmp_path):
-    w, _, _ = window(qtbot, tmp_path, catalog, route_table=routes({A1: []}))
+    w, _, _ = window(qtbot, tmp_path, catalog, route_table=routes({A1: [effect(COMP)]}))
     w.show()
     pedal(w, "1.01")
     startup_check(qtbot, w)
@@ -115,7 +115,7 @@ def test_a_newer_firmware_is_an_informational_notice_without_a_button(qtbot, cat
 
 
 def test_the_same_firmware_without_the_update_flag_shows_no_notice(qtbot, catalog, tmp_path):
-    table = routes({A1: []}, versions={A1: ("1.01", False)})
+    table = routes({A1: [effect(COMP)]}, versions={A1: ("1.01", False)})
     w, _, _ = window(qtbot, tmp_path, catalog, route_table=table)
     w.show()
     pedal(w, "1.01")
@@ -124,7 +124,7 @@ def test_the_same_firmware_without_the_update_flag_shows_no_notice(qtbot, catalo
 
 
 def test_the_update_flag_alone_shows_the_notice(qtbot, catalog, tmp_path):
-    table = routes({A1: []}, versions={A1: ("1.01", True)})
+    table = routes({A1: [effect(COMP)]}, versions={A1: ("1.01", True)})
     w, _, _ = window(qtbot, tmp_path, catalog, route_table=table)
     w.show()
     pedal(w, "1.01")
@@ -133,7 +133,7 @@ def test_the_update_flag_alone_shows_the_notice(qtbot, catalog, tmp_path):
 
 
 def test_the_firmware_notice_follows_the_pedal_connected_after_the_check(qtbot, catalog, tmp_path):
-    w, _, _ = window(qtbot, tmp_path, catalog, route_table=routes({A1: []}))
+    w, _, _ = window(qtbot, tmp_path, catalog, route_table=routes({A1: [effect(COMP)]}))
     w.show()
     startup_check(qtbot, w)
     assert w.update_notice.isHidden()
@@ -169,7 +169,7 @@ def Qt_UserRole():
 
 
 def test_the_all_models_checkbox_asks_for_every_model(qtbot, catalog, tmp_path):
-    table = routes({A1: [], "0x6E000000": [("0x01000020", "RACKCOMP.zip", "1.40")]} if False else None)
+    table = routes({A1: [effect(COMP)], "0x6E000000": [("0x01000020", "RACKCOMP.zip", "1.40")]} if False else None)
     w, _, _ = window(qtbot, tmp_path, catalog, route_table=table)
     w.show()
     view = open_view(qtbot, w)
@@ -181,7 +181,7 @@ def test_the_all_models_checkbox_asks_for_every_model(qtbot, catalog, tmp_path):
 
 
 def test_the_view_says_so_when_everything_is_up_to_date(qtbot, catalog, tmp_path):
-    w, _, _ = window(qtbot, tmp_path, catalog, route_table=routes({A1: []}))
+    w, _, _ = window(qtbot, tmp_path, catalog, route_table=routes({A1: [effect(COMP)]}))
     w.show()
     view = open_view(qtbot, w)
     assert view.message() == ST.UPDATE_UP_TO_DATE and not view.download_button.isEnabled()
