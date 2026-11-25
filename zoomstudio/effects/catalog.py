@@ -28,7 +28,9 @@ _ONOFF_MARKER = b"OnOff\x00"
 _DUMMY = "Dummy"
 # Zoom reports DSP load as a value where 100 % of the chip is 250.
 _DSP_LOAD_DIVISOR = 2.5
-_VERSION_SUFFIX = re.compile(r"_\d+$")
+# Guitar Lab caches an effect as NAME_VVV.zd2 (lowercase extension, three-digit version);
+# the pedal stores it as NAME.ZD2, and NAME itself may end in digits (MDL_314.ZD2 is 314ce).
+_GUITAR_LAB_NAME = re.compile(r"^(?P<stem>.+)_\d{3}\.zd2$")
 
 
 @dataclass(frozen=True)
@@ -91,8 +93,10 @@ def _prme_entries(prme) -> list[dict]:
 
 
 def svg_stem(filename: str) -> str:
-    """``160_COMP_140.zd2`` -> ``160_COMP`` (pedal names have no suffix)."""
-    return _VERSION_SUFFIX.sub("", Path(filename).stem)
+    """Effect name without Guitar Lab's version: ``160_COMP_140.zd2`` -> ``160_COMP``, ``MDL_314.ZD2`` -> ``MDL_314``."""
+    name = Path(filename).name
+    match = _GUITAR_LAB_NAME.match(name)
+    return match["stem"] if match else Path(name).stem
 
 
 def find_svg(filename: str, svg_dir: Path | None) -> Path | None:

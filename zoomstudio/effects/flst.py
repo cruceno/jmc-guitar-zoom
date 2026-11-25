@@ -13,13 +13,13 @@ FOUR's list, so this module only ever flips that one byte in place.
 from __future__ import annotations
 
 import re
-from pathlib import Path
+
+from .catalog import svg_stem
 
 FLST_NAME = "FLST_SEQ.ZT2"
 NAME_FIELD = 12
 FLAG_OFFSET = 18
 _FIRST_RECORD = b"BYPASS.ZD2".ljust(NAME_FIELD, b"\x00")
-_VERSION_SUFFIX = re.compile(r"_\d+$")
 
 
 class FlstError(ValueError):
@@ -28,8 +28,7 @@ class FlstError(ValueError):
 
 def pedal_filename(filename: str) -> str:
     """Pedal file name of an effect file: ``MDL_12ST_100.zd2`` -> ``MDL_12ST.ZD2``."""
-    stem = _VERSION_SUFFIX.sub("", Path(filename).stem)
-    return f"{stem.upper()}.ZD2"
+    return f"{svg_stem(filename).upper()}.ZD2"
 
 
 def _first_section_end(data: bytes) -> int:

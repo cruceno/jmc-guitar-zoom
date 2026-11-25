@@ -106,3 +106,15 @@ def test_a1four_ids_from_lst_with_trailing_garbage():
     ids = a1four_effect_ids(FIX / "AllZDL7_2.lst")
     assert {0x1000010, 0x400002C, 0x2000054, 0x9000030} <= ids  # unpadded and padded forms
     assert 0x04080021 not in ids  # belongs to model G5n only
+
+
+@pytest.mark.parametrize("filename,stem", [
+    ("160_COMP_140.zd2", "160_COMP"),  # Guitar Lab cache name: NAME_VVV.zd2
+    ("MDL_314_100.zd2", "MDL_314"),
+    ("MDL_314.ZD2", "MDL_314"),  # a pedal name keeps the digits that end it
+    ("COMP.ZD2", "COMP"),
+])
+def test_effect_stem_only_strips_guitar_lab_version_suffixes(filename, stem):
+    from zoomstudio.effects.catalog import svg_stem
+
+    assert svg_stem(filename) == stem

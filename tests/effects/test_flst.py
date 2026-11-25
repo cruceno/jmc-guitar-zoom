@@ -50,6 +50,9 @@ def test_unrecognised_layout_is_rejected():
     ("MDL_12ST_100.zd2", "MDL_12ST.ZD2"),
     ("MDL_12ST.ZD2", "MDL_12ST.ZD2"),
     ("B_OCTAVE_140.zd2", "B_OCTAVE.ZD2"),
+    # a pedal name that ends in digits is not a Guitar Lab version suffix (314ce lost its digits)
+    ("MDL_314.ZD2", "MDL_314.ZD2"),
+    ("MDL_314_100.zd2", "MDL_314.ZD2"),
 ])
 def test_pedal_filename_from_catalog_filename(filename, expected):
     assert flst.pedal_filename(filename) == expected
