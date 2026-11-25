@@ -14,6 +14,7 @@ from zoomstudio.effects.catalog import EffectInfo
 from zoomstudio.patches.model import EffectSlot, Patch
 
 from . import strings as S
+from .cards import PatchCardDelegate
 from .theme import group_color
 
 ALL_GROUPS = S.ALL_GROUPS
@@ -229,6 +230,9 @@ class PatchList(QListWidget):
         self.setAcceptDrops(True)
         self.setDragDropMode(QListWidget.DragDropMode.DragDrop)
         self.setDefaultDropAction(Qt.DropAction.IgnoreAction)
+        self.setItemDelegate(PatchCardDelegate(self))
+        self.setMouseTracking(True)
+        self.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
 
     def mimeData(self, items) -> QMimeData:  # noqa: N802 (Qt API)
         mime = QMimeData()

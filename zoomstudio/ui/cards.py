@@ -1,0 +1,110 @@
+"""Card painters for list items: patch cards (the effect cards of the catalog and the knobs follow)."""
+
+from __future__ import annotations
+
+from PySide6.QtCore import QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QFontMetrics, QLinearGradient, QPainter, QPainterPath, QPen
+from PySide6.QtWidgets import QStyle, QStyledItemDelegate
+
+from . import strings as S
+from . import tokens
+from .fonts import ui_font
+from .glass import paint_glow
+from .theme import group_color
+
+ROLE_NUMBER = Qt.ItemDataRole.UserRole + 10   # display number of the location (int)
+ROLE_NAME = Qt.ItemDataRole.UserRole + 11     # patch name ("" for an empty location)
+ROLE_STRIP = Qt.ItemDataRole.UserRole + 12    # [(group, span, enabled)] per effect; None for an empty location
+ROLE_DIRTY = Qt.ItemDataRole.UserRole + 13    # unsaved edits (bool)
+
+CARD_HEIGHT = 56
+SLOT_WIDTH = 16
+
+
+def card_path(rect: QRectF, radius: float = 12) -> QPainterPath:
+    path = QPainterPath()
+    path.addRoundedRect(rect, radius, radius)
+    return path
+
+
+def with_alpha(color: QColor, alpha: float) -> QColor:
+    out = QColor(color)
+    out.setAlphaF(alpha)
+    return out
+
+
+class PatchCardDelegate(QStyledItemDelegate):
+    """A patch as a card: number badge, name, a strip with one block per effect and an edited/empty chip."""
+
+    def sizeHint(self, option, index) -> QSize:  # noqa: N802 (Qt API)
+        return QSize(option.rect.width(), CARD_HEIGHT)
+
+    def paint(self, p: QPainter, option, index) -> None:
+        strip = index.data(ROLE_STRIP)
+        empty = strip is None
+        selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(option.rect).adjusted(4, 3, -4, -3)
+        path = card_path(rect)
+        if selected:
+            paint_glow(p, rect, "glow-accent", 12, 3)
+        if empty:
+            pen = QPen(tokens.color("border-control"), 1.2, Qt.PenStyle.DashLine)
+        else:
+            fill = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+            if selected:
+                fill.setColorAt(0, with_alpha(tokens.color("card-selected"), 0.28))
+                fill.setColorAt(1, with_alpha(tokens.color("card-selected"), 0.12))
+            else:
+                fill.setColorAt(0, tokens.color("card-hover" if hover else "card-top"))
+                fill.setColorAt(1, tokens.color("card-bottom"))
+            p.fillPath(path, fill)
+            pen = QPen(with_alpha(tokens.color("accent"), 0.6) if selected else tokens.color("card-rim"), 1.5 if selected else 1)
+        p.setPen(pen)
+        p.drawPath(path)
+
+        badge = QRectF(rect.left() + 10, rect.center().y() - 15, 30, 30)
+        badge_path = card_path(badge, 9)
+        p.fillPath(badge_path, tokens.color("accent") if selected else tokens.color("input-bg"))
+        p.setPen(tokens.color("on-accent") if selected else tokens.color("text-secondary"))
+        p.setFont(ui_font(13, ui_font().Weight.Medium))
+        p.drawText(badge, Qt.AlignmentFlag.AlignCenter, str(index.data(ROLE_NUMBER) or ""))
+
+        text_left = badge.right() + 12
+        chip = S.EMPTY if empty else (S.EDITED if index.data(ROLE_DIRTY) else "")
+        chip_font = ui_font(12)
+        chip_w = QFontMetrics(chip_font).horizontalAdvance(chip) + 18 if chip else 0
+        name_font = ui_font(15)
+        p.setFont(name_font)
+        brush = index.data(Qt.ItemDataRole.ForegroundRole)
+        p.setPen(brush.color() if brush is not None else tokens.color("text-primary"))
+        name = index.data(ROLE_NAME) or (S.EMPTY if empty else S.UNNAMED)
+        name_rect = QRectF(text_left, rect.top() + 7, rect.right() - text_left - chip_w - 14, 20)
+        p.drawText(name_rect, Qt.AlignmentFlag.AlignVCenter,
+                   QFontMetrics(name_font).elidedText(name, Qt.TextElideMode.ElideRight, int(name_rect.width())))
+        if chip:
+            warn = tokens.color("status-warn") if not empty else tokens.color("text-tertiary")
+            chip_rect = QRectF(rect.right() - chip_w - 8, rect.top() + 8, chip_w, 18)
+            p.setPen(QPen(with_alpha(warn, 0.7), 1))
+            p.drawPath(card_path(chip_rect, 9))
+            p.setFont(chip_font)
+            p.setPen(warn)
+            p.drawText(chip_rect, Qt.AlignmentFlag.AlignCenter, chip)
+
+        x, y = text_left, rect.bottom() - 13
+        for group, span, enabled in (strip or []):
+            w = span * SLOT_WIDTH - 3
+            if x + w > rect.right() - 8:
+                break
+            block = QRectF(x, y, w, 5)
+            if group is None:
+                p.setPen(QPen(tokens.color("border-control"), 1, Qt.PenStyle.DashLine))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+            else:
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(with_alpha(group_color(group), 1.0 if enabled else 0.4))
+            p.drawRoundedRect(block, 2.5, 2.5)
+            x += span * SLOT_WIDTH
+        p.restore()

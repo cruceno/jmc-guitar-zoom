@@ -21,6 +21,8 @@ from zoomstudio.patches.model import NAME_MAX_LEN, VOLUME_MAX, Patch
 from zoomstudio.patches.zptc import build_zptc, parse_zptc
 
 from . import strings as S
+from . import tokens
+from .cards import ROLE_DIRTY, ROLE_NAME, ROLE_NUMBER, ROLE_STRIP
 from .dialogs import ConfirmDialog
 from .glass import BackdropRoot, GlassPanel, GlowHost
 from .icons import icon
@@ -33,7 +35,7 @@ DEFAULT_PATCH_COUNT = 50
 DISPLAY_OFFSET = 9  # the pedal shows locations 1..50 as 10..59
 MODEL_NAMES = {0x6E: "A1 FOUR"}
 _PATCH_FILE = re.compile(r"^(\d+)\.zptc$", re.IGNORECASE)
-_EMPTY_COLOR = QColor("#6c6f75")
+_EMPTY_COLOR = tokens.color("text-tertiary")
 _MERGE_ID = 1
 
 
@@ -450,13 +452,33 @@ class MainWindow(LibraryMixin, QMainWindow):
         item = self.patch_list.item(location - 1)
         patch = self._patches.get(location)
         number = f"{self._display(location):>2}"
+        item.setData(ROLE_NUMBER, self._display(location))
+        dirty = self.is_dirty(location)
+        item.setData(ROLE_DIRTY, dirty)
         if patch is None:
             item.setText(f"{number}  -")
             item.setForeground(QBrush(_EMPTY_COLOR))
+            item.setData(ROLE_NAME, "")
+            item.setData(ROLE_STRIP, None)
         else:
             name = patch.name or S.UNNAMED
-            item.setText(f"{number}  {name}{' *' if self.is_dirty(location) else ''}")
+            item.setText(f"{number}  {name}{' *' if dirty else ''}")
             item.setForeground(QBrush(self.palette().text().color()))
+            item.setData(ROLE_NAME, name)
+            item.setData(ROLE_STRIP, self._chain_strip(patch))
+
+    def _chain_strip(self, patch: Patch) -> list[tuple[str | None, int, bool]]:
+        """One (group, slots, enabled) block per effect of the chain; ``None`` group for an empty slot."""
+        slots, strip = patch.effects, []
+        for i, slot in enumerate(slots):
+            if slot.is_wide_filler:
+                continue
+            info = self.catalog.get(slot.effect_id)
+            wide = not slot.is_empty and ((i + 1 < len(slots) and slots[i + 1].is_wide_filler)
+                                          or (info is not None and info.is_wide))
+            strip.append((None if slot.is_empty else (info.group if info else ""), 2 if wide else 1,
+                          slot.enabled and not slot.is_empty))
+        return strip
 
     def _stack(self, location: int) -> QUndoStack:
         stack = self._stacks.get(location)
