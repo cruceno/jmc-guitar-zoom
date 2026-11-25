@@ -293,7 +293,7 @@ class Knob(QDial):
             p.drawEllipse(c, r + 3, r + 3)
 
 
-ROLE_EFFECT = Qt.ItemDataRole.UserRole + 20  # {"name", "group", "dsp", "wide", "installed", "blocked", "in_chain"}
+ROLE_EFFECT = Qt.ItemDataRole.UserRole + 20  # {"name", "group", "dsp", "wide", "installed", "in_chain"}
 
 
 def star_rect(item_rect: QRect) -> QRectF:
@@ -518,9 +518,8 @@ class EffectCardDelegate(QStyledItemDelegate):
         p.setPen(group_text_color(group))
         p.drawText(QRectF(left, rect.top() + 29, 170, 18), Qt.AlignmentFlag.AlignVCenter,
                    f"{S.group_label(group)} · {S.slots_label(2 if d['wide'] else 1)}")
-        badge = (S.BADGE_NOT_A1, "status-danger") if d["blocked"] else (
-            (S.BADGE_IN_CHAIN, "accent") if d["in_chain"] else (
-                (S.BADGE_ON_PEDAL, "text-secondary") if d["installed"] else None))
+        badge = ((S.BADGE_IN_CHAIN, "accent") if d["in_chain"] else (
+            (S.BADGE_ON_PEDAL, "text-secondary") if d["installed"] else None))
         if badge:
             text, token = badge
             w = QFontMetrics(ui_font(11)).horizontalAdvance(text) + 14

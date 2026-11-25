@@ -5,7 +5,8 @@ from PySide6.QtGui import QDropEvent
 from PySide6.QtTest import QTest
 
 from ui_replies import FIXTURES
-from zoomstudio.effects.catalog import a1four_effect_ids, load_catalog
+from zoomstudio.effects.catalog import load_catalog
+from zoomstudio.effects.models import A1_FOUR, PedalModel
 from zoomstudio.ui import strings as ST
 from zoomstudio.ui.cards import FAVORITES_KEY, ROLE_SECTION
 from zoomstudio.ui.favorites import FavoritesStore
@@ -22,8 +23,8 @@ def catalog():
 
 @pytest.fixture
 def window(qtbot, catalog, tmp_path):
-    w = MainWindow(catalog, a1_ids=a1four_effect_ids(FIXTURES / "AllZDL7_2.lst"),
-                   favorites=FavoritesStore(tmp_path / "f.json"))
+    everything = {A1_FOUR: PedalModel(A1_FOUR, "A1 FOUR", frozenset(catalog))}  # the target runs every fixture effect
+    w = MainWindow(catalog, models=everything, favorites=FavoritesStore(tmp_path / "f.json"))
     qtbot.addWidget(w)
     w.load_offline(FIXTURES / "backup")
     w.show()
@@ -65,8 +66,8 @@ def test_clicking_a_header_toggles_it_and_the_state_is_kept(window):
     click_header(panel, "REVERB")
     assert panel.section_expanded("REVERB") and not panel.item_of("Hall").isHidden()
     panel.group_combo.setCurrentIndex(0)
-    panel.a1_check.setChecked(True)
-    panel.a1_check.setChecked(False)
+    panel.search.setText("x")
+    panel.search.setText("")
     assert panel.section_expanded("REVERB")  # the user's choice survives a rebuild
     click_header(panel, "REVERB")
     assert not panel.section_expanded("REVERB")
@@ -99,12 +100,9 @@ def test_search_expands_matching_sections_hides_the_rest_and_clearing_restores(w
 
 def test_group_combo_a1_filter_and_favorites_work_with_sections(window):
     panel = window.catalog_panel
-    panel.a1_check.setChecked(True)  # FD-DX1x12 and OptComp are not in the A1 FOUR list
-    assert panel.section_groups() == ["AMP", "DYNAMICS", "FILTER", "REVERB"]
-    assert panel.section_count("DYNAMICS") == 1
     panel.group_combo.setCurrentText(ST.group_label("DYNAMICS"))
     assert panel.section_groups() == ["DYNAMICS"] and panel.section_expanded("DYNAMICS")
-    assert panel.visible_names() == ["Comp"]
+    assert sorted(panel.visible_names()) == ["Comp", "OptComp"]
     panel.group_combo.setCurrentIndex(0)
     window.favorites.set_favorite(HALL, True)
     assert panel.section_groups()[0] == FAVORITES_KEY and "REVERB" not in panel.section_groups()
@@ -146,7 +144,7 @@ def test_dragging_an_effect_from_a_grouped_list_still_carries_its_id(window):
 
 def test_the_catalog_count_counts_effects_not_headers(window):
     panel = window.catalog_panel
-    assert panel.count_label.text() == ST.visible_count(6)
+    assert panel.count_label.text() == ST.compatible_count(6, "A1 FOUR")
 
 
 def test_arrow_keys_land_on_headers_and_skip_folded_cards(window, qtbot):

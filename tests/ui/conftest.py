@@ -30,3 +30,13 @@ def private_bank(monkeypatch, tmp_path_factory):
     folder = tmp_path_factory.mktemp("bank-default")
     monkeypatch.setattr(bank, "default_dir", lambda: folder)
     return folder
+
+
+@pytest.fixture(autouse=True)
+def private_target(monkeypatch, tmp_path_factory):
+    """Same for the last target pedal: a private file per test, never the user's config."""
+    from zoomstudio.ui import settings
+
+    path = tmp_path_factory.mktemp("config-target") / settings.FILE_NAME
+    monkeypatch.setattr(settings, "default_path", lambda: path)
+    return path

@@ -34,7 +34,12 @@ from .bank_screen import BankMixin, BankScreen
 from .library import LibraryMixin
 from .tuner import TunerPanel
 from . import favorites as favorites_module
+from zoomstudio.effects import models as pedal_models
+from zoomstudio.effects.models import A1_FOUR, PedalModel, model_id_from_identity
+
+from . import settings as settings_module
 from .favorites import FavoritesStore
+from .settings import TargetStore
 from .widgets import CatalogPanel, ChainView, EffectTile, ParamPanel, ParamRow, PatchList
 from .worker import PedalWorker, TransportFactory
 
@@ -140,14 +145,22 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
                  transport_factory: TransportFactory | None = None, installed_label: str = "pedal",
                  pedal_timeout: float = 3.0, backup_dir: Path | None = None,
                  library_dir: Path | None = None, favorites: FavoritesStore | None = None,
-                 bank_dir: Path | None = None) -> None:
+                 bank_dir: Path | None = None, models: dict[int, PedalModel] | None = None,
+                 target_store: TargetStore | None = None, extra_ids: set[int] | None = None) -> None:
         super().__init__()
         self.setWindowTitle("Zoom Studio")
         self.resize(1440, 900)
         self.setMinimumSize(1280, 760)
         self.catalog = catalog
         self.favorites = favorites if favorites is not None else FavoritesStore(favorites_module.default_path())
-        self.allowed_ids = a1_ids  # effects that run on the A1 FOUR (None: no restriction)
+        # the pedal models Guitar Lab lists; ``a1_ids`` alone describes just the A1 FOUR (None: no restriction at all)
+        self.models: dict[int, PedalModel] = models if models is not None else (
+            {A1_FOUR: PedalModel(A1_FOUR, "A1 FOUR", frozenset(a1_ids))} if a1_ids is not None else {})
+        self._extra_ids = set(extra_ids or ())  # effects installed on the pedal that the list omits
+        self.target_store = target_store if target_store is not None else TargetStore(settings_module.default_path())
+        self.connected_model: int | None = None
+        self.target_model = self._initial_target()
+        self.allowed_ids = self._ids_for(self.target_model)  # effects the target pedal runs (None: no restriction)
         self.backup_dir = Path(backup_dir) if backup_dir is not None else None
         self.library_dir = Path(library_dir) if library_dir is not None else None  # parent of backup-* folders
         self._init_library()
@@ -171,7 +184,7 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self._worker: PedalWorker | None = None
         self._thread: QThread | None = None
 
-        self._build_ui(a1_ids, installed_label)
+        self._build_ui(installed_label)
         self._rebuild_patch_list()
         if transport_factory is not None:
             self._start_worker(transport_factory, pedal_timeout)
@@ -179,7 +192,7 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
 
     # ---------------------------------------------------------------- UI
 
-    def _build_ui(self, a1_ids: set[int] | None, installed_label: str) -> None:
+    def _build_ui(self, installed_label: str) -> None:
         backdrop_root = BackdropRoot()
         self.backdrop_root = backdrop_root
         header = GlassPanel(backdrop_root, "strong")
@@ -397,9 +410,11 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.chain.tile_moved.connect(self.move_effect)
         self.params.param_changed.connect(self._on_param_changed)
 
-        self.catalog_panel = CatalogPanel(self.catalog, a1_ids, installed_label, self.favorites)
+        self.catalog_panel = CatalogPanel(self.catalog, self.allowed_ids, installed_label, self.favorites,
+                                         self._target_name(), self._supported_pedals(), self.target_model)
         self.catalog_panel.effect_activated.connect(self._on_catalog_activated)
         self.catalog_panel.manage_requested.connect(self.open_effects_screen)
+        self.catalog_panel.pedal_chosen.connect(self._set_target)
 
         left_panel, catalog_panel = self._glass(left), self._glass(self.catalog_panel)
         left_panel.setMinimumWidth(PATCHES_MIN)
@@ -427,7 +442,7 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self.tuner_panel = TunerPanel(backdrop_root)
         self.tuner_panel.hide()
         self.tuner_panel.exit_requested.connect(lambda: self.tuner_button.setChecked(False))
-        self.effects_panel = EffectsManager(backdrop_root, self.catalog, a1_ids, self.favorites)
+        self.effects_panel = EffectsManager(backdrop_root, self.catalog, self.allowed_ids, self.favorites)
         self.effects_panel.hide()
         self.effects_panel.close_requested.connect(lambda: self.effects_toggle.setChecked(False))
         self.effects_panel.refresh_requested.connect(self._request_effects_state)
@@ -1312,8 +1327,50 @@ class MainWindow(BankMixin, LibraryMixin, QMainWindow):
         self._worker.request("load_all_patches")
         self._worker.request("refresh_disk_usage")
 
+    # ------------------------------------------------------------- target pedal
+
+    def _supported_pedals(self) -> list[tuple[int, str]]:
+        """The pedals the app can edit that Guitar Lab describes, by name (read live: tests patch the set)."""
+        return sorted(((mid, m.name) for mid, m in self.models.items() if mid in pedal_models.SUPPORTED_MODELS),
+                      key=lambda pair: pair[1])
+
+    def _initial_target(self) -> int | None:
+        """The last target used when it is still supported, else the A1 FOUR, else the first supported pedal."""
+        supported = {mid for mid, _name in self._supported_pedals()}
+        stored = self.target_store.target
+        if stored in supported:
+            return stored
+        if A1_FOUR in supported:
+            return A1_FOUR
+        return min(supported) if supported else None
+
+    def _ids_for(self, model_id: int | None) -> set[int] | None:
+        model = self.models.get(model_id) if model_id is not None else None
+        return None if model is None else set(model.effect_ids) | self._extra_ids
+
+    def _target_name(self) -> str:
+        model = self.models.get(self.target_model) if self.target_model is not None else None
+        return model.name if model is not None else ""
+
+    def apply_pedal_identity(self, identity) -> None:
+        """Remember which pedal is connected; when the app supports it, it becomes the target."""
+        self.connected_model = model_id_from_identity(identity)
+        if self.connected_model in {mid for mid, _name in self._supported_pedals()}:
+            self._set_target(self.connected_model)
+
+    def _set_target(self, model_id: int) -> None:
+        """Make ``model_id`` the pedal the editor targets: the catalog shows only what it runs; remembered."""
+        if model_id != self.target_model:
+            self.target_model = model_id
+            self.allowed_ids = self._ids_for(model_id)
+            self.target_store.set_target(model_id)
+            if self._location is not None:
+                self._show_patch(self._location, keep=True)  # which effects the pedal cannot run changed
+        self.catalog_panel.set_pedal(self.allowed_ids, self._target_name(), self.target_model)
+
     @Slot(object, object)
     def _on_connected(self, identity, info) -> None:
+        self.apply_pedal_identity(identity)
         self._is_connected = True
         self._offline_dir = None
         self._patch_count = info.count

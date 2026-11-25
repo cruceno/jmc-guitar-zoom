@@ -467,10 +467,8 @@ SEARCH_EFFECTS = "Buscar efectos…"
 SEARCH_EFFECTS_TIP = "Buscar efectos por nombre o grupo"
 CLEAR_SEARCH = "Borrar la búsqueda"
 DSP_AFTER = "DSP después"
-ONLY_A1 = "Solo A1 FOUR"
 BADGE_ON_PEDAL = "En la pedalera"
 BADGE_IN_CHAIN = "En la cadena"
-BADGE_NOT_A1 = "No A1"
 NOT_IN_PEDAL_SOURCES = "-"
 
 
@@ -494,12 +492,17 @@ def visible_count(n: int) -> str:
     return "1 visible" if n == 1 else f"{n} visibles"
 
 
-def no_effect_matches(query: str, group: str, only_a1: bool) -> str:
+def compatible_count(n: int, pedal: str) -> str:
+    """Header count of the editor catalog: what is shown is what the target pedal can run."""
+    return f"{n} compatibles con {pedal}" if n != 1 else f"1 compatible con {pedal}"
+
+
+def no_effect_matches(query: str, group: str, pedal: str = "") -> str:
     text = f"Ningún efecto coincide con «{query}»" if query else "Ningún efecto coincide con los filtros"
     if group:
         text += f" en {group}"
-    if only_a1:
-        text += " entre los compatibles con la A1 FOUR"
+    if pedal:
+        text += f" entre los compatibles con {pedal}"
     return text + "."
 
 
@@ -936,3 +939,6 @@ def discard_patch_text(display: int, name: str) -> str:
     label = f"{display} «{name}»" if name else str(display)
     return (f"Se descartan los cambios sin guardar del patch {label}: vuelve a su última versión guardada. "
             "Puede recuperarlos con Deshacer.")
+
+# ---- pedal target
+CATALOG_PEDAL_TIP = "Pedal para el que se muestran los efectos compatibles"

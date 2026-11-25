@@ -77,7 +77,8 @@ def main(argv: list[str] | None = None) -> int:
     from PySide6.QtWidgets import QApplication
 
     from zoomstudio.device import MidoTransport
-    from zoomstudio.effects.catalog import a1four_effect_ids, load_catalog
+    from zoomstudio.effects.catalog import load_catalog
+    from zoomstudio.effects.models import load_models
     from zoomstudio.ui.main_window import MainWindow
     from zoomstudio.ui.fonts import install_spanish, register_fonts
     from zoomstudio.ui.theme import apply_dark_theme
@@ -86,7 +87,8 @@ def main(argv: list[str] | None = None) -> int:
     catalogs = [(label, folder) for label, folder in catalogs if folder.is_dir()]
     catalog = load_catalog(*catalogs) if catalogs else {}
     a1_list = find_a1_list(catalogs)
-    a1_ids = offerable_effect_ids(catalog, a1four_effect_ids(a1_list) if a1_list else None)
+    registry = load_models(a1_list) if a1_list else {}
+    pedal_ids = {i for i, e in catalog.items() if PEDAL_LABEL in e.sources}  # the pedal ships some the list omits
 
     app = QApplication(sys.argv[:1])
     app.setApplicationName("Zoom Studio")
@@ -94,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     register_fonts()
     apply_dark_theme(app)
 
-    window = MainWindow(catalog, a1_ids=a1_ids, transport_factory=MidoTransport.open,
+    window = MainWindow(catalog, models=registry, extra_ids=pedal_ids, transport_factory=MidoTransport.open,
                         installed_label=PEDAL_LABEL, backup_dir=autosave_dir(),
                         library_dir=workspace_root() / "patches")
     if not catalogs:

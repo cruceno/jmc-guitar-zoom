@@ -498,12 +498,16 @@ class CatalogPanel(QWidget):
     effect_activated = Signal(int)  # double click on a row: catalog effect ID
     manage_requested = Signal()  # the «Administrar» button: open the pedal's effects screen
 
-    def __init__(self, catalog: dict[int, EffectInfo], a1_ids: set[int] | None, installed_label: str,
-                 favorites: FavoritesStore | None = None) -> None:
+    pedal_chosen = Signal(int)  # the selector (shown only with several supported pedals): model id
+
+    def __init__(self, catalog: dict[int, EffectInfo], allowed_ids: set[int] | None, installed_label: str,
+                 favorites: FavoritesStore | None = None, pedal_name: str = "",
+                 pedals: list[tuple[int, str]] | None = None, target: int | None = None) -> None:
         super().__init__()
         self.favorites = favorites if favorites is not None else FavoritesStore()
         self._catalog = catalog
-        self._a1_ids = a1_ids
+        self._allowed = allowed_ids  # what the target pedal can run (None: no restriction known)
+        self._pedal_name = pedal_name
         self._installed_label = installed_label
         self._current_dsp = 0.0
         self._replaced_dsp = 0.0
@@ -519,8 +523,15 @@ class CatalogPanel(QWidget):
         self.group_combo.addItem(S.FAVORITES, FAVORITES_FILTER)
         for group in sorted({e.group for e in catalog.values()}):
             self.group_combo.addItem(S.group_label(group), group)
-        self.a1_check = QCheckBox(S.ONLY_A1)
-        self.a1_check.setEnabled(a1_ids is not None)
+        self.pedal_combo = QComboBox()  # one entry per supported pedal; hidden while there is only one
+        self.pedal_combo.setToolTip(S.CATALOG_PEDAL_TIP)
+        self.pedal_combo.setAccessibleName(S.CATALOG_PEDAL_TIP)
+        for model_id, name in pedals or []:
+            self.pedal_combo.addItem(name, model_id)
+        if target is not None and self.pedal_combo.findData(target) >= 0:
+            self.pedal_combo.setCurrentIndex(self.pedal_combo.findData(target))
+        self.pedal_combo.setVisible(self.pedal_combo.count() > 1)
+        self.pedal_combo.currentIndexChanged.connect(lambda _i: self.pedal_chosen.emit(self.pedal_combo.currentData()))
         self.count_label = QLabel("")
         self.count_label.setProperty("role", "secondary")
         self.destination = DestinationCard()
@@ -599,7 +610,7 @@ class CatalogPanel(QWidget):
         filters = QHBoxLayout()
         filters.setSpacing(10)
         filters.addWidget(self.group_combo, stretch=1)
-        filters.addWidget(self.a1_check)
+        filters.addWidget(self.pedal_combo)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
@@ -617,7 +628,6 @@ class CatalogPanel(QWidget):
         self._chain_ids: set[int] = set()
         self.search.textChanged.connect(self.refresh)
         self.group_combo.currentIndexChanged.connect(self.refresh)
-        self.a1_check.toggled.connect(self.refresh)
         self.list.currentItemChanged.connect(self._on_current)
         self.list.itemDoubleClicked.connect(
             lambda item: None if item.data(ROLE_SECTION) else self.effect_activated.emit(item.data(_ID_ROLE)))
@@ -655,11 +665,19 @@ class CatalogPanel(QWidget):
                 return False
         elif group is not None and info.group != group:
             return False
-        return not (self.a1_check.isChecked() and self._a1_ids is not None
-                    and info.effect_id not in self._a1_ids)
+        return self._allowed is None or info.effect_id in self._allowed
+
+    def set_pedal(self, allowed_ids: set[int] | None, pedal_name: str, model_id: int | None = None) -> None:
+        """The target pedal changed: show only what it can run (and keep the selector in step)."""
+        self._allowed, self._pedal_name = allowed_ids, pedal_name
+        if model_id is not None and self.pedal_combo.findData(model_id) >= 0:
+            self.pedal_combo.blockSignals(True)
+            self.pedal_combo.setCurrentIndex(self.pedal_combo.findData(model_id))
+            self.pedal_combo.blockSignals(False)
+        self.refresh()
 
     def clear_filters(self) -> None:
-        """Back to the whole catalog: empty search and every group (the A1 FOUR filter stays as chosen)."""
+        """Back to everything the target runs: empty search and every group."""
         self.search.clear()
         self.group_combo.setCurrentIndex(0)
 
@@ -763,8 +781,7 @@ class CatalogPanel(QWidget):
                 item.setData(ROLE_EFFECT, {
                     "name": info.name, "group": info.group, "dsp": info.dsp_load_percent, "wide": info.is_wide,
                     "installed": self._is_installed(info), "in_chain": info.effect_id in self._chain_ids,
-                    "svg": info.svg_path,
-                    "blocked": self._a1_ids is not None and info.effect_id not in self._a1_ids})
+                    "svg": info.svg_path})
                 item.setData(_ID_ROLE, info.effect_id)
                 item.setData(ROLE_FAV, self.favorites.is_favorite(info.effect_id))
                 item.setData(_NAME_ROLE, info.name)
@@ -777,14 +794,15 @@ class CatalogPanel(QWidget):
         if restore is not None:
             self.list.setCurrentItem(restore)
         count = len(shown)
-        self.count_label.setText(S.visible_count(count))
+        self.count_label.setText(S.compatible_count(count, self._pedal_name) if self._pedal_name
+                                 else S.visible_count(count))
         self.list.setVisible(count > 0)
         self.none_box.setVisible(count == 0)
         if count == 0:
             group = self.group_combo.currentData()
             self.none_label.setText(S.no_effect_matches(
                 self.search.text().strip(), (S.FAVORITES if group == FAVORITES_FILTER else S.group_label(group)) if group else "",
-                self.a1_check.isChecked() and self._a1_ids is not None))
+                self._pedal_name if self._allowed is not None else ""))
             self._on_current(None)
         elif restore is None:
             self._on_current(None)  # the list was rebuilt: nothing is selected until a card is

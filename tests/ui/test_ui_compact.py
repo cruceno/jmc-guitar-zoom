@@ -25,7 +25,7 @@ from zoomstudio.ui.widgets import ParamRow
 
 EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
 SIZES = [(1280, 760), (1440, 900), (1600, 1000)]
-STATES = ["no-patch", "gt-geq-7", "effects-manager", "bank", "tuner", "offline"]
+STATES = ["two-pedals", "no-patch", "gt-geq-7", "effects-manager", "bank", "tuner", "offline"]
 SQUEEZE_SLACK = 1
 
 
@@ -35,6 +35,15 @@ def catalog():
 
 
 def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
+    if state == "two-pedals":  # the pedal selector of the catalog shows when more than one pedal is supported
+        from zoomstudio.effects import models as pedal_models
+
+        registry = pedal_models.load_models(FIXTURES / "AllZDL7_2.lst")
+        monkeypatch.setattr(pedal_models, "SUPPORTED_MODELS", {pedal_models.A1_FOUR, 0x6E000000})
+        w = MainWindow(catalog, models=registry, bank_dir=tmp_path / "bank")
+        qtbot.addWidget(w)
+        w.load_offline(FIXTURES / "backup")
+        return w
     if state == "offline":
         w = MainWindow(catalog, bank_dir=tmp_path / "bank")
         qtbot.addWidget(w)

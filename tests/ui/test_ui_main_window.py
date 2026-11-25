@@ -116,19 +116,16 @@ def test_dirty_edit_survives_reselecting_the_patch(window):
     assert window.param_rows()[1].spin.value() == 77
 
 
-def test_catalog_search_and_a1_filter(window):
+def test_catalog_search_and_group_filter_only_cover_what_the_a1_four_runs(window):
     panel = window.catalog_panel
-    assert set(panel.visible_names()) == {"Comp", "FD DLXR", "FD-DX1x12", "Gt GEQ 7", "Hall", "OptComp"}
+    assert set(panel.visible_names()) == {"Comp", "FD DLXR", "Gt GEQ 7", "Hall"}  # OptComp and FD-DX1x12 are not listed
     panel.search.setText("gt")
     assert panel.visible_names() == ["Gt GEQ 7"]
     panel.search.setText("")
-    panel.a1_check.setChecked(True)  # FD-DX1x12 and OptComp are not in the A1 FOUR list
-    assert set(panel.visible_names()) == {"Comp", "FD DLXR", "Gt GEQ 7", "Hall"}
     panel.group_combo.setCurrentText(strings.group_label("AMP"))
     assert panel.visible_names() == ["FD DLXR"]
-    panel.a1_check.setChecked(False)
     panel.group_combo.setCurrentText(strings.ALL_GROUPS)
-    assert len(panel.visible_names()) == 6
+    assert len(panel.visible_names()) == 4
 
 
 def test_catalog_rows_show_dsp_load_installed_flag_and_svg(window):
@@ -186,10 +183,10 @@ def test_catalog_button_enter_and_double_click_all_apply_the_effect(window):
     assert window.current_patch.effects[6].effect_id == comp
 
 
-def test_catalog_starts_without_the_a1_filter_and_marks_effects_in_the_chain(window):
+def test_catalog_marks_the_effects_in_the_chain(window):
     window.select_location(44)
     panel = window.catalog_panel
-    assert not panel.a1_check.isChecked() and panel.target_button.text()
+    assert panel.target_button.text()
     from zoomstudio.ui.cards import ROLE_EFFECT
 
     flags = {panel.list.item(i).data(ROLE_EFFECT)["name"]: panel.list.item(i).data(ROLE_EFFECT)["in_chain"]
