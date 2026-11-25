@@ -51,6 +51,7 @@ class Entry:
     file: str  # pedal file name, e.g. MDL_12ST.ZD2
     info: EffectInfo | None
     size: int | None  # bytes of the local .zd2
+    missing: bool = False  # flagged installed in the list, but the file is not on the pedal
 
     @property
     def name(self) -> str:
@@ -80,7 +81,8 @@ def build_entries(catalog: dict[int, EffectInfo], allowed_ids: set[int] | None, 
                   files: list[str]) -> tuple[list[Entry], list[Entry]]:
     """``(installed, available)`` for the pedal's list and file names.
 
-    Installed: flag set in the first section of FLST_SEQ.ZT2 and the file is on the pedal. Available: a catalog
+    Installed: flag set in the first section of FLST_SEQ.ZT2; one whose file is not on the pedal is kept and marked
+    ``missing`` so it can be repaired (only for effects the local catalog knows). Available: a catalog
     effect with a local .zd2, allowed on the A1 FOUR, that the list contains with its flag off.
     """
     on_pedal = set(files)
@@ -89,9 +91,9 @@ def build_entries(catalog: dict[int, EffectInfo], allowed_ids: set[int] | None, 
         by_file[flst.pedal_filename(info.filename)] = info
     installed = []
     for file in flst.installed_names(flst_bytes):
-        if file != BYPASS and file in on_pedal:
-            info = by_file.get(file)
-            installed.append(Entry(file, info, _local_size(info.path if info else None)))
+        info = by_file.get(file)
+        if file != BYPASS and (file in on_pedal or info is not None):  # a missing file of an unknown effect: nothing to show
+            installed.append(Entry(file, info, _local_size(info.path if info else None), missing=file not in on_pedal))
     available = []
     for file, info in by_file.items():
         if info.path is None or (allowed_ids is not None and info.effect_id not in allowed_ids):
@@ -202,8 +204,22 @@ class EffectCard(QStyledItemDelegate):
                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, dsp)
         p.setFont(ui_font(12))
         p.setPen(group_text_color(entry.group))
-        p.drawText(QRectF(left, rect.top() + 29, right - left, 18), Qt.AlignmentFlag.AlignVCenter,
-                   f"{S.group_label(entry.group)} · {S.effects_size(entry.size)}")
+        line = QRectF(left, rect.top() + 29, right - left, 18)
+        if entry.missing:  # a chip with text and an exclamation mark: not told by colour alone
+            chip_text = "! " + S.EFFECTS_MISSING
+            chip_w = QFontMetrics(ui_font(11)).horizontalAdvance(chip_text) + 14
+            chip = QRectF(right - chip_w, rect.top() + 30, chip_w, 16)
+            p.setPen(QPen(with_alpha(tokens.color("status-danger"), 0.8), 1))
+            p.drawPath(card_path(chip, 8))
+            p.setFont(ui_font(11))
+            p.setPen(tokens.color("status-danger"))
+            p.drawText(chip, Qt.AlignmentFlag.AlignCenter, chip_text)
+            p.setFont(ui_font(12))
+            p.setPen(group_text_color(entry.group))
+            line.setRight(chip.left() - 8)
+        text = S.group_label(entry.group) if entry.missing else f"{S.group_label(entry.group)} · {S.effects_size(entry.size)}"
+        p.drawText(line, Qt.AlignmentFlag.AlignVCenter, QFontMetrics(ui_font(12)).elidedText(
+            text, Qt.TextElideMode.ElideRight, int(line.width())))
         p.restore()
 
 
@@ -242,6 +258,7 @@ class EffectsManager(GlassPanel):
     refresh_requested = Signal()  # read the pedal's state again
     install_requested = Signal(str, object)  # pedal file name, local .zd2 path
     remove_requested = Signal(str)  # pedal file name
+    repair_requested = Signal(str, object)  # pedal file name, local .zd2 path: upload only the missing file
     close_requested = Signal()
 
     def __init__(self, root: BackdropRoot, catalog: dict[int, EffectInfo], allowed_ids: set[int] | None,
@@ -332,6 +349,10 @@ class EffectsManager(GlassPanel):
         self.remove_button = QPushButton(S.EFFECTS_REMOVE)
         self.remove_button.setProperty("danger", True)
         self.remove_button.setIcon(icon("x", "status-danger"))
+        self.repair_button = QPushButton(S.EFFECTS_REPAIR)
+        self.repair_button.setProperty("primary", True)
+        self.repair_button.setIcon(icon("reload", "on-accent"))
+        self.repair_button.clicked.connect(self._on_repair)
         self.install_button.clicked.connect(self._on_install)
         self.remove_button.clicked.connect(self._on_remove)
 
@@ -380,6 +401,7 @@ class EffectsManager(GlassPanel):
         buttons = QHBoxLayout()
         buttons.addStretch(1)
         buttons.addWidget(self.remove_button)
+        buttons.addWidget(self.repair_button)
         buttons.addWidget(self.install_button)
         dl.addLayout(buttons)
         content.addLayout(lists, stretch=1)
@@ -428,6 +450,10 @@ class EffectsManager(GlassPanel):
     def _file_names(cards: QListWidget) -> list[str]:
         return [cards.item(i).data(ROLE_ENTRY).file for i in range(cards.count())
                 if cards.item(i).data(ROLE_ENTRY) is not None]
+
+    def missing_names(self) -> list[str]:
+        """Installed effects whose file is not on the pedal."""
+        return [e.file for e in self._installed if e.missing]
 
     def section_groups(self, which: str) -> list[str]:
         """The groups of ``which`` ("installed" or "available") that have a section, in screen order."""
@@ -591,6 +617,9 @@ class EffectsManager(GlassPanel):
                     item = QListWidgetItem()
                     item.setData(ROLE_ENTRY, entry)
                     item.setData(ROLE_FAV, self._is_favorite(entry) if entry.info is not None else None)
+                    if entry.missing:
+                        item.setToolTip(S.EFFECTS_MISSING_TIP)
+                        item.setData(Qt.ItemDataRole.AccessibleTextRole, f"{entry.name}, {S.EFFECTS_MISSING_TIP}")
                     item.setHidden(folded)
                     cards.addItem(item)
                     if entry.file == self._selected:
@@ -658,14 +687,24 @@ class EffectsManager(GlassPanel):
     def _update_actions(self) -> None:
         entry = self._entry(self._selected)
         installing = entry is not None and any(e.file == entry.file for e in self._available)
-        removing = entry is not None and not installing
+        repairing = entry is not None and entry.missing
+        removing = entry is not None and not installing and not repairing
         self.install_button.setVisible(installing)
         self.remove_button.setVisible(removing)
+        self.repair_button.setVisible(repairing)
         enabled, reason, blocking = False, "", False
         if entry is None or not self._loaded:
             pass
         elif self._busy:
             reason = self._busy_text
+        elif repairing:
+            need = (entry.size or 0) + MEMORY_MARGIN
+            if entry.path is None or entry.size is None:
+                reason, blocking = S.EFFECTS_NO_LOCAL_COPY, True
+            elif self._free is None or need > self._free:
+                reason, blocking = S.effects_install_blocked(need, entry.size, MEMORY_MARGIN, self._free or 0), True
+            else:
+                enabled, reason = True, S.EFFECTS_REPAIR_OK
         elif installing:
             need = (entry.size or 0) + MEMORY_MARGIN
             if self._free is None or entry.size is None or need > self._free:
@@ -688,6 +727,7 @@ class EffectsManager(GlassPanel):
             blocking = not enabled
         self.install_button.setEnabled(enabled and installing)
         self.remove_button.setEnabled(enabled and removing)
+        self.repair_button.setEnabled(enabled and repairing)
         self.reason_label.setText(reason)
         self.reason_label.setProperty("blocking", blocking)
         self.reason_label.style().unpolish(self.reason_label)
@@ -695,6 +735,7 @@ class EffectsManager(GlassPanel):
         tip = reason if reason else ""
         self.install_button.setToolTip(tip)
         self.remove_button.setToolTip(tip)
+        self.repair_button.setToolTip(tip)
 
     def _on_install(self) -> None:
         entry = self._entry(self._selected)
@@ -704,6 +745,15 @@ class EffectsManager(GlassPanel):
                              S.effects_confirm_install(entry.name, entry.file, entry.size, self._free or 0),
                              S.EFFECTS_INSTALL):
             self.install_requested.emit(entry.file, entry.path)
+
+    def _on_repair(self) -> None:
+        entry = self._entry(self._selected)
+        if entry is None or entry.path is None or entry.size is None or not self.repair_button.isEnabled():
+            return
+        if ConfirmDialog.ask(self, S.effects_confirm_repair_title(entry.name),
+                             S.effects_confirm_repair(entry.name, entry.file, entry.size, self._free or 0),
+                             S.EFFECTS_REPAIR):
+            self.repair_requested.emit(entry.file, entry.path)
 
     def _on_remove(self) -> None:
         entry = self._entry(self._selected)

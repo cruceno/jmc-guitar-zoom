@@ -11,7 +11,7 @@ from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import (QAbstractButton, QAbstractScrollArea, QCheckBox, QComboBox, QLabel, QLineEdit,
                                QPushButton, QToolButton, QWidget)
 
-from test_ui_effects_manager import BEFORE, PedalFiles, connected_window, open_screen
+from test_ui_effects_manager import AFTER, BEFORE, ON_PEDAL, PedalFiles, connected_window, open_screen
 from ui_replies import FIXTURES
 from zoomstudio.effects.catalog import load_catalog
 from zoomstudio.ui import strings as S
@@ -20,7 +20,7 @@ from zoomstudio.ui.painted import PaintedText
 
 EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
 SIZES = [(1440, 900), (2000, 1056)]
-STATES = ["no-patch", "patch-selected", "effects-manager", "tuner", "offline"]
+STATES = ["no-patch", "patch-selected", "effects-manager", "effects-repair", "tuner", "offline"]
 SLACK = 2  # px of rounding the metrics may differ from the painted text by
 
 
@@ -114,6 +114,11 @@ def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
         w = MainWindow(catalog)
         qtbot.addWidget(w)
         w.load_offline(FIXTURES / "backup")
+        return w
+    if state == "effects-repair":  # 12Strings is flagged installed but its file is missing: «Falta el archivo» + Reparar
+        w = connected_window(qtbot, monkeypatch, catalog, tmp_path, PedalFiles(AFTER, ON_PEDAL))
+        open_screen(qtbot, w)
+        w.effects_panel.select_effect("MDL_12ST.ZD2")
         return w
     w = connected_window(qtbot, monkeypatch, catalog, tmp_path, PedalFiles(BEFORE))
     if state == "patch-selected":

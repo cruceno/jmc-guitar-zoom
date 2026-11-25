@@ -19,6 +19,7 @@ from zoomstudio.effects.catalog import load_catalog
 from zoomstudio.effects.installer import MEMORY_MARGIN
 from zoomstudio.ui import strings as ST
 from zoomstudio.ui.dialogs import ConfirmDialog
+from zoomstudio.ui.effects_manager import ROLE_ENTRY
 from zoomstudio.ui.main_window import MainWindow
 
 EFFECTS = Path(__file__).parents[1] / "effects" / "fixtures"
@@ -107,10 +108,11 @@ def test_once_the_flag_is_set_the_effect_moves_to_installed(qtbot, monkeypatch, 
     assert names(panel, "available") == ["160_COMP.ZD2"]
 
 
-def test_an_installed_flag_without_the_file_is_not_installed(qtbot, monkeypatch, catalog, tmp_path):
+def test_an_installed_flag_without_the_file_is_listed_as_missing_its_file(qtbot, monkeypatch, catalog, tmp_path):
     w = connected_window(qtbot, monkeypatch, catalog, tmp_path, PedalFiles(BEFORE, ON_PEDAL[:-1]))
     panel = open_screen(qtbot, w)
-    assert "OPTCOMP.ZD2" not in names(panel, "installed")
+    assert "OPTCOMP.ZD2" in names(panel, "installed")  # flagged: it is listed, not hidden
+    assert panel.missing_names() == ["OPTCOMP.ZD2"]
     assert "OPTCOMP.ZD2" not in names(panel, "available")  # its flag is set: nothing to install
 
 
@@ -411,3 +413,92 @@ def test_install_and_remove_work_from_a_grouped_list(qtbot, monkeypatch, catalog
     assert "AG MODEL" in panel.section_groups("installed")
     panel.select_effect("HALL.ZD2")
     assert panel.remove_button.isVisibleTo(panel)
+
+
+# ---------------------------------------------------------------- repair: flagged installed, file missing
+
+
+def broken_window(qtbot, monkeypatch, catalog, tmp_path, free=FREE):
+    """MDL_12ST is flagged installed in the list (``after-12st``) but its file is not on the pedal."""
+    files = PedalFiles(AFTER, ON_PEDAL, free=free)
+    w = connected_window(qtbot, monkeypatch, catalog, tmp_path, files)
+    return w, open_screen(qtbot, w), files
+
+
+def test_an_effect_without_its_file_is_marked_in_text_tooltip_and_accessible_name(qtbot, monkeypatch, catalog, tmp_path):
+    _w, panel, _files = broken_window(qtbot, monkeypatch, catalog, tmp_path)
+    assert panel.missing_names() == ["MDL_12ST.ZD2"]
+    assert "AG MODEL" in panel.section_groups("installed")  # inside its group section
+    item = next(panel.installed_list.item(i) for i in range(panel.installed_list.count())
+                if panel.installed_list.item(i).data(ROLE_ENTRY) is not None
+                and panel.installed_list.item(i).data(ROLE_ENTRY).file == "MDL_12ST.ZD2")
+    assert ST.EFFECTS_MISSING == "Falta el archivo"
+    assert ST.EFFECTS_MISSING in item.toolTip()
+    assert ST.EFFECTS_MISSING in item.data(Qt.ItemDataRole.AccessibleTextRole)
+
+
+def test_repair_replaces_remove_and_is_enabled_with_a_local_copy(qtbot, monkeypatch, catalog, tmp_path):
+    _w, panel, _files = broken_window(qtbot, monkeypatch, catalog, tmp_path)
+    panel.select_effect("MDL_12ST.ZD2")
+    assert panel.repair_button.text() == ST.EFFECTS_REPAIR
+    assert panel.repair_button.isVisibleTo(panel) and panel.repair_button.isEnabled()
+    assert not panel.remove_button.isVisibleTo(panel) and not panel.install_button.isVisibleTo(panel)
+    panel.select_effect("COMP.ZD2")  # a normal installed effect keeps Quitar
+    assert panel.remove_button.isVisibleTo(panel) and not panel.repair_button.isVisibleTo(panel)
+
+
+def test_repair_is_disabled_without_a_local_copy(qtbot, monkeypatch, catalog, tmp_path):
+    no_copy = {k: (dataclasses.replace(v, path=None) if v.effect_id == 0x14400190 else v) for k, v in catalog.items()}
+    _w, panel, _files = broken_window(qtbot, monkeypatch, no_copy, tmp_path)
+    panel.select_effect("MDL_12ST.ZD2")
+    assert panel.repair_button.isVisibleTo(panel) and not panel.repair_button.isEnabled()
+    assert panel.reason_label.text() == "No hay una copia local de este efecto"
+
+
+def test_repair_is_disabled_when_memory_is_short(qtbot, monkeypatch, catalog, tmp_path):
+    size = catalog[0x14400190].path.stat().st_size
+    _w, panel, _files = broken_window(qtbot, monkeypatch, catalog, tmp_path, free=size + MEMORY_MARGIN - 1)
+    panel.select_effect("MDL_12ST.ZD2")
+    assert not panel.repair_button.isEnabled()
+    assert panel.reason_label.text() == ST.effects_install_blocked(size + MEMORY_MARGIN, size, MEMORY_MARGIN,
+                                                                   size + MEMORY_MARGIN - 1)
+
+
+def test_repair_asks_first_then_uploads_only_the_file_and_refreshes(qtbot, monkeypatch, catalog, tmp_path):
+    w, panel, files = broken_window(qtbot, monkeypatch, catalog, tmp_path)
+    asked = []
+    monkeypatch.setattr(ConfirmDialog, "ask",
+                        staticmethod(lambda parent, title, text, *a, **k: asked.append(text) or True))
+    panel.select_effect("MDL_12ST.ZD2")
+    with qtbot.waitSignal(panel.state_shown, timeout=5000):
+        panel.repair_button.click()
+    assert len(asked) == 1
+    text = asked[0].lower()
+    assert "solo se sube el archivo" in text and "no se modifica la lista" in text and "copia de seguridad" in text
+    assert files.files["MDL_12ST.ZD2"] == catalog_bytes()
+    assert files.files[flst.FLST_NAME] == AFTER  # the list is untouched
+    assert len(list((tmp_path / "effects").glob("*FLST_SEQ.ZT2"))) == 1  # the backup of the list
+    assert panel.missing_names() == []
+    assert "MDL_12ST.ZD2" in names(panel, "installed")
+    assert w.memory_value.text() == f"{round((1 - files.free / TOTAL) * 100)} %"
+
+
+def test_declining_the_repair_writes_nothing(qtbot, monkeypatch, catalog, tmp_path):
+    _w, panel, files = broken_window(qtbot, monkeypatch, catalog, tmp_path)
+    monkeypatch.setattr(ConfirmDialog, "ask", staticmethod(lambda *a, **k: False))
+    panel.select_effect("MDL_12ST.ZD2")
+    panel.repair_button.click()
+    qtbot.wait(200)
+    assert "MDL_12ST.ZD2" not in files.files and files.files[flst.FLST_NAME] == AFTER
+    assert not (tmp_path / "effects").exists()
+
+
+def test_a_failed_repair_goes_through_the_error_path(qtbot, monkeypatch, catalog, tmp_path):
+    size = catalog[0x14400190].path.stat().st_size
+    w, panel, files = broken_window(qtbot, monkeypatch, catalog, tmp_path, free=size + MEMORY_MARGIN)
+    panel.select_effect("MDL_12ST.ZD2")
+    files.free = 10  # the pedal has less memory by the time the repair runs
+    with qtbot.waitSignal(w.error_shown, timeout=5000) as blocker:
+        panel.repair_button.click()
+    assert blocker.args[0].startswith("No se pudo reparar MDL_12ST.ZD2")
+    assert "MDL_12ST.ZD2" not in files.files

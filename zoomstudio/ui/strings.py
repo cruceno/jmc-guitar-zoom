@@ -679,6 +679,10 @@ def effects_removed_ok(name: str) -> str:
 
 def err_effect_change(name: str, installing: bool, exc: object) -> str:
     return with_detail(f"No se pudo {'instalar' if installing else 'quitar'} {name}", exc)
+
+
+def err_effect_repair(name: str, exc: object) -> str:
+    return with_detail(f"No se pudo reparar {name}", exc)
 EFFECTS_RETRY = "Reintentar"
 EFFECTS_LOAD_FAILED = "No se pudo leer la lista de efectos de la pedalera. El motivo figura en el mensaje de error."
 
@@ -696,3 +700,22 @@ def effects_section_name(label: str, count: int, expanded: bool) -> str:
 FAVORITE_ADD = "Marcar como favorito"
 FAVORITE_REMOVE = "Quitar de favoritos"
 FAVORITES = "Favoritos"
+
+
+# ---- effects manager: repair an effect whose file is missing
+EFFECTS_MISSING = "Falta el archivo"
+EFFECTS_MISSING_TIP = "Falta el archivo: la lista de la pedalera marca este efecto como instalado, pero el archivo no está en ella"
+EFFECTS_REPAIR = "Reparar"
+EFFECTS_NO_LOCAL_COPY = "No hay una copia local de este efecto"
+EFFECTS_REPAIR_OK = "Se puede reparar: se subirá solo el archivo que falta."
+EFFECTS_BUSY_REPAIR = "Reparando el efecto en la pedalera…"
+
+
+def effects_confirm_repair_title(name: str) -> str:
+    return f"¿Reparar {name}?"
+
+
+def effects_confirm_repair(name: str, file: str, size: int, free: int) -> str:
+    return (f"La lista de la pedalera marca {name} como instalado, pero falta su archivo {file}. "
+            f"Solo se sube el archivo ({effects_size(size)}); no se modifica la lista de efectos. "
+            f"Antes de escribir se guarda una copia de seguridad de la lista (FLST_SEQ.ZT2).")

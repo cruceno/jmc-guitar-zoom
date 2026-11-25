@@ -112,6 +112,7 @@ class MainWindow(LibraryMixin, QMainWindow):
     _effects_state_requested = Signal()
     _effect_install_requested = Signal(str, object, object)
     _effect_remove_requested = Signal(str, object, object)
+    _effect_repair_requested = Signal(str, object, object)
 
     def __init__(self, catalog: dict[int, EffectInfo], a1_ids: set[int] | None = None,
                  transport_factory: TransportFactory | None = None, installed_label: str = "pedal",
@@ -380,6 +381,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.effects_panel.refresh_requested.connect(self._request_effects_state)
         self.effects_panel.install_requested.connect(self._on_effect_install)
         self.effects_panel.remove_requested.connect(self._on_effect_remove)
+        self.effects_panel.repair_requested.connect(self._on_effect_repair)
         self.header = header
         self._status_bar = StatusBar()
         status_panel = GlassPanel(backdrop_root, "strong")
@@ -540,6 +542,11 @@ class MainWindow(LibraryMixin, QMainWindow):
         if self._worker is not None and self._is_connected:
             self._set_effects_busy(True, S.EFFECTS_BUSY_INSTALL)
             self._effect_install_requested.emit(name, path, self.effects_backup_dir)
+
+    def _on_effect_repair(self, name: str, path) -> None:
+        if self._worker is not None and self._is_connected:
+            self._set_effects_busy(True, S.EFFECTS_BUSY_REPAIR)
+            self._effect_repair_requested.emit(name, path, self.effects_backup_dir)
 
     def _on_effect_remove(self, name: str) -> None:
         if self._worker is not None and self._is_connected:
@@ -1137,6 +1144,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         self._effects_state_requested.connect(w.load_effects_state)
         self._effect_install_requested.connect(w.install_effect_file)
         self._effect_remove_requested.connect(w.remove_effect_file)
+        self._effect_repair_requested.connect(w.repair_effect_file)
         w.effects_state.connect(self._on_effects_state)
         w.effects_state_failed.connect(self.effects_panel.set_failed)
         w.effect_changed.connect(self._on_effect_changed)

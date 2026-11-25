@@ -202,6 +202,23 @@ class PedalWorker(QObject):
         self.effect_change_finished.emit(True)
 
     @Slot(str, object, object)
+    def repair_effect_file(self, name: str, path, backup_dir) -> None:
+        """Upload only the missing file of an effect the list already marks installed (the list is not changed)."""
+        client = self._require_client()
+        if client is None or not self._backup_dir_ok(backup_dir):
+            self.effect_change_finished.emit(False)
+            return
+        try:
+            data = Path(path).read_bytes()
+            installer.repair_effect(client, data, name, Path(backup_dir))
+        except (PedalError, OSError, installer.EffectInstallError) as exc:
+            self.error.emit(S.err_effect_repair(name, describe_error(exc)))
+            self.effect_change_finished.emit(False)
+            return
+        self.effect_changed.emit(name, True)
+        self.effect_change_finished.emit(True)
+
+    @Slot(str, object, object)
     def remove_effect_file(self, name: str, backup_dir, in_use) -> None:
         """Clear the flag of ``name`` and delete its file; the installer refuses effects that ``in_use`` lists."""
         client = self._require_client()
