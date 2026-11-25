@@ -13,6 +13,7 @@ class ConfirmDialog(QDialog):
 
     def __init__(self, parent: QWidget | None, title: str, text: str, accept: str, danger: bool = False) -> None:
         super().__init__(parent)
+        self.setObjectName("confirmDialog")
         self.setWindowTitle(title)
         self.setModal(True)
         heading = QLabel(title)

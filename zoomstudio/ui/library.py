@@ -55,7 +55,8 @@ class LibraryMixin:
 
         for act in (self.copy_action, self.paste_action, self.clear_action):
             self.patch_list.addAction(act)  # shortcuts act only while the patch list has focus
-        menu = self.menuBar().addMenu(S.LIBRARY_MENU)
+        menu = QMenu(self.library_button)
+        self.library_button.setMenu(menu)
         for act in (self.backup_action, self.backup_files_action, None, self.copy_action, self.paste_action,
                     self.clear_action, None, self.export_selected_action, self.export_all_action,
                     self.import_file_action, self.import_folder_action, None, self.write_dirty_action):

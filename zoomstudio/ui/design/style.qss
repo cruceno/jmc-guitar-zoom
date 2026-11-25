@@ -74,3 +74,12 @@ QProgressBar::chunk { border-radius: 2px; background: qlineargradient(x1:0, y1:0
 QProgressBar[over="true"]::chunk { background: $status_danger; }
 
 QSplitter::handle { background: transparent; }
+
+QLabel#connectionPill {
+  background: $input_bg; border: 1px solid $hairline; border-radius: ${control_radius}px; padding: 0 14px; min-height: ${control_height}px;
+}
+QLabel#connectionPill[connected="true"] { color: $status_ok; }
+QLabel[role="reason"] { color: $text_secondary; font-size: ${text_caption_size}px; }
+QLabel[role="reason"][blocking="true"] { color: $status_danger; }
+QLabel[role="dirty"] { color: $status_warn; font-size: ${text_caption_size}px; }
+#confirmDialog { background: $surface_overlay; border: 1px solid $border_control; border-radius: 16px; }

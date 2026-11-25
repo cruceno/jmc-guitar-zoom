@@ -11,7 +11,7 @@ from PySide6.QtGui import (
     QAction, QBrush, QColor, QKeySequence, QShortcut, QRegularExpressionValidator, QUndoCommand, QUndoGroup, QUndoStack,
 )
 from PySide6.QtWidgets import (
-    QCheckBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidgetItem, QMainWindow,
+    QCheckBox, QFileDialog, QFrame, QMenu, QHBoxLayout, QLabel, QLineEdit, QListWidgetItem, QMainWindow,
     QProgressBar, QPushButton, QSpinBox, QSplitter, QToolButton, QVBoxLayout, QWidget,
 )
 
@@ -22,7 +22,8 @@ from zoomstudio.patches.zptc import build_zptc, parse_zptc
 
 from . import strings as S
 from .dialogs import ConfirmDialog
-from .glass import BackdropRoot, GlassPanel
+from .glass import BackdropRoot, GlassPanel, GlowHost
+from .icons import icon
 from .library import LibraryMixin
 from .tuner import TunerPanel
 from .widgets import CatalogPanel, ChainView, EffectTile, ParamPanel, ParamRow, PatchList
@@ -142,30 +143,36 @@ class MainWindow(LibraryMixin, QMainWindow):
         header = GlassPanel(backdrop_root, "strong")
         h = QHBoxLayout(header)
         h.setContentsMargins(16, 8, 16, 8)
+        self.edit_button = self._menu_button(S.EDIT_MENU)
+        self.library_button = self._menu_button(S.LIBRARY_MENU)
         self.connection_label = QLabel(S.NOT_CONNECTED)
-        self.connection_label.setMinimumWidth(260)
+        self.connection_label.setObjectName("connectionPill")
+        self.connection_label.setMinimumWidth(220)
         self.memory_bar = QProgressBar()
         self.memory_bar.setRange(0, 100)
         self.memory_bar.setValue(0)
         self.memory_bar.setFormat(S.MEMORY_NA)
-        self.memory_bar.setMinimumWidth(240)
+        self.memory_bar.setMinimumWidth(200)
         self.connect_button = QPushButton(S.CONNECT)
         self.disconnect_button = QPushButton(S.DISCONNECT)
-        self.open_button = QPushButton(S.OPEN_FOLDER)
-        self.reload_button = QPushButton(S.RELOAD)
-        self.open_file_button = QPushButton(S.OPEN_FILE)
-        self.save_file_button = QPushButton(S.SAVE_FILE)
+        self.open_button = self._icon_button("folder", S.OPEN_FOLDER)
+        self.reload_button = self._icon_button("reload", S.RELOAD)
+        self.open_file_button = self._icon_button("file", S.OPEN_FILE)
+        self.save_file_button = self._icon_button("filesave", S.SAVE_FILE)
         self.save_button = QPushButton(S.SAVE_TO_PEDAL)
+        self.save_button.setProperty("primary", True)
+        self.save_button.setIcon(icon("save", "on-accent"))
         self.tuner_button = QPushButton(S.TUNER)
+        self.tuner_button.setIcon(icon("tuner"))
         self.tuner_button.setCheckable(True)
         self.tuner_button.setToolTip(S.TUNER_TIP)
         self.live_check = QCheckBox(S.LIVE)
         self.live_check.setToolTip(S.LIVE_TIP)
-        h.addWidget(self.connection_label)
-        h.addWidget(self.memory_bar)
+        for w in (self.edit_button, self.library_button, self.connection_label, self.memory_bar):
+            h.addWidget(w)
         h.addStretch(1)
-        for w in (self.tuner_button, self.live_check, self.open_file_button, self.save_file_button, self.save_button,
-                  self.connect_button, self.disconnect_button, self.open_button, self.reload_button):
+        for w in (self.tuner_button, self.live_check, self.open_file_button, self.save_file_button,
+                  self.open_button, self.reload_button, self.connect_button, self.disconnect_button):
             h.addWidget(w)
         self.connect_button.clicked.connect(self._on_connect_clicked)
         self.disconnect_button.clicked.connect(self._on_disconnect_clicked)
@@ -183,7 +190,12 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.undo_action.setShortcut(QKeySequence("Ctrl+Z"))
         self.redo_action = self.undo_group.createRedoAction(self, S.REDO)
         self.redo_action.setShortcuts([QKeySequence("Ctrl+Shift+Z"), QKeySequence("Ctrl+Y")])
-        edit_menu = self.menuBar().addMenu(S.EDIT_MENU)
+        self.undo_action.setIcon(icon("undo"))
+        self.redo_action.setIcon(icon("redo"))
+        for act in (self.undo_action, self.redo_action):
+            self.addAction(act)  # the shortcuts must not depend on the menu being shown
+        edit_menu = QMenu(self.edit_button)
+        self.edit_button.setMenu(edit_menu)
         edit_menu.addAction(self.undo_action)
         edit_menu.addAction(self.redo_action)
 
@@ -213,6 +225,9 @@ class MainWindow(LibraryMixin, QMainWindow):
         undo_button, redo_button = QToolButton(), QToolButton()
         undo_button.setDefaultAction(self.undo_action)
         redo_button.setDefaultAction(self.redo_action)
+        for b in (undo_button, redo_button):
+            b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+            b.setProperty("icon-only", True)
         self.editor_row = QWidget()
         er = QHBoxLayout(self.editor_row)
         er.setContentsMargins(0, 0, 0, 0)
@@ -228,8 +243,26 @@ class MainWindow(LibraryMixin, QMainWindow):
         centre = QWidget()
         cv = QVBoxLayout(centre)
         cv.setContentsMargins(0, 0, 0, 0)
-        cv.addWidget(self.patch_title)
-        cv.addWidget(self.editor_row)
+        self.dirty_label = QLabel(S.UNSAVED_CHANGES)
+        self.dirty_label.setProperty("role", "dirty")
+        self.save_reason = QLabel("")
+        self.save_reason.setProperty("role", "reason")
+        self.save_reason.setWordWrap(True)
+        self.save_reason.setAlignment(Qt.AlignmentFlag.AlignRight)
+        title_row = QHBoxLayout()
+        title_row.addWidget(self.patch_title)
+        title_row.addWidget(self.dirty_label, alignment=Qt.AlignmentFlag.AlignBottom)
+        title_row.addStretch(1)
+        left_col = QVBoxLayout()
+        left_col.addLayout(title_row)
+        left_col.addWidget(self.editor_row)
+        right_col = QVBoxLayout()
+        right_col.addWidget(GlowHost(self.save_button))
+        right_col.addWidget(self.save_reason)
+        head = QHBoxLayout()
+        head.addLayout(left_col, stretch=1)
+        head.addLayout(right_col)
+        cv.addLayout(head)
         cv.addWidget(self.chain)
         cv.addWidget(self.params, stretch=1)
         self.centre = centre
@@ -267,6 +300,20 @@ class MainWindow(LibraryMixin, QMainWindow):
         self._build_library_ui()
         self.statusBar().showMessage(S.READY)
 
+    def _menu_button(self, text: str) -> QToolButton:
+        button = QToolButton()
+        button.setText(text.replace("&", ""))
+        button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        return button
+
+    def _icon_button(self, name: str, tip: str) -> QToolButton:
+        button = QToolButton()
+        button.setIcon(icon(name))
+        button.setToolTip(tip)
+        button.setAccessibleName(tip)
+        button.setProperty("icon-only", True)
+        return button
+
     def _glass(self, content: QWidget) -> GlassPanel:
         """Put ``content`` on a glass panel (the content keeps its own layout and signals)."""
         panel = GlassPanel(self.backdrop_root)
@@ -274,6 +321,12 @@ class MainWindow(LibraryMixin, QMainWindow):
         layout.setContentsMargins(14, 12, 14, 12)
         layout.addWidget(content)
         return panel
+
+    def _set_connection(self, text: str, connected: bool) -> None:
+        self.connection_label.setText(text)
+        self.connection_label.setProperty("connected", connected)
+        self.connection_label.style().unpolish(self.connection_label)
+        self.connection_label.style().polish(self.connection_label)
 
     def _update_buttons(self) -> None:
         can_connect = self._worker is not None
@@ -298,6 +351,12 @@ class MainWindow(LibraryMixin, QMainWindow):
         else:
             tip = S.SAVE_TIP
         self.save_button.setToolTip(tip)
+        self.save_reason.setText("" if self.save_button.isEnabled() else tip)
+        self.save_reason.setProperty("blocking", bool(blockers))
+        self.save_reason.style().unpolish(self.save_reason)
+        self.save_reason.style().polish(self.save_reason)
+        self.dirty_label.setVisible(dirty)
+        self.centralWidget().update()
         self._update_library_actions()
         if self._tuner_on:  # nothing but the tuner and Disconnect may be used while the pedal is muted
             for w in (self.save_button, self.open_file_button, self.save_file_button, self.live_check,
@@ -333,7 +392,8 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.splitter.setEnabled(not on)
         self.splitter.setVisible(not on)
         self.tuner_panel.setVisible(on)
-        self.menuBar().setEnabled(not on)
+        self.edit_button.setEnabled(not on)
+        self.library_button.setEnabled(not on)
         self._update_buttons()
 
     @Slot(bool)
@@ -778,7 +838,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         self._reset_edits()
         self._patches.update(found)
         self._rebuild_patch_list()
-        self.connection_label.setText(S.offline(folder.name))
+        self._set_connection(S.offline(folder.name), False)
         self.memory_bar.setValue(0)
         self.memory_bar.setFormat(S.MEMORY_NA)
         self.statusBar().showMessage(S.loaded_from_folder(len(found), folder))
@@ -861,7 +921,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         self._patch_count = info.count
         model = MODEL_NAMES.get(identity.model, S.unknown_model(identity.model))
         firmware = bytes(identity.version).decode("ascii", "replace").strip("\x00 ")
-        self.connection_label.setText(S.connected(model))
+        self._set_connection(S.connected(model), True)
         self.connection_label.setToolTip(S.firmware_tip(firmware or "?"))
         self._update_buttons()
         self._begin_pedal_read()
@@ -872,7 +932,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         self._apply_tuner_state(False)
         self._live_location = None
         self.live_check.setChecked(False)
-        self.connection_label.setText(S.NOT_CONNECTED)
+        self._set_connection(S.NOT_CONNECTED, False)
         self.connection_label.setToolTip("")
         self.memory_bar.setValue(0)
         self.memory_bar.setFormat(S.MEMORY_NA)

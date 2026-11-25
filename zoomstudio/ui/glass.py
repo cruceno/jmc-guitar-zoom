@@ -141,3 +141,22 @@ def paint_glow(p: QPainter, rect: QRectF, token: str, radius: float, spread: flo
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(c.red(), c.green(), c.blue(), alpha))
         p.drawRoundedRect(rect.adjusted(-grow, -grow, grow, grow), radius + grow, radius + grow)
+
+
+class GlowHost(QWidget):
+    """Holds one widget with margin around it and paints a glow behind it while it is enabled."""
+
+    def __init__(self, child: QWidget, token: str = "glow-accent", radius: float = 24, margin: int = 14) -> None:
+        super().__init__()
+        from PySide6.QtWidgets import QVBoxLayout
+
+        self.child, self._token, self._radius = child, token, radius
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(margin, margin, margin, margin)
+        layout.addWidget(child)
+
+    def paintEvent(self, _event) -> None:  # noqa: N802 (Qt API)
+        if self.child.isEnabled():
+            p = QPainter(self)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            paint_glow(p, QRectF(self.child.geometry()), self._token, self._radius)
