@@ -27,7 +27,7 @@ from zoomstudio.patches.zptc import build_zptc, parse_zptc
 from . import strings as S
 from . import tokens
 from .cards import (
-    ROLE_DIRTY, ROLE_DROP, ROLE_META, ROLE_NAME, ROLE_NUMBER, ROLE_STRIP, BankCardDelegate, PatchCardDelegate,
+    ROLE_DIRTY, ROLE_DROP, ROLE_META, ROLE_MISSING, ROLE_NAME, ROLE_NUMBER, ROLE_STRIP, BankCardDelegate, PatchCardDelegate,
     with_alpha,
 )
 from .dialogs import ConfirmDialog
@@ -335,8 +335,11 @@ class BankScreen(GlassPanel):
 
     # ------------------------------------------------------------------ data in
 
-    def set_positions(self, rows: list[tuple[int, int, str, object, bool]]) -> None:
-        """``rows`` = (location, display number, name or "" when free, chain strip, unsaved edits)."""
+    def set_positions(self, rows: list[tuple[int, int, str, object, bool]],
+                      missing: dict[int, list[str]] | None = None) -> None:
+        """``rows`` = (location, display number, name or "" when free, chain strip, unsaved edits).
+
+        ``missing``: location -> the effects of that patch the pedal lacks (the card carries the amber warning)."""
         if self.positions.count() != len(rows):
             self.positions.clear()
             for location, *_rest in rows:
@@ -350,7 +353,11 @@ class BankScreen(GlassPanel):
             item.setData(ROLE_NAME, name)
             item.setData(ROLE_STRIP, strip if name else None)
             item.setData(ROLE_DIRTY, dirty)
-            item.setData(Qt.ItemDataRole.AccessibleTextRole, f"{display}, {name or S.EMPTY}")
+            lacking = (missing or {}).get(location) if name else None
+            item.setData(ROLE_MISSING, lacking)
+            item.setData(Qt.ItemDataRole.AccessibleTextRole,
+                         f"{display}, {name or S.EMPTY}" + (f". {S.patch_missing_tip(lacking)}" if lacking else ""))
+            item.setToolTip(S.patch_missing_tip(lacking) if lacking else "")
         self._rows = {loc: (display, name, dirty) for loc, display, name, _s, dirty in rows}
         occupied = sum(1 for _l, _d, name, _s, _x in rows if name)
         self.positions_caption.setText(f"{occupied}/{len(rows)}")
@@ -375,7 +382,11 @@ class BankScreen(GlassPanel):
             item.setData(ROLE_NAME, entry["name"])
             item.setData(ROLE_META, entry["meta"])
             item.setData(ROLE_STRIP, entry["strip"])
-            item.setData(Qt.ItemDataRole.AccessibleTextRole, entry["accessible"])
+            lacking = entry.get("missing")
+            item.setData(ROLE_MISSING, lacking)
+            item.setData(Qt.ItemDataRole.AccessibleTextRole,
+                         entry["accessible"] + (f". {S.patch_missing_tip(lacking)}" if lacking else ""))
+            item.setToolTip(S.patch_missing_tip(lacking) if lacking else "")
             self.bank_list.addItem(item)
             if entry["id"] == keep:
                 self.bank_list.setCurrentItem(item)
@@ -516,6 +527,7 @@ class BankMixin:
         self._bank_store: PatchBank | None = None
         self._bank_op: dict | None = None
         self._bank_strips: dict[str, object] = {}
+        self._bank_patches: dict[str, Patch | None] = {}  # the parsed entries, to name the effects the pedal lacks
         self._bank_open = False
 
     @property
@@ -548,25 +560,29 @@ class BankMixin:
         """Both lists from the current patches and the bank folder (cheap: 50 rows and a few entries)."""
         if not self._bank_open:
             return
-        rows = []
+        rows, lacking = [], self._missing_by_location()
         for location in range(1, self._patch_count + 1):
             patch = self._patches.get(location)
             free = patch is None or self._is_free(patch)
             rows.append((location, self._display(location), "" if free else (patch.name or S.UNNAMED),
                          None if free else self._chain_strip(patch), self.is_dirty(location)))
-        self.bank_panel.set_positions(rows)
+        self.bank_panel.set_positions(rows, lacking)
         entries = []
         for entry in reversed(self.bank_store.list()):  # newest first
             key = f"{entry.id}:{entry.sha256}"
             if key not in self._bank_strips:
                 try:
-                    self._bank_strips[key] = self._chain_strip(parse_zptc(self.bank_store.read(entry.id)))
+                    parsed = parse_zptc(self.bank_store.read(entry.id))
+                    self._bank_strips[key] = self._chain_strip(parsed)
+                    self._bank_patches[key] = parsed
                 except (BankError, ValueError):
                     self._bank_strips[key] = None
+                    self._bank_patches[key] = None
             meta = f"{S.bank_origin(entry.origin)} · {S.bank_date(entry.stored_at)}"
             entries.append({"id": entry.id, "name": entry.name or S.UNNAMED,
                             "meta": meta if self._bank_strips[key] is not None else f"{meta} · {S.BANK_DAMAGED}",
                             "strip": self._bank_strips[key],
+                            "missing": self._missing_names(self._bank_patches.get(key)) or None,
                             "accessible": S.bank_card_name(entry.name, entry.origin, entry.stored_at)})
         self.bank_panel.set_entries(entries)
         self._refresh_bank_context()

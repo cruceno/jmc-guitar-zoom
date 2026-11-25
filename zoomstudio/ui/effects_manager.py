@@ -24,7 +24,7 @@ from zoomstudio.effects.installer import MEMORY_MARGIN
 from . import strings as S
 from . import tokens
 from .cards import (
-    CARD_HEIGHT, FAVORITES_KEY, ROLE_DIRTY, ROLE_FAV, ROLE_NAME, ROLE_NUMBER, ROLE_SECTION, ROLE_STRIP, SECTION_HEIGHT,
+    CARD_HEIGHT, FAVORITES_KEY, ROLE_DIRTY, ROLE_FAV, ROLE_MISSING, ROLE_NAME, ROLE_NUMBER, ROLE_SECTION, ROLE_STRIP, SECTION_HEIGHT,
     STAR_ROOM, PatchCardDelegate, SectionList, card_path, paint_section, paint_star, pedal_thumbnail, section_label,
     set_section_header, star_rect, svg_thumbnail, with_alpha,
 )
@@ -248,6 +248,7 @@ class EffectsManager(GlassPanel):
         self._loaded = False  # the lists show data read from the pedal
         self._patches_complete = False
         self._unsaved = False
+        self._missing: dict[int, list[str]] = {}  # location -> effects the pedal lacks
         self._users: dict[str, list[tuple]] = {}  # file -> (display number, name, location, chain strip)
         self._collapsed: dict[str, set[str]] = {"installed": set(), "available": set()}  # kept while the screen lives
 
@@ -600,9 +601,13 @@ class EffectsManager(GlassPanel):
         self._populate()
         self.state_shown.emit()
 
-    def set_patch_usage(self, complete: bool, unsaved: bool, users: dict[str, list[tuple]]) -> None:
-        """What the editor knows: every patch read, any unsaved edit, and the patches (number, name) using each file."""
+    def set_patch_usage(self, complete: bool, unsaved: bool, users: dict[str, list[tuple]],
+                        missing: dict[int, list[str]] | None = None) -> None:
+        """What the editor knows: every patch read, any unsaved edit, and the patches (number, name) using each file.
+
+        ``missing``: location -> the effects of that patch the pedal lacks (its card carries the amber warning)."""
         self._patches_complete, self._unsaved, self._users = complete, unsaved, users
+        self._missing = dict(missing or {})
         self._update_actions()
 
     def set_write_block(self, reason: str | None) -> None:
@@ -779,8 +784,11 @@ class EffectsManager(GlassPanel):
             item.setData(ROLE_NAME, name)
             item.setData(ROLE_STRIP, strip)
             item.setData(ROLE_DIRTY, False)
-            item.setData(Qt.ItemDataRole.AccessibleTextRole, S.effects_usage_card_name(display, name))
-            item.setToolTip(S.effects_usage_card_name(display, name))
+            lacking = self._missing.get(location)
+            spoken = S.effects_usage_card_name(display, name) + (f". {S.patch_missing_tip(lacking)}" if lacking else "")
+            item.setData(ROLE_MISSING, lacking)
+            item.setData(Qt.ItemDataRole.AccessibleTextRole, spoken)
+            item.setToolTip(spoken)
             self.usage_list.addItem(item)
         self.usage_list.setFixedHeight(min(len(users), 3) * CARD_HEIGHT + 4)
         if not confirmed:

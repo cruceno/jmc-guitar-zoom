@@ -21,7 +21,7 @@ from zoomstudio.ui.painted import PaintedText
 
 EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
 SIZES = [(1440, 900), (2000, 1056)]
-STATES = ["no-patch", "patch-selected", "effects-manager", "effects-repair", "not-installed", "usage-many", "usage-one", "usage-none", "usage-incomplete", "tuner", "offline", "bank", "bank-empty", "bank-drag", *UPDATE_STATES]
+STATES = ["no-patch", "patch-selected", "effects-manager", "effects-repair", "not-installed", "patch-warnings", "usage-many", "usage-one", "usage-none", "usage-incomplete", "tuner", "offline", "bank", "bank-empty", "bank-drag", *UPDATE_STATES]
 SLACK = 2  # px of rounding the metrics may differ from the painted text by
 
 
@@ -133,6 +133,14 @@ def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
         w.effects_panel.select_effect({"usage-many": "OPTCOMP.ZD2", "usage-one": "HALL.ZD2"}.get(state, "COMP.ZD2"))
         if state == "usage-incomplete":
             w.reload()
+        return w
+    if state == "patch-warnings":  # three patches using an effect the pedal lacks: the triangles and «⚠ 3»
+        import test_ui_effects_manager as manager
+        from test_ui_patch_warnings import show_patch_warnings
+
+        monkeypatch.setattr(manager, "PATCHES", manager.PATCHES * 3)
+        w = connected_window(qtbot, monkeypatch, catalog, tmp_path, PedalFiles(BEFORE))
+        show_patch_warnings(qtbot, w)
         return w
     w = connected_window(qtbot, monkeypatch, catalog, tmp_path, PedalFiles(BEFORE))
     if state.startswith("bank"):  # the bank screen: with cards (one long name, one unknown origin), empty, mid-drag

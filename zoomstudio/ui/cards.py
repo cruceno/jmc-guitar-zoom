@@ -27,6 +27,8 @@ ROLE_STRIP = Qt.ItemDataRole.UserRole + 12    # [(group, span, enabled)] per eff
 ROLE_DIRTY = Qt.ItemDataRole.UserRole + 13    # unsaved edits (bool)
 ROLE_DROP = Qt.ItemDataRole.UserRole + 14     # a drag is over this card and may drop here (bool)
 ROLE_META = Qt.ItemDataRole.UserRole + 15     # second line of a bank card: origin and date
+ROLE_MISSING = Qt.ItemDataRole.UserRole + 16  # names of the effects the pedal lacks (list); None or empty: none
+WARN = 16  # side of the warning triangle of a patch card
 
 STAR = 20  # side of the favourite star of an effect card
 STAR_ROOM = STAR + 8  # what the card text gives up at its right edge for it
@@ -91,6 +93,19 @@ def pedal_thumbnail(name: str, group: str, width: int, height: int, dpr: float =
     out = QPixmap.fromImage(image)
     out.setDevicePixelRatio(dpr)
     return out
+
+
+def paint_missing(p: QPainter, card: QRectF, names) -> float:
+    """The amber triangle at the bottom right of a patch card when ``names`` (effects the pedal lacks) is not empty.
+
+    Returns the room it takes at the right edge, so the chain strip stops before it (0 when nothing is drawn).
+    """
+    if not names:
+        return 0.0
+    spot = QRectF(card.right() - 10 - WARN, card.bottom() - 8 - WARN, WARN, WARN)
+    p.drawPixmap(spot.topLeft(), pixmap("alert", tokens.color("status-warn").name(), WARN,
+                                        p.device().devicePixelRatioF() if p.device() is not None else 1.0))
+    return WARN + 8
 
 
 def with_alpha(color: QColor, alpha: float) -> QColor:
@@ -172,9 +187,10 @@ class PatchCardDelegate(QStyledItemDelegate):
                 p.drawText(chip_rect, Qt.AlignmentFlag.AlignCenter, chip)
 
         x, y = text_left, rect.bottom() - 13
+        room = paint_missing(p, rect, index.data(ROLE_MISSING))
         for group, span, enabled in (strip or []):
             w = span * SLOT_WIDTH - 3
-            if x + w > rect.right() - 8:
+            if x + w > rect.right() - 8 - room:
                 break
             block = QRectF(x, y, w, 5)
             if group is None:
@@ -231,9 +247,10 @@ class BankCardDelegate(QStyledItemDelegate):
         p.drawText(QRectF(left, rect.top() + 28, right - left, 16), Qt.AlignmentFlag.AlignVCenter,
                    QFontMetrics(meta_font).elidedText(meta, Qt.TextElideMode.ElideRight, int(right - left)))
         x, y = left, rect.bottom() - 13
+        room = paint_missing(p, rect, index.data(ROLE_MISSING))
         for group, span, enabled in (index.data(ROLE_STRIP) or []):
             w = span * SLOT_WIDTH - 3
-            if x + w > right:
+            if x + w > right - room:
                 break
             block = QRectF(x, y, w, 5)
             if group is None:

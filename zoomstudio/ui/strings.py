@@ -122,6 +122,15 @@ def patches_caption(in_use: int, first: int = 10, last: int = 59) -> str:
     return f"{first}–{last} · {in_use} en uso"
 
 
+def patch_missing_tip(names: list[str]) -> str:
+    """Tooltip and spoken name of the warning on a patch that uses effects the pedal does not have."""
+    return f"Usa efectos que no están en la pedalera: {', '.join(names)}"
+
+
+def patches_missing_tip(count: int) -> str:
+    return (f"{count} patches usan" if count != 1 else "1 patch usa") + " efectos que no están en la pedalera"
+
+
 def chain_caption(effects: int, slots: int) -> str:
     noun = "efecto" if effects == 1 else "efectos"
     return f"{effects} {noun} · {slots} slots · ←/→ elegir · Ctrl+←/→ o arrastrar para reordenar"

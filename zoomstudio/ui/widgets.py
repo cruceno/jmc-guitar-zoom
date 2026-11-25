@@ -33,6 +33,27 @@ PREVIEW_W, PREVIEW_H = 52, 74  # the preview of the detail card (the prototype's
 DETAIL_TEXT_H = 84  # description area of the catalog detail card: 5 lines, scrolls beyond that
 
 
+class MissingButton(QToolButton):
+    """«⚠ 3» in the patch list header: how many patches use effects the pedal lacks; click or Enter: the next one."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("missingButton")
+        self.setProperty("ghost", True)
+        self.setIcon(icon("alert", "status-warn", 16))
+        self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.hide()
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.click()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
 class PatchList(QListWidget):
     """Patch list whose rows can be dragged onto each other (a swap request, never a move)."""
 

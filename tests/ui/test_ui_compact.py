@@ -26,7 +26,7 @@ from zoomstudio.ui.widgets import ParamRow
 
 EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
 SIZES = [(1280, 760), (1440, 900), (1600, 1000)]
-STATES = ["two-pedals", "no-patch", "gt-geq-7", "not-installed", "effects-manager", "effects-all-pedals", "read-only-pedal", "bank", "tuner", "offline", *UPDATE_STATES]
+STATES = ["two-pedals", "no-patch", "gt-geq-7", "not-installed", "patch-warnings", "effects-manager", "effects-all-pedals", "read-only-pedal", "bank", "tuner", "offline", *UPDATE_STATES]
 SQUEEZE_SLACK = 1
 
 
@@ -53,7 +53,8 @@ def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
         w.load_offline(FIXTURES / "backup")
         return w
     PedalFiles(BEFORE).install(monkeypatch)
-    transport = fake_pedal(PATCHES, member=0x0C if state == "read-only-pedal" else 0x11)
+    patches = PATCHES * 3 if state == "patch-warnings" else PATCHES  # six patches: 2, 4 and 6 are HB Jazz
+    transport = fake_pedal(patches, member=0x0C if state == "read-only-pedal" else 0x11)
     for _ in range(30):
         transport.on(sysex.pc_mode(True, 0x6E), S(HDR + b"\x00\x00"))
         transport.on(sysex.pc_mode(False, 0x6E), S(HDR + b"\x00\x00"))
@@ -69,7 +70,11 @@ def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
     qtbot.addWidget(w)
     with qtbot.waitSignal(w.patches_loaded, timeout=5000):
         w.connect_button.click()
-    if state == "not-installed":  # warning on a tile and a card, Live on, «Instalar en la pedalera» on the target card
+    if state == "patch-warnings":  # three patches using an effect the pedal lacks: the triangles and «⚠ 3»
+        from test_ui_patch_warnings import show_patch_warnings
+
+        show_patch_warnings(qtbot, w)
+    elif state == "not-installed":  # warning on a tile and a card, Live on, «Instalar en la pedalera» on the target card
         from test_ui_install_indicators import show_not_installed
 
         show_not_installed(qtbot, w)

@@ -24,7 +24,7 @@ from zoomstudio.patches.zptc import build_zptc, parse_zptc
 
 from . import strings as S
 from . import tokens
-from .cards import ROLE_DIRTY, ROLE_NAME, ROLE_NUMBER, ROLE_STRIP
+from .cards import ROLE_DIRTY, ROLE_MISSING, ROLE_NAME, ROLE_NUMBER, ROLE_STRIP
 from .dialogs import ConfirmDialog
 from .effects_manager import Entry, EffectsManager, build_entries
 from .fonts import display_font
@@ -42,7 +42,7 @@ from zoomstudio.effects.models import A1_FOUR, PedalModel, model_id_from_identit
 from . import settings as settings_module
 from .favorites import FavoritesStore
 from .settings import TargetStore
-from .widgets import CatalogPanel, ChainView, EffectTile, ParamPanel, ParamRow, PatchList
+from .widgets import CatalogPanel, ChainView, EffectTile, MissingButton, ParamPanel, ParamRow, PatchList
 from .worker import PedalWorker, TransportFactory
 
 PATCHES_WIDTH, CATALOG_WIDTH = 248, 368  # the prototype's column widths (their maximum: compact windows narrow them)
@@ -319,7 +319,13 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         lv.setContentsMargins(0, 0, 0, 0)
         self.patches_caption = QLabel("")
         self.patches_caption.setProperty("role", "secondary")
+        self.missing_button = MissingButton()  # «⚠ 3»: patches that use effects the pedal lacks; click: the next one
+        self.missing_button.clicked.connect(self.select_next_missing)
         lv.addLayout(self._section_header(S.PATCHES, self.patches_caption))
+        missing_row = QHBoxLayout()  # under the caption: the 220 px column has no room for it on the title line
+        missing_row.addStretch(1)
+        missing_row.addWidget(self.missing_button)
+        lv.addLayout(missing_row)
         lv.addWidget(self.patch_list)
         self.patch_panel = left
 
@@ -606,6 +612,12 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self.discard_button.setToolTip(S.discard_tooltip(DISCARD_SHORTCUT, "" if dirty else S.DISCARD_NOTHING))
         in_use = sum(1 for pt in self._patches.values() if any(not e.is_placeholder for e in pt.effects))
         self.patches_caption.setText(S.patches_caption(in_use, self._display(1), self._display(self._patch_count)))
+        lacking = self._missing_by_location()
+        self.missing_button.setVisible(bool(lacking))
+        self.missing_button.setText(str(len(lacking)))
+        tip = S.patches_missing_tip(len(lacking))
+        self.missing_button.setToolTip(tip)
+        self.missing_button.setAccessibleName(tip)
         self.centralWidget().update()
         self._update_library_actions()
         if self._tuner_on or self._effects_open or self._bank_open or self._update_open:  # the tuner mutes the pedal; each screen owns the window
@@ -659,7 +671,7 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
 
     def _refresh_effects_context(self) -> None:
         self.effects_panel.set_patch_usage(self._patches_complete and self._is_connected, self.any_dirty(),
-                                           self.effects_usage())
+                                           self.effects_usage(), self._missing_by_location())
 
     @property
     def effects_backup_dir(self) -> Path:
@@ -764,6 +776,9 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
             warned = set(edit.not_installed_slots(patch, self.catalog, self._installed_ids))
             for tile in self.chain.tiles():
                 tile.set_not_installed(tile.slot_index in warned)
+        for location in range(1, self.patch_list.count() + 1):
+            self._refresh_item(location)  # the patch cards carry the warning too
+        self._refresh_bank_screen()
         self._update_buttons()
 
     def _missing_effects(self) -> list[int]:
@@ -940,12 +955,40 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
             item.setForeground(QBrush(_EMPTY_COLOR))
             item.setData(ROLE_NAME, "")
             item.setData(ROLE_STRIP, None)
+            item.setData(ROLE_MISSING, None)
+            item.setToolTip("")
+            item.setData(Qt.ItemDataRole.AccessibleTextRole, item.text())
         else:
             name = patch.name or S.UNNAMED
             item.setText(f"{number}  {name}{' *' if dirty else ''}")
             item.setForeground(QBrush(self.palette().text().color()))
             item.setData(ROLE_NAME, name)
             item.setData(ROLE_STRIP, self._chain_strip(patch))
+            lacking = self._missing_names(patch)  # the current chain, edited or not
+            item.setData(ROLE_MISSING, lacking or None)
+            item.setToolTip(S.patch_missing_tip(lacking) if lacking else "")
+            item.setData(Qt.ItemDataRole.AccessibleTextRole,
+                         item.text() + (f". {S.patch_missing_tip(lacking)}" if lacking else ""))
+
+    def _missing_names(self, patch: Patch | None) -> list[str]:
+        """The effects of ``patch`` known not to be installed on the connected pedal (none while that is unknown)."""
+        return [] if patch is None else edit.not_installed_names(patch, self.catalog, self._installed_ids)
+
+    def _missing_by_location(self) -> dict[int, list[str]]:
+        found = {}
+        for location, patch in self._patches.items():
+            names = self._missing_names(patch)
+            if names:
+                found[location] = names
+        return found
+
+    def select_next_missing(self) -> None:
+        """Select the next patch (after the current one, round again) that uses effects the pedal lacks."""
+        lacking = sorted(self._missing_by_location())
+        if not lacking:
+            return
+        after = self._location or 0
+        self.select_location(next((loc for loc in lacking if loc > after), lacking[0]))
 
     def _chain_strip(self, patch: Patch) -> list[tuple[str | None, int, bool]]:
         """One (group, slots, enabled) block per effect of the chain; ``None`` group for an empty slot."""
