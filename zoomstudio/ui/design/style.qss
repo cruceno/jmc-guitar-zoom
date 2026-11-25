@@ -1,0 +1,76 @@
+/* Zoom Studio style sheet. Every dollar-prefixed word is a token of tokens.json (hyphens become underscores). */
+
+QWidget { font-family: $font_sans; font-size: ${text_body_size}px; color: $text_primary; }
+QMainWindow, QDialog { background: $backdrop_base; }
+QLabel { background: transparent; }
+QLabel[role="secondary"] { color: $text_secondary; font-size: ${text_caption_size}px; }
+QLabel[role="section"] { color: $text_secondary; font-family: $font_display; font-size: ${text_label_size}px; font-weight: 600; }
+QLabel[role="heading"] { font-family: $font_display; font-size: ${text_heading_size}px; font-weight: 500; }
+QLabel[role="title"] { font-family: $font_display; font-size: ${text_title_size}px; font-weight: 500; }
+QToolTip { background: $surface_overlay; color: $text_primary; border: 1px solid $border_control; border-radius: 8px; padding: 4px 8px; }
+
+QStatusBar { background: transparent; color: $text_secondary; font-size: ${text_caption_size}px; }
+QStatusBar::item { border: none; }
+QStatusBar[error="true"] { color: $status_danger; }
+
+QPushButton, QToolButton {
+  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $card_hover, stop:1 $card_top);
+  color: $text_primary; border: 1px solid $card_rim; border-top-color: $card_rim_top;
+  border-radius: ${control_radius}px; min-height: ${control_height}px; padding: 0 16px; font-weight: 500;
+}
+QPushButton:hover, QToolButton:hover { background: $surface_control_hover; }
+QPushButton:pressed, QToolButton:pressed { background: $surface_control_pressed; }
+QPushButton:checked, QToolButton:checked { background: $surface_selected; border: 1px solid $accent; }
+QPushButton:focus, QToolButton:focus { border: 2px solid $focus_ring; }
+QPushButton:disabled, QToolButton:disabled { background: transparent; border: 1px dashed $border_strong; color: $text_disabled; }
+QToolButton::menu-indicator { image: none; }
+QPushButton[primary="true"] {
+  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $accent_hover, stop:0.55 $accent, stop:1 $accent_pressed);
+  color: $on_accent; border: none; border-radius: 24px; min-height: 48px; font-size: 15px; font-weight: 700;
+}
+QPushButton[primary="true"]:disabled { background: transparent; border: 1px dashed $border_strong; color: $text_disabled; }
+QPushButton[danger="true"] { background: $status_danger_bg; border: 1px solid $status_danger; color: $status_danger; }
+QToolButton[icon-only="true"] { padding: 0; min-width: ${control_height}px; max-width: ${control_height}px; }
+
+QLineEdit, QSpinBox, QComboBox {
+  background: $input_bg; color: $text_primary; border: 1px solid $hairline; border-radius: ${control_radius}px;
+  min-height: ${control_height}px; padding: 0 12px; selection-background-color: $surface_selected;
+}
+QLineEdit:hover, QSpinBox:hover, QComboBox:hover { border-color: $border_control; }
+QLineEdit:focus, QSpinBox:focus, QComboBox:focus { border: 2px solid $focus_ring; }
+QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled { color: $text_disabled; }
+QSpinBox::up-button, QSpinBox::down-button { width: 20px; border: none; background: transparent; }
+QSpinBox::up-arrow { image: url($icons_dir/chevron-up.svg); width: 10px; height: 10px; }
+QSpinBox::down-arrow { image: url($icons_dir/chevron-down.svg); width: 10px; height: 10px; }
+QComboBox::drop-down { border: none; width: 28px; }
+QComboBox::down-arrow { image: url($icons_dir/chevron-down.svg); width: 12px; height: 12px; }
+QComboBox QAbstractItemView {
+  background: $surface_overlay; border: 1px solid $border_control; border-radius: 8px; outline: 0;
+  selection-background-color: $surface_selected; selection-color: $text_primary;
+}
+
+QMenu { background: $surface_overlay; border: 1px solid $border_control; border-radius: 12px; padding: 6px; }
+QMenu::item { padding: 8px 18px; border-radius: 8px; min-height: 20px; }
+QMenu::item:selected { background: $card_hover; }
+QMenu::item:disabled { color: $text_disabled; }
+QMenu::separator { height: 1px; background: $border_control; margin: 6px 8px; }
+
+QListWidget, QListView { background: transparent; border: none; outline: 0; }
+QListWidget::item, QListView::item { border: none; padding: 0; margin: 0; }
+QScrollBar:vertical { background: transparent; width: 10px; margin: 2px; }
+QScrollBar::handle:vertical { background: $border_control; border-radius: 4px; min-height: 32px; }
+QScrollBar:horizontal { background: transparent; height: 10px; margin: 2px; }
+QScrollBar::handle:horizontal { background: $border_control; border-radius: 4px; min-width: 32px; }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+
+QCheckBox { spacing: 8px; }
+QCheckBox::indicator { width: 18px; height: 18px; border: 1px solid $border_strong; border-radius: 5px; background: $input_bg; }
+QCheckBox::indicator:checked { background: $accent; border-color: $accent; image: url($icons_dir/check.svg); }
+QCheckBox::indicator:focus { border: 2px solid $focus_ring; }
+
+QProgressBar { background: $input_bg; border: 1px solid $hairline; border-radius: 3px; min-height: 6px; max-height: 6px; text-align: center; }
+QProgressBar::chunk { border-radius: 2px; background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 $accent_pressed, stop:1 $accent_hover); }
+QProgressBar[over="true"]::chunk { background: $status_danger; }
+
+QSplitter::handle { background: transparent; }
