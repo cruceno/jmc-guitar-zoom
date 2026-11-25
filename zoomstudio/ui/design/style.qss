@@ -83,3 +83,8 @@ QLabel[role="reason"] { color: $text_secondary; font-size: ${text_caption_size}p
 QLabel[role="reason"][blocking="true"] { color: $status_danger; }
 QLabel[role="dirty"] { color: $status_warn; font-size: ${text_caption_size}px; }
 #confirmDialog { background: $surface_overlay; border: 1px solid $border_control; border-radius: 16px; }
+
+QToolButton#removeButton { min-height: 0; min-width: 0; padding: 0; border: none; background: transparent; border-radius: 11px; }
+QToolButton#removeButton:hover { background: $card_hover; }
+QScrollArea { background: transparent; border: none; }
+QScrollArea > QWidget > QWidget { background: transparent; }

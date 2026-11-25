@@ -11,7 +11,7 @@ from PySide6.QtGui import (
     QAction, QBrush, QColor, QKeySequence, QShortcut, QRegularExpressionValidator, QUndoCommand, QUndoGroup, QUndoStack,
 )
 from PySide6.QtWidgets import (
-    QCheckBox, QFileDialog, QFrame, QMenu, QHBoxLayout, QLabel, QLineEdit, QListWidgetItem, QMainWindow,
+    QCheckBox, QFileDialog, QFrame, QMenu, QScrollArea, QHBoxLayout, QLabel, QLineEdit, QListWidgetItem, QMainWindow,
     QProgressBar, QPushButton, QSpinBox, QSplitter, QToolButton, QVBoxLayout, QWidget,
 )
 
@@ -265,7 +265,14 @@ class MainWindow(LibraryMixin, QMainWindow):
         head.addLayout(left_col, stretch=1)
         head.addLayout(right_col)
         cv.addLayout(head)
-        cv.addWidget(self.chain)
+        self.chain_scroll = QScrollArea()
+        self.chain_scroll.setWidget(self.chain)
+        self.chain_scroll.setWidgetResizable(True)
+        self.chain_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.chain_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.chain_scroll.setFixedHeight(self.chain.height() + 14)
+        self.chain_scroll.viewport().setAutoFillBackground(False)
+        cv.addWidget(self.chain_scroll)
         cv.addWidget(self.params, stretch=1)
         self.centre = centre
         self.chain.tile_selected.connect(self._on_tile_selected)

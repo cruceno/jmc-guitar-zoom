@@ -454,3 +454,19 @@ TUNER_HINT = ("Desvío en pasos de la pedalera (0 = afinado). La pedalera queda 
               "está encendido; pulse T para salir.")
 
 ERR_SAVE_FAILED = "No se pudo guardar el patch"
+
+BADGE_TWO_SLOTS = "2 slots"
+JACK_IN = "Entrada"
+JACK_OUT = "Salida"
+TURN_ON = "Encender"
+TURN_OFF = "Apagar"
+REMOVE = "Quitar"
+
+
+def slot_label(index: int, wide: bool) -> str:
+    return f"Slots {index + 1}–{index + 2}" if wide else f"Slot {index + 1}"
+
+
+def footswitch_name(is_on: bool, effect: str) -> str:
+    """Accessible name: the action the footswitch performs when pressed."""
+    return f"{TURN_OFF if is_on else TURN_ON} {effect}"
