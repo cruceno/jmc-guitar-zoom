@@ -64,9 +64,13 @@ class LibraryMixin:
             self.patch_list.addAction(act)  # shortcuts act only while the patch list has focus
         self.effects_action = action(S.LIBRARY_EFFECTS, self.open_effects_screen)
         self.effects_action.setIcon(icon("package"))
+        self.bank_action = action(S.LIBRARY_BANK, self.open_bank_screen)
+        self.bank_action.setIcon(icon("bank"))
+        self.stash_from_menu_action = action(S.MOVE_TO_BANK, lambda: self._with_selected(self.stash_from_menu),
+                                             tip=S.BANK_STASH_TIP)
         menu = GlassMenu(self.library_button, self.backdrop_root)
         self.library_button.setMenu(menu)
-        for act in (self.effects_action, None, self.backup_action, self.backup_files_action, None, self.copy_action, self.paste_action,
+        for act in (self.effects_action, self.bank_action, None, self.backup_action, self.backup_files_action, None, self.copy_action, self.paste_action,
                     self.clear_action, None, self.export_selected_action, self.export_all_action,
                     self.import_file_action, self.import_folder_action, None, self.write_dirty_action):
             if act is None:
@@ -104,6 +108,8 @@ class LibraryMixin:
         self.copy_action.setEnabled(has_patch)
         self.paste_action.setEnabled(self._location is not None and self._clipboard is not None and idle)
         self.clear_action.setEnabled(self._location is not None and idle)
+        self.stash_from_menu_action.setEnabled(self._location is not None and idle and not self._bank_open)
+        self.bank_action.setEnabled(self.bank_button.isEnabled() and not self._bank_open)
         self.export_selected_action.setEnabled(has_patch)
         self.export_all_action.setEnabled(bool(self._patches))
         self.import_file_action.setEnabled(self._location is not None and idle)
@@ -115,8 +121,8 @@ class LibraryMixin:
             return
         self.patch_list.setCurrentItem(item)
         menu = GlassMenu(self, self.backdrop_root)
-        for act in (self.copy_action, self.paste_action, self.clear_action, None, self.export_selected_action,
-                    self.import_file_action):
+        for act in (self.copy_action, self.paste_action, self.clear_action, self.stash_from_menu_action, None,
+                    self.export_selected_action, self.import_file_action):
             if act is None:
                 menu.addSeparator()
             else:
@@ -374,4 +380,5 @@ class LibraryMixin:
         done = ", ".join(str(self._display(n)) for n in written)
         if not failed:
             self.statusBar().showMessage(S.wrote_and_verified(done))
+        self._bank_queue_done(written, failed)  # a bank operation ends here (after the status line, before the signal)
         self.queue_finished.emit(list(written), failed)

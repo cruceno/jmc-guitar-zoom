@@ -30,6 +30,7 @@ from .fonts import display_font
 from .glass import BackdropRoot, GlassMenu, GlassPanel, GlowHost
 from .icons import icon, pixmap
 from .painted import ConnectionPill, DotLabel, KeyChipButton, LiveSwitch, PaintedText, SectionLabel, StatusBar
+from .bank_screen import BankMixin, BankScreen
 from .library import LibraryMixin
 from .tuner import TunerPanel
 from . import favorites as favorites_module
@@ -97,7 +98,7 @@ class PatchEdit(QUndoCommand):
         self._window._store(self.location, self.before, self.sel_before)
 
 
-class MainWindow(LibraryMixin, QMainWindow):
+class MainWindow(BankMixin, LibraryMixin, QMainWindow):
     patches_loaded = Signal()  # a full read (pedal) or folder load finished
     error_shown = Signal(str)
     save_finished = Signal(bool)  # a SAVE to the pedal ended (True: verified by read-back)
@@ -107,6 +108,7 @@ class MainWindow(LibraryMixin, QMainWindow):
     _tuner_requested = Signal(bool)
     backup_finished = Signal(str, bool)  # backup-all ended: patches folder ("" if none), success
     queue_finished = Signal(object, int)  # a multi-slot write ended: locations written, failed location
+    bank_finished = Signal(str, bool)  # a bank operation ended: "stash" / "load", success (after queue_finished)
     _backup_requested = Signal(object, bool, object)
     _queue_requested = Signal(object, object)
     _effects_state_requested = Signal()
@@ -117,7 +119,8 @@ class MainWindow(LibraryMixin, QMainWindow):
     def __init__(self, catalog: dict[int, EffectInfo], a1_ids: set[int] | None = None,
                  transport_factory: TransportFactory | None = None, installed_label: str = "pedal",
                  pedal_timeout: float = 3.0, backup_dir: Path | None = None,
-                 library_dir: Path | None = None, favorites: FavoritesStore | None = None) -> None:
+                 library_dir: Path | None = None, favorites: FavoritesStore | None = None,
+                 bank_dir: Path | None = None) -> None:
         super().__init__()
         self.setWindowTitle("Zoom Studio")
         self.resize(1440, 900)
@@ -128,6 +131,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.backup_dir = Path(backup_dir) if backup_dir is not None else None
         self.library_dir = Path(library_dir) if library_dir is not None else None  # parent of backup-* folders
         self._init_library()
+        self._init_bank(Path(bank_dir) if bank_dir is not None else None)
         self._patches: dict[int, Patch] = {}
         self._stacks: dict[int, QUndoStack] = {}
         self.undo_group = QUndoGroup(self)
@@ -190,6 +194,9 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.effects_button.setIcon(icon("package"))
         self.effects_button.setCheckable(True)
         self.effects_button.setToolTip(S.EFFECTS_TIP)
+        self.bank_button = self._icon_button("bank", S.BANK_TIP)  # icon only: the 1280 px header has no room for a word
+        self.bank_button.setCheckable(True)
+        self.bank_button.setAccessibleName(S.BANK_TITLE)
         self.live_check = LiveSwitch(S.LIVE)
         self.live_check.setToolTip(S.LIVE_TIP)
         self.live_check.setAccessibleName(S.LIVE_TIP)
@@ -200,7 +207,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         h.addWidget(self.memory_bar)
         h.addWidget(self.memory_value)
         h.addStretch(1)
-        for w in (self.effects_button, self.tuner_button, self.live_check, self.open_file_button, self.save_file_button,
+        for w in (self.bank_button, self.effects_button, self.tuner_button, self.live_check, self.open_file_button, self.save_file_button,
                   self.open_button, self.reload_button, self.connect_button, self.disconnect_button):
             h.addWidget(w)
         self.connect_button.clicked.connect(self._on_connect_clicked)
@@ -213,6 +220,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.live_check.toggled.connect(self._on_live_toggled)
         self.tuner_button.toggled.connect(self._on_tuner_toggled)
         self.effects_button.toggled.connect(self._on_effects_toggled)
+        self.bank_button.toggled.connect(self._on_bank_toggled)
         self.tuner_shortcut = QShortcut(QKeySequence("T"), self)
         self.tuner_shortcut.activated.connect(self._on_tuner_shortcut)
 
@@ -383,6 +391,11 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.effects_panel.remove_requested.connect(self._on_effect_remove)
         self.effects_panel.repair_requested.connect(self._on_effect_repair)
         self.effects_panel.patch_requested.connect(self._open_patch_from_effects)
+        self.bank_panel = BankScreen(backdrop_root)
+        self.bank_panel.hide()
+        self.bank_panel.close_requested.connect(lambda: self.bank_button.setChecked(False))
+        self.bank_panel.stash_requested.connect(self.stash_position)
+        self.bank_panel.load_requested.connect(self.load_from_bank)
         self.header = header
         self._status_bar = StatusBar()
         status_panel = GlassPanel(backdrop_root, "strong")
@@ -397,6 +410,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         rv.addWidget(splitter, stretch=1)
         rv.addWidget(self.tuner_panel, stretch=1)
         rv.addWidget(self.effects_panel, stretch=1)
+        rv.addWidget(self.bank_panel, stretch=1)
         rv.addWidget(status_panel)
         self.setCentralWidget(root)
         self._build_library_ui()
@@ -456,8 +470,13 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.save_file_button.setEnabled(patch is not None)
         self.live_check.setEnabled(self._is_connected)
         self.tuner_button.setEnabled(self._is_connected and self._worker is not None and not self._saving
-                                     and not self._effects_open)
-        self.effects_button.setEnabled(not self._tuner_on and not self._saving and not self._effects_busy)
+                                     and not self._effects_open and not self._bank_open)
+        self.effects_button.setEnabled(not self._tuner_on and not self._saving and not self._effects_busy
+                                       and not self._bank_open)
+        self.bank_button.setVisible(not self._tuner_on)  # the tuner's «Salir del afinador» needs the room at 1440 px
+        # the bank screen stays closable while its own write runs; it never opens over the tuner or the effects screen
+        self.bank_button.setEnabled(not self._tuner_on and not self._effects_open and not self._effects_busy
+                                    and (self._bank_open or not self._saving))
         self.effects_action.setEnabled(self.effects_button.isEnabled() and not self._effects_open)
         self.catalog_panel.manage_button.setEnabled(self.effects_action.isEnabled())
         blockers = self.save_blockers()
@@ -482,18 +501,21 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.patches_caption.setText(S.patches_caption(in_use, self._display(1), self._display(self._patch_count)))
         self.centralWidget().update()
         self._update_library_actions()
-        if self._tuner_on or self._effects_open:  # the tuner mutes the pedal; the effects screen owns the files
+        if self._tuner_on or self._effects_open or self._bank_open:  # the tuner mutes the pedal; each screen owns the window
             for w in (self.save_button, self.open_file_button, self.save_file_button, self.live_check,
                       self.reload_button, self.connect_button, self.open_button):
                 w.setEnabled(False)
             for act in (self.backup_action, self.backup_files_action, self.write_dirty_action, self.copy_action,
                         self.paste_action, self.clear_action, self.export_selected_action, self.export_all_action,
-                        self.import_file_action, self.import_folder_action):
+                        self.import_file_action, self.import_folder_action, self.stash_from_menu_action,
+                        self.bank_action):
                 act.setEnabled(False)
             if self._effects_busy:
                 self.disconnect_button.setEnabled(False)
         if self._effects_open:
             self._refresh_effects_context()
+        if self._bank_open:
+            self._refresh_bank_context()
 
     # ------------------------------------------------------------- effects manager
 

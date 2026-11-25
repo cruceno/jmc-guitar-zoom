@@ -40,6 +40,7 @@ PATHS = {
     "reset": '<path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 4v5h5"/>',
     "tri": '<path d="M12 6 5 17h14z" fill="currentColor" stroke="none"/>',
     "library": '<path d="M4 4h4v16H4zM10 4h4v16h-4z"/><path d="m16 5 3.5-1 3 15.5-3.5.8z"/>',
+    "bank": '<rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/>',
     "dialog": '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10h10M7 14h6"/>',
 }
 PATHS["close"] = PATHS["x"]

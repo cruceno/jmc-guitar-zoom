@@ -733,3 +733,138 @@ def effects_confirm_repair(name: str, file: str, size: int, free: int) -> str:
             f"Solo se sube el archivo ({effects_size(size)}); no se modifica la lista de efectos. "
             f"Antes de escribir se guarda una copia de seguridad de la lista (FLST_SEQ.ZT2).")
 EFFECTS_USAGE_LIST = "Patches que usan el efecto"
+
+
+# ---- patch bank
+BANK_BUTTON = "Banco"
+BANK_TIP = "Banco de patches: guarda patches fuera de la pedalera y los vuelve a cargar en la posición que quiera"
+LIBRARY_BANK = "Banco de patches…"
+MOVE_TO_BANK = "Mover al banco (liberar posición)"
+BANK_TITLE = "Banco de patches"
+BANK_CLOSE = "Cerrar"
+BANK_POSITIONS = "En la pedalera"
+BANK_ENTRIES = "En el banco"
+BANK_SEARCH = "Buscar en el banco"
+BANK_SEARCH_TIP = "Buscar patches del banco por nombre, posición de origen o fecha"
+BANK_POSITIONS_LIST = "Posiciones de la pedalera"
+BANK_ENTRIES_LIST = "Patches del banco"
+BANK_LOAD = "Cargar en la posición…"
+BANK_LOAD_TIP = "Carga el patch del banco en la posición que elija; si está ocupada, su patch pasa al banco"
+BANK_STASH = "Guardar en el banco y liberar"
+BANK_STASH_TIP = "Guarda el patch de la posición en el banco y deja la posición vacía"
+BANK_EMPTY = "El banco está vacío. Arrastre un patch de la pedalera hasta aquí, o use «Guardar en el banco y liberar»."
+BANK_NO_MATCH = "Ningún patch del banco coincide con la búsqueda."
+BANK_OFFLINE_NOTE = "Conecte la pedalera para mover patches entre ella y el banco."
+BANK_BUSY_NOTE = "Escribiendo en la pedalera…"
+BANK_HINT = "Elija una posición y un patch del banco, o arrastre uno sobre el otro."
+BANK_DROP_HERE = "Suelte aquí para guardar en el banco"
+BANK_ORIGIN_UNKNOWN = "Origen desconocido"
+BANK_DAMAGED = "Archivo dañado"
+BANK_CHOOSE_TITLE = "Cargar en la posición"
+BANK_CHOOSE_LABEL = "Posición de la pedalera:"
+CONFIRM_BANK_STASH = "Guardar y liberar"
+CONFIRM_BANK_LOAD = "Cargar"
+BANK_STASH_TITLE = "Guardar en el banco y liberar"
+BANK_LOAD_TITLE = "Cargar desde el banco"
+
+ERR_BANK_NOTHING_TO_KEEP = "La posición ya está vacía: no hay nada que guardar en el banco"
+ERR_BANK_OFFLINE = "Conecte la pedalera para mover patches entre ella y el banco"
+ERR_BANK_LOADING = "Espere a que terminen de leerse los patches de la pedalera antes de usar el banco"
+ERR_BANK_KEPT_BOTH = "No se pudo escribir en la pedalera: el banco conserva ambos patches"
+ERR_BANK_KEPT_ONE = "No se pudo escribir en la pedalera: el banco conserva el patch"
+ERR_BANK_NOT_FREED = "No se pudo vaciar la posición: el patch sigue en la pedalera y también quedó guardado en el banco"
+
+
+def err_bank_unsaved(display: int) -> str:
+    return f"El patch {display} tiene cambios sin guardar: guárdelos o descártelos antes de usar el banco"
+
+
+def err_bank_store(why: object) -> str:
+    return f"No se pudo guardar en el banco, no se escribió nada en la pedalera: {why}"
+
+
+def err_bank_unknown(why: object) -> str:
+    return f"No se pudo leer el patch del banco, no se escribió nada en la pedalera: {why}"
+
+
+def err_bank_not_removed(name: str, why: object) -> str:
+    return f"«{name}» ya está en la pedalera, pero no se pudo quitar del banco: {why}"
+
+
+def _bank_name(name: str) -> str:
+    return f"«{name or UNNAMED}»"
+
+
+def bank_stash_text(display: int, name: str) -> str:
+    return (f"El patch {display} ({_bank_name(name)}) pasa al banco y la posición {display} queda vacía "
+            f"(se escribe el patch Empty de fábrica).")
+
+
+def bank_load_text(display: int, name: str, occupant: str | None) -> str:
+    if occupant is None:
+        return (f"{_bank_name(name)} sale del banco y se escribe en la posición {display}, que está vacía.")
+    return (f"{_bank_name(name)} sale del banco y se escribe en la posición {display}; "
+            f"el patch {display} ({_bank_name(occupant)}) pasa al banco.")
+
+
+def ask_bank_stash(display: int, name: str) -> str:
+    return (bank_stash_text(display, name) + "\nPrimero se guarda en el banco y se comprueba el archivo; "
+            "después se escribe en la pedalera con su copia de seguridad previa y lectura de verificación.")
+
+
+def ask_bank_load(display: int, name: str, occupant: str | None) -> str:
+    keep = ("\nEl patch actual se guarda primero en el banco y se comprueba el archivo. " if occupant is not None else "\n")
+    return (bank_load_text(display, name, occupant) + keep +
+            "El patch del banco se quita solo cuando la lectura de verificación de la pedalera coincide; "
+            "si la escritura falla, el banco conserva todo.")
+
+
+def bank_preview(position: tuple[int, str | None] | None, entry: str | None, dirty: bool = False) -> str:
+    """One line about what the next action would do; ``position`` = (display, name or None when free)."""
+    if position is None and entry is None:
+        return BANK_HINT
+    parts = []
+    if position is not None:
+        display, name = position
+        parts.append(f"Posición {display}: {_bank_name(name)}" if name else f"Posición {display}: vacía")
+    if entry is not None:
+        parts.append(f"Banco: {_bank_name(entry)}")
+    head = " · ".join(parts)
+    if position is not None and entry is not None:
+        display, name = position
+        action = bank_load_text(display, entry, name)
+    elif position is not None:
+        display, name = position
+        action = bank_stash_text(display, name) if name else "La posición ya está vacía."
+    else:
+        action = "Elija la posición donde cargarlo."
+    return f"{head}\n{action}" + ("\nTiene cambios sin guardar: guárdelos antes." if dirty else "")
+
+
+def bank_stashed(display: int, name: str) -> str:
+    return f"{_bank_name(name)} está en el banco y la posición {display} quedó libre"
+
+
+def bank_loaded(display: int, name: str, occupant: str | None) -> str:
+    extra = f"; {_bank_name(occupant)} pasó al banco" if occupant is not None else ""
+    return f"{_bank_name(name)} está en la posición {display}{extra}"
+
+
+def bank_origin(origin: int | None) -> str:
+    return f"Posición {origin}" if origin else BANK_ORIGIN_UNKNOWN
+
+
+def bank_date(stamp: str) -> str:
+    """``20261125-101500`` -> ``25/11/2026 10:15``."""
+    try:
+        return f"{stamp[6:8]}/{stamp[4:6]}/{stamp[0:4]} {stamp[9:11]}:{stamp[11:13]}"
+    except IndexError:
+        return stamp
+
+
+def bank_count(count: int) -> str:
+    return "1 patch" if count == 1 else f"{count} patches"
+
+
+def bank_card_name(name: str, origin: int | None, stamp: str) -> str:
+    return f"{_bank_name(name)}, {bank_origin(origin)}, {bank_date(stamp)}"

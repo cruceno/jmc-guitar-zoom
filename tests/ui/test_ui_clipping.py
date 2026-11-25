@@ -20,7 +20,7 @@ from zoomstudio.ui.painted import PaintedText
 
 EFFECTS = FIXTURES.parent.parent / "effects" / "fixtures"
 SIZES = [(1440, 900), (2000, 1056)]
-STATES = ["no-patch", "patch-selected", "effects-manager", "effects-repair", "usage-many", "usage-one", "usage-none", "usage-incomplete", "tuner", "offline"]
+STATES = ["no-patch", "patch-selected", "effects-manager", "effects-repair", "usage-many", "usage-one", "usage-none", "usage-incomplete", "tuner", "offline", "bank", "bank-empty", "bank-drag"]
 SLACK = 2  # px of rounding the metrics may differ from the painted text by
 
 
@@ -132,6 +132,21 @@ def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
             w.reload()
         return w
     w = connected_window(qtbot, monkeypatch, catalog, tmp_path, PedalFiles(BEFORE))
+    if state.startswith("bank"):  # the bank screen: with cards (one long name, one unknown origin), empty, mid-drag
+        if state != "bank-empty":
+            from zoomstudio.patches.zptc import build_zptc, parse_zptc
+            for i, origin in enumerate((20, 33, None)):
+                patch = parse_zptc((FIXTURES / "53-HB-Jazz.zptc").read_bytes())
+                patch.name = ("Bank Lead", "WWWWWWWWWW", "Clean")[i]
+                w.bank_store.add(build_zptc(patch), origin=origin, now=f"2026112{i}-101500")
+        w.bank_button.click()
+        w.bank_panel.select_position(44)
+        if state == "bank":
+            w.bank_panel.select_entry(next(iter(w.bank_store.list())).id if w.bank_store.list() else None)
+        if state == "bank-drag":
+            w.bank_panel.positions.show_drop_target(43)
+            w.bank_panel.bank_list.show_drop_target(True)
+        return w
     if state == "patch-selected":
         w.select_location(44)
     elif state == "effects-manager":

@@ -20,3 +20,13 @@ def private_favorites(monkeypatch, tmp_path_factory):
     path = tmp_path_factory.mktemp("config") / favorites.FILE_NAME
     monkeypatch.setattr(favorites, "default_path", lambda: path)
     return path
+
+
+@pytest.fixture(autouse=True)
+def private_bank(monkeypatch, tmp_path_factory):
+    """The default patch bank is ``patches/bank`` of the real workspace: every test gets a private folder instead."""
+    from zoomstudio.patches import bank
+
+    folder = tmp_path_factory.mktemp("bank-default")
+    monkeypatch.setattr(bank, "default_dir", lambda: folder)
+    return folder

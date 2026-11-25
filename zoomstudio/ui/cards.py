@@ -23,6 +23,8 @@ ROLE_NUMBER = Qt.ItemDataRole.UserRole + 10   # display number of the location (
 ROLE_NAME = Qt.ItemDataRole.UserRole + 11     # patch name ("" for an empty location)
 ROLE_STRIP = Qt.ItemDataRole.UserRole + 12    # [(group, span, enabled)] per effect; None for an empty location
 ROLE_DIRTY = Qt.ItemDataRole.UserRole + 13    # unsaved edits (bool)
+ROLE_DROP = Qt.ItemDataRole.UserRole + 14     # a drag is over this card and may drop here (bool)
+ROLE_META = Qt.ItemDataRole.UserRole + 15     # second line of a bank card: origin and date
 
 STAR = 20  # side of the favourite star of an effect card
 STAR_ROOM = STAR + 8  # what the card text gives up at its right edge for it
@@ -126,6 +128,10 @@ class PatchCardDelegate(QStyledItemDelegate):
             pen = QPen(with_alpha(tokens.color("accent"), 0.6) if selected else tokens.color("card-rim"), 1.5 if selected else 1)
         p.setPen(pen)
         p.drawPath(path)
+        if index.data(ROLE_DROP):  # the drop target of a drag: an accent frame over a tinted card
+            p.fillPath(path, with_alpha(tokens.color("accent"), 0.16))
+            p.setPen(QPen(tokens.color("accent"), 2.5))
+            p.drawPath(path)
 
         badge = QRectF(rect.left() + 10, rect.center().y() - 15, 30, 30)
         badge_path = card_path(badge, 9)
@@ -167,6 +173,65 @@ class PatchCardDelegate(QStyledItemDelegate):
         for group, span, enabled in (strip or []):
             w = span * SLOT_WIDTH - 3
             if x + w > rect.right() - 8:
+                break
+            block = QRectF(x, y, w, 5)
+            if group is None:
+                p.setPen(QPen(tokens.color("border-control"), 1, Qt.PenStyle.DashLine))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+            else:
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(with_alpha(group_color(group), 1.0 if enabled else 0.4))
+            p.drawRoundedRect(block, 2.5, 2.5)
+            x += span * SLOT_WIDTH
+        p.restore()
+
+
+BANK_CARD_HEIGHT = 72
+
+
+class BankCardDelegate(QStyledItemDelegate):
+    """A banked patch as a card: name, «origin · date» and the strip with one block per effect."""
+
+    def sizeHint(self, option, index) -> QSize:  # noqa: N802 (Qt API)
+        return QSize(1, BANK_CARD_HEIGHT)
+
+    def paint(self, p: QPainter, option, index) -> None:
+        selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(option.rect).adjusted(4, 3, -4, -3)
+        path = card_path(rect)
+        if selected:
+            paint_glow(p, rect, "glow-accent", 12, 3)
+        fill = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+        if selected:
+            fill.setColorAt(0, with_alpha(tokens.color("card-selected"), 0.28))
+            fill.setColorAt(1, with_alpha(tokens.color("card-selected"), 0.12))
+        else:
+            fill.setColorAt(0, tokens.color("card-hover" if hover else "card-top"))
+            fill.setColorAt(1, tokens.color("card-bottom"))
+        p.fillPath(path, fill)
+        p.setPen(QPen(with_alpha(tokens.color("accent"), 0.6) if selected else tokens.color("card-rim"),
+                      1.5 if selected else 1))
+        p.drawPath(path)
+        left, right = rect.left() + 14, rect.right() - 12
+        name_font = ui_font(15)
+        p.setFont(name_font)
+        p.setPen(tokens.color("text-primary"))
+        name = index.data(ROLE_NAME) or S.UNNAMED
+        p.drawText(QRectF(left, rect.top() + 7, right - left, 20), Qt.AlignmentFlag.AlignVCenter,
+                   QFontMetrics(name_font).elidedText(name, Qt.TextElideMode.ElideRight, int(right - left)))
+        meta_font = ui_font(12)
+        p.setFont(meta_font)
+        p.setPen(tokens.color("text-secondary"))
+        meta = index.data(ROLE_META) or ""
+        p.drawText(QRectF(left, rect.top() + 28, right - left, 16), Qt.AlignmentFlag.AlignVCenter,
+                   QFontMetrics(meta_font).elidedText(meta, Qt.TextElideMode.ElideRight, int(right - left)))
+        x, y = left, rect.bottom() - 13
+        for group, span, enabled in (index.data(ROLE_STRIP) or []):
+            w = span * SLOT_WIDTH - 3
+            if x + w > right:
                 break
             block = QRectF(x, y, w, 5)
             if group is None:
