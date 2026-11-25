@@ -88,7 +88,7 @@ at most 12 characters, no directories.
 
 | Command | Meaning |
 |---|---|
-| `60 25 00 00 *\0` / `60 26 ...` | list: first, then next; a reply with `payload[4] != 4` ends the list; the name is at offset 14 |
+| `60 25 00 00 *\0` / `60 26 ...` | list: first, then next; a reply with `payload[4] != 4` ends the list; the name is a fixed 12-byte field at offsets 14-25, zero-padded (a 12-character name has no zero; byte 26 is not part of it) |
 | `60 25 00 00 <name>\0` + `60 05 00` | does the file exist (status of 5 zero bytes = yes) |
 | `60 20 02 <9 zeros> <name>\0` | open for reading; `60 22 ...` reads a block; data replies are `60 04 <xx>` |
 | `60 24 <name>\0` | delete |

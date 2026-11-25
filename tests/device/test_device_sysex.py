@@ -159,6 +159,13 @@ def test_parse_disk_usage():
         sysex.parse_disk_usage(HDR + b"\x60\x04\x29", MODEL)
 
 
+def test_a_listed_name_is_a_fixed_twelve_byte_field():
+    # bytes 14-25 hold the name, zero-padded; a 12-character name has no zero, and byte 26 is not part of it
+    head = HDR + bytes([0x60, 0x04, 0x25, 0, 0, 0, 0, 0, 0, 0, 0])
+    assert sysex.parse_file_name_reply(head + b"RACKCOMP.ZD2" + b"\x7f\x00", MODEL) == "RACKCOMP.ZD2"
+    assert sysex.parse_file_name_reply(head + b"HALL.ZD2" + b"\x00" * 4 + b"\x7f\x00", MODEL) == "HALL.ZD2"
+
+
 def test_parse_file_listing_and_blocks():
     assert sysex.parse_file_name_reply(file_name_reply("FLST_SEQ.ZT2"), MODEL) == "FLST_SEQ.ZT2"
     assert sysex.parse_file_name_reply(file_end_reply(), MODEL) is None

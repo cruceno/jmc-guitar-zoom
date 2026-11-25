@@ -344,7 +344,8 @@ def parse_file_name_reply(payload: bytes, model: int = DEFAULT_MODEL) -> str | N
     _check_reply(payload, model, b"\x60", 5)
     if payload[4] != 4:
         return None
-    raw = bytes(payload[14:27]).split(b"\x00", 1)[0]
+    # a fixed 12-byte field at 14-25, zero-padded: a 12-character name has no zero, and byte 26 is not part of it
+    raw = bytes(payload[14:26]).split(b"\x00", 1)[0]
     try:
         return raw.decode("utf-8")
     except UnicodeDecodeError as exc:
