@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from zoomstudio.effects.catalog import EffectInfo
+from zoomstudio.effects.i18n import effect_description, param_explanation
 from zoomstudio.patches.model import EffectSlot, Patch
 
 from . import strings as S
@@ -324,12 +325,12 @@ class ParamPanel(QWidget):
         self.off_caption.setVisible(not slot.enabled)
         self.hint.setText(S.PARAM_HINT)
         self.effect_name.setText(info.name)
-        self.description.setText(info.description)
+        self.description.setText(effect_description(info))
         installed = bool(self.installed_label) and self.installed_label in info.sources
         self.effect_facts.setText(S.effect_facts(info.dsp_load_percent, info.is_wide, installed))
         self.param_icon.show()
         for i, param in enumerate(info.params[: len(slot.params)]):
-            row = ParamRow(i, param.name, param.max, param.default, slot.params[i], param.explanation)
+            row = ParamRow(i, param.name, param.max, param.default, slot.params[i], param_explanation(param))
             row.changed.connect(self.param_changed)
             row.changed.connect(lambda _i, _v, r=row: self._refresh_param(r))
             row.activated.connect(lambda _idx, r=row: self._select(r) if r in self._rows else None)
@@ -675,7 +676,7 @@ class CatalogPanel(QWidget):
         self.preview.setPixmap(thumb or pedal_thumbnail(info.name, info.group, PREVIEW_W, PREVIEW_H, dpr))
         self.detail_name.setText(info.name)
         self.detail_facts.setText(f"{S.percent(info.dsp_load_percent)} · {S.slots_label(2 if info.is_wide else 1)}")
-        self.detail.setText(info.description)
+        self.detail.setText(effect_description(info))
 
     def preview_has_image(self) -> bool:
         """True when the preview is the effect's own SVG (a drawn stand-in does not count)."""

@@ -454,3 +454,23 @@ def test_live_slot_mapping_is_isolated():
     patch = parse_zptc(HB_BYTES)
     assert live_message(patch, 4, 2, 50) == (4, 4, 50)  # dial 2 is parameter 4 (0 = on/off, 1 reserved)
     assert live_message(patch, 4, None, 0) == (4, 0, 0)  # on/off is parameter 0
+
+
+def test_effect_and_parameter_texts_are_shown_in_spanish(window):
+    from zoomstudio.effects import i18n
+
+    window.chain.select(1)  # FD DLXR in HB Jazz
+    info = window.catalog[DLXR]
+    assert window.params.description.text() == i18n.effect_description(info)
+    assert window.params.description.text().startswith("Modela el sonido del Fender '65 Deluxe Reverb")
+    assert window.params.help.text() == i18n.param_explanation(info.params[0])
+    assert window.params.help.text() != info.params[0].explanation
+
+
+def test_catalog_detail_is_shown_in_spanish(window):
+    from zoomstudio.effects import i18n
+
+    panel = window.catalog_panel
+    panel.list.setCurrentRow(0)
+    info = next(i for i in window.catalog.values() if i.name == panel.detail_name.text())
+    assert panel.detail.text() == i18n.effect_description(info)

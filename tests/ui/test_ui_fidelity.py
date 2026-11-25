@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
 from ui_replies import FIXTURES
+from zoomstudio.effects.i18n import effect_description
 from zoomstudio.effects.catalog import load_catalog
 from zoomstudio.ui import strings, tokens
 from zoomstudio.ui.glass import BackdropRoot
@@ -147,17 +148,16 @@ def test_detail_card_has_a_parameter_column_and_an_effect_column(window):
     assert p.param_name.text() == p.rows()[0].name and p.help.text()
     assert p.param_facts.text() == strings.param_facts(p.rows()[0].spin.value(), p.rows()[0].maximum, p.rows()[0].default)
     info = window.catalog[window.current_patch.effects[1].effect_id]
-    assert p.effect_name.text() == info.name and p.description.text() == info.description
+    assert p.effect_name.text() == info.name and p.description.text() == effect_description(info)
     assert strings.percent(info.dsp_load_percent) in p.effect_facts.text()
     assert p.chip.text() == strings.group_label(info.group) and p.slot_caption.text() == "Slots 2–3"
 
 
-def test_a_450_character_description_wraps_and_fits_without_scrolling_at_1440_x_900(window):
+def test_a_450_character_description_wraps_and_fits_without_scrolling_at_1440_x_900(window, monkeypatch):
+    sentence = "Modelo de un amplificador de combo limpio con graves cálidos, agudos brillantes y trémolo propio. "
+    monkeypatch.setattr("zoomstudio.ui.widgets.effect_description", lambda info: (sentence * 5)[:450])
     window.select_location(44)
     window.select_tile(1)
-    info = window.catalog[window.current_patch.effects[1].effect_id]
-    sentence = "Modelo de un amplificador de combo limpio con graves cálidos, agudos brillantes y trémolo propio. "
-    info.description = (sentence * 5)[:450]
     window.select_tile(0)
     window.select_tile(1)
     scroll = window.params.description_scroll
