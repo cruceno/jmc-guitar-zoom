@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QRadialGradient
-from PySide6.QtWidgets import QFrame, QWidget
+from PySide6.QtWidgets import QFrame, QMenu, QWidget
 
 from . import tokens
 
@@ -17,18 +17,22 @@ SOFTEN_DIVISOR = 12  # the softened copy is rendered at 1/12 scale and scaled ba
 
 
 def render_backdrop(size: QSize, dpr: float = 1.0) -> QImage:
-    """Base colour plus four faint radial lights (amber, teal, indigo, ivory)."""
+    """Base colour plus four faint radial lights (amber, indigo, teal, ivory) placed as in the prototype."""
     image = QImage(round(size.width() * dpr), round(size.height() * dpr), QImage.Format.Format_ARGB32_Premultiplied)
     image.fill(tokens.color("backdrop-base"))
     p = QPainter(image)
     w, h = image.width(), image.height()
-    reach = max(w, h) * 0.65
-    for light, (fx, fy) in (("light-amber", (0.06, 0.95)), ("light-teal", (0.92, 0.08)),
-                            ("light-indigo", (0.78, 0.92)), ("light-ivory", (0.35, 0.0))):
+    # centre (x, y) and radius as fractions of the width / height / width, exactly as the prototype paints them
+    for light, (fx, fy, fr) in (("light-amber", (0.08, 0.14, 0.40)), ("light-indigo", (0.94, 0.10, 0.40)),
+                                ("light-teal", (0.56, 1.04, 0.46)), ("light-ivory", (0.44, 0.34, 0.30))):
         c = tokens.color(light)
-        gradient = QRadialGradient(QPointF(w * fx, h * fy), reach)
-        gradient.setColorAt(0.0, c)
-        gradient.setColorAt(1.0, QColor(c.red(), c.green(), c.blue(), 0))
+        gradient = QRadialGradient(QPointF(w * fx, h * fy), w * fr)
+        # a canvas gradient to transparent black interpolates colour and alpha separately, so the light fades
+        # with (1 - t) squared; Qt interpolates premultiplied, so those stops are laid out one by one
+        for i in range(9):
+            t = i / 8
+            gradient.setColorAt(t, QColor(round(c.red() * (1 - t)), round(c.green() * (1 - t)),
+                                          round(c.blue() * (1 - t)), round(c.alpha() * (1 - t))))
         p.fillRect(image.rect(), gradient)
     p.end()
     return image
@@ -95,6 +99,35 @@ class BackdropRoot(QWidget):
         p.drawPixmap(QRectF(self.rect()), self.backdrop.image, QRectF(self.backdrop.image.rect()))
 
 
+def paint_glass(p: QPainter, size: QSize, radius: float, tint: str, root: "BackdropRoot | None",
+                origin: QPointF | None) -> None:
+    """Paint one glass surface of ``size`` at the painter's origin: the softened backdrop slice behind it (taken
+    at ``origin``, its position in ``root``), the tint, the specular highlight and the gradient rim."""
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    rect = QRectF(0, 0, size.width(), size.height()).adjusted(0.5, 0.5, -0.5, -0.5)
+    path = QPainterPath()
+    path.addRoundedRect(rect, radius, radius)
+    blurred = root.backdrop.blurred if root is not None else QPixmap()
+    if not blurred.isNull() and origin is not None:
+        dpr = blurred.devicePixelRatio()
+        p.save()
+        p.setClipPath(path)
+        p.drawPixmap(QRectF(0, 0, size.width(), size.height()), blurred,
+                     QRectF(origin.x() * dpr, origin.y() * dpr, size.width() * dpr, size.height() * dpr))
+        p.restore()
+    p.fillPath(path, tokens.color(tint))
+    specular = QLinearGradient(0, 0, 0, size.height() * 0.38)
+    specular.setColorAt(0.0, tokens.color("glass-specular"))
+    specular.setColorAt(1.0, QColor(255, 255, 255, 0))
+    p.fillPath(path, specular)
+    rim = QLinearGradient(0, 0, 0, size.height())
+    rim.setColorAt(0.0, tokens.color("glass-rim-top"))
+    rim.setColorAt(0.5, tokens.color("glass-rim-bottom"))
+    rim.setColorAt(1.0, tokens.color("glass-rim-top").darker(110))
+    p.setPen(QPen(rim, 1))
+    p.drawPath(path)
+
+
 class GlassPanel(QFrame):
     """Rounded panel over the backdrop: softened backdrop, tint, specular and a gradient rim."""
 
@@ -106,30 +139,34 @@ class GlassPanel(QFrame):
 
     def paintEvent(self, _event) -> None:  # noqa: N802 (Qt API)
         p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        path = QPainterPath()
-        path.addRoundedRect(rect, PANEL_RADIUS, PANEL_RADIUS)
-        blurred = self._root.backdrop.blurred
-        if not blurred.isNull():
-            origin = self.mapTo(self._root, self.rect().topLeft())
-            dpr = blurred.devicePixelRatio()
-            p.save()
-            p.setClipPath(path)
-            p.drawPixmap(QRectF(self.rect()), blurred,
-                         QRectF(origin.x() * dpr, origin.y() * dpr, self.width() * dpr, self.height() * dpr))
-            p.restore()
-        p.fillPath(path, tokens.color(self._tint))
-        specular = QLinearGradient(0, 0, 0, self.height() * 0.38)
-        specular.setColorAt(0.0, tokens.color("glass-specular"))
-        specular.setColorAt(1.0, QColor(255, 255, 255, 0))
-        p.fillPath(path, specular)
-        rim = QLinearGradient(0, 0, 0, self.height())
-        rim.setColorAt(0.0, tokens.color("glass-rim-top"))
-        rim.setColorAt(0.5, tokens.color("glass-rim-bottom"))
-        rim.setColorAt(1.0, tokens.color("glass-rim-top").darker(110))
-        p.setPen(QPen(rim, 1))
-        p.drawPath(path)
+        origin = self.mapTo(self._root, self.rect().topLeft())
+        paint_glass(p, self.size(), PANEL_RADIUS, self._tint, self._root, QPointF(origin))
+
+
+class GlassMenu(QMenu):
+    """A menu on glass: a translucent frameless window that paints the softened backdrop under itself, a 90 %
+    tint and the gradient rim (needs a compositor for the rounded corners; without one the corners are square)."""
+
+    def __init__(self, parent: QWidget, root: BackdropRoot) -> None:
+        super().__init__(parent)
+        self._root = root
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint
+                            | Qt.WindowType.NoDropShadowWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
+    def showEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        super().showEvent(event)
+        if self.activeAction() is None:  # the first item takes the focus ring, as in the prototype
+            first = next((a for a in self.actions() if a.isEnabled() and not a.isSeparator()), None)
+            if first is not None:
+                self.setActiveAction(first)
+
+    def paintEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        p = QPainter(self)
+        origin = self._root.mapFromGlobal(self.mapToGlobal(self.rect().topLeft()))
+        paint_glass(p, self.size(), tokens.px("radius-md"), "glass-tint-strong", self._root, QPointF(origin))
+        p.end()
+        super().paintEvent(event)
 
 
 def paint_glow(p: QPainter, rect: QRectF, token: str, radius: float, spread: float = 10) -> None:

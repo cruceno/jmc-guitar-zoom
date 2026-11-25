@@ -51,6 +51,35 @@ def svg_thumbnail(path: Path, width: int, height: int, dpr: float = 1.0) -> QPix
     return out
 
 
+@lru_cache(maxsize=256)
+def pedal_thumbnail(name: str, group: str, width: int, height: int, dpr: float = 1.0) -> QPixmap:
+    """A drawn pedal (group colours, three knobs, the name, a footswitch) for effects that have no SVG."""
+    image = QImage(round(width * dpr), round(height * dpr), QImage.Format.Format_ARGB32_Premultiplied)
+    image.fill(Qt.GlobalColor.transparent)
+    p = QPainter(image)
+    p.scale(dpr, dpr)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    body = QRectF(1.5, 1.5, width - 3, height - 3)
+    p.setBrush(group_fill_color(group))
+    p.setPen(QPen(group_color(group), 2))
+    p.drawRoundedRect(body, 6, 6)
+    p.setPen(QPen(group_text_color(group), 1.5))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    for i in range(3):
+        p.drawEllipse(QPointF(width * (0.27 + 0.23 * i), height * 0.3), 4.5, 4.5)
+    p.setPen(tokens.color("text-primary"))
+    p.setFont(display_font(8, 600))
+    p.drawText(QRectF(2, height * 0.5, width - 4, 14), Qt.AlignmentFlag.AlignCenter,
+               QFontMetrics(display_font(8, 600)).elidedText(name, Qt.TextElideMode.ElideRight, width - 6))
+    p.setPen(QPen(group_text_color(group), 1.5))
+    p.setBrush(tokens.color("surface-control"))
+    p.drawEllipse(QPointF(width / 2, height * 0.8), 7, 7)
+    p.end()
+    out = QPixmap.fromImage(image)
+    out.setDevicePixelRatio(dpr)
+    return out
+
+
 def with_alpha(color: QColor, alpha: float) -> QColor:
     out = QColor(color)
     out.setAlphaF(alpha)
@@ -65,7 +94,7 @@ class PatchCardDelegate(QStyledItemDelegate):
 
     def paint(self, p: QPainter, option, index) -> None:
         strip = index.data(ROLE_STRIP)
-        empty = strip is None
+        empty = strip is None or all(group is None for group, _span, _on in strip)  # no location, or no effect
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
         hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
         p.save()
@@ -99,7 +128,8 @@ class PatchCardDelegate(QStyledItemDelegate):
         text_left = badge.right() + 12
         chip = S.EMPTY if empty else (S.EDITED if index.data(ROLE_DIRTY) else "")
         chip_font = ui_font(12)
-        chip_w = QFontMetrics(chip_font).horizontalAdvance(chip) + 18 if chip else 0
+        dirty_chip = chip == S.EDITED
+        chip_w = QFontMetrics(chip_font).horizontalAdvance(chip) + 18 + (10 if dirty_chip else 0) if chip else 0
         name_font = ui_font(15)
         p.setFont(name_font)
         brush = index.data(Qt.ItemDataRole.ForegroundRole)
@@ -115,7 +145,14 @@ class PatchCardDelegate(QStyledItemDelegate):
             p.drawPath(card_path(chip_rect, 9))
             p.setFont(chip_font)
             p.setPen(warn)
-            p.drawText(chip_rect, Qt.AlignmentFlag.AlignCenter, chip)
+            if dirty_chip:  # a warn-coloured dot before the word
+                p.setBrush(warn)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawEllipse(QPointF(chip_rect.left() + 11, chip_rect.center().y()), 3, 3)
+                p.setPen(warn)
+                p.drawText(chip_rect.adjusted(10, 0, 0, 0), Qt.AlignmentFlag.AlignCenter, chip)
+            else:
+                p.drawText(chip_rect, Qt.AlignmentFlag.AlignCenter, chip)
 
         x, y = text_left, rect.bottom() - 13
         for group, span, enabled in (strip or []):

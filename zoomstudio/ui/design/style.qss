@@ -54,8 +54,8 @@ QComboBox QAbstractItemView {
   selection-background-color: $surface_selected; selection-color: $text_primary;
 }
 
-QMenu { background: $surface_overlay; border: 1px solid $border_control; border-radius: 12px; padding: 6px; }
-QMenu::item { padding: 8px 18px; border-radius: 8px; min-height: 20px; }
+QMenu { background: transparent; border: none; padding: 8px; }
+QMenu::item { padding: 8px 18px; border-radius: 10px; min-height: 20px; margin: 0 2px; }
 QMenu::item:selected { background: $card_hover; }
 QMenu::item:disabled { color: $text_disabled; }
 QMenu::separator { height: 1px; background: $border_control; margin: 6px 8px; }
@@ -97,7 +97,7 @@ QPushButton[keychip="true"] { padding-right: 44px; }
 QLabel[role="reason"] { color: $text_secondary; font-size: ${text_caption_size}px; }
 QLabel[role="reason"][blocking="true"] { color: $status_danger; }
 QLabel[role="dirty"] { color: $status_warn; font-size: ${text_caption_size}px; }
-#confirmDialog { background: $surface_overlay; border: 1px solid $border_control; border-radius: 16px; }
+#confirmDialog { background: transparent; }
 
 QToolButton#removeButton { min-height: 0; min-width: 0; padding: 0; border: none; background: transparent; border-radius: 11px; }
 QToolButton#removeButton:hover { background: $card_hover; }

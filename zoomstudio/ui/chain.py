@@ -76,6 +76,13 @@ class PedalBody(QFrame):
     def badge_text(self) -> str:
         return S.BADGE_TWO_SLOTS if self.tile.is_wide else ""
 
+    def legend_text(self) -> str:
+        """The line that replaces the group: why the effect cannot be written, or what an empty pedal is for."""
+        t = self.tile
+        if t.is_empty:
+            return S.PEDAL_EMPTY_TARGET if t.selected else S.PEDAL_EMPTY_ADD
+        return S.TILE_PROBLEM if t.problem else ""
+
     def paintEvent(self, _event) -> None:  # noqa: N802 (Qt API)
         t = self.tile
         p = QPainter(self)
@@ -114,16 +121,26 @@ class PedalBody(QFrame):
         if t.is_empty:
             p.setFont(ui_font(14))
             p.drawText(QRectF(inner.left(), inner.top() + 24, inner.width(), 20), Qt.AlignmentFlag.AlignLeft, S.PEDAL_EMPTY)
+            p.setFont(ui_font(12))
+            p.drawText(QRectF(inner.left(), inner.bottom() - 34, inner.width(), 36),
+                       Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom | Qt.TextFlag.TextWordWrap,
+                       self.legend_text())
         else:
             p.setFont(display_font(16, 500))
             p.setPen(tokens.color("text-primary" if t.is_enabled_effect else "text-secondary"))
             p.drawText(QRectF(inner.left(), inner.top() + 20, inner.width(), 40),
                        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap, t.effect_name)
             p.setFont(ui_font(12))
-            p.setPen(t.text_colour)
-            p.drawText(QRectF(inner.left(), inner.top() + 50, inner.width(), 16), Qt.AlignmentFlag.AlignLeft,
-                       S.group_label(t.group))
-            if self.badge_text():
+            if t.problem:  # the group line gives way to why this effect cannot be written to the pedal
+                p.setPen(tokens.color("status-danger"))
+                p.drawText(QRectF(inner.left(), inner.top() + 50, inner.width(), 32),
+                           Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap,
+                           self.legend_text())
+            else:
+                p.setPen(t.text_colour)
+                p.drawText(QRectF(inner.left(), inner.top() + 50, inner.width(), 16), Qt.AlignmentFlag.AlignLeft,
+                           S.group_label(t.group))
+            if self.badge_text() and not t.problem:
                 badge = QRectF(inner.left(), inner.top() + 67, 52, 15)
                 p.setPen(QPen(QColor(255, 255, 255, 46), 1))
                 p.drawPath(card_path(badge, 8))

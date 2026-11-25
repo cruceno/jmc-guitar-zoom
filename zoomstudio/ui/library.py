@@ -13,7 +13,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import QFileDialog, QLabel, QMenu, QProgressBar, QPushButton
+from PySide6.QtWidgets import QFileDialog, QLabel, QProgressBar, QPushButton
 
 from zoomstudio.patches import edit, library
 from zoomstudio.patches.model import Patch
@@ -21,6 +21,7 @@ from zoomstudio.patches.zptc import build_zptc, parse_zptc
 
 from . import strings as S
 from .dialogs import ConfirmDialog
+from .glass import GlassMenu
 
 
 class LibraryMixin:
@@ -55,7 +56,7 @@ class LibraryMixin:
 
         for act in (self.copy_action, self.paste_action, self.clear_action):
             self.patch_list.addAction(act)  # shortcuts act only while the patch list has focus
-        menu = QMenu(self.library_button)
+        menu = GlassMenu(self.library_button, self.backdrop_root)
         self.library_button.setMenu(menu)
         for act in (self.backup_action, self.backup_files_action, None, self.copy_action, self.paste_action,
                     self.clear_action, None, self.export_selected_action, self.export_all_action,
@@ -90,6 +91,8 @@ class LibraryMixin:
         self.backup_action.setEnabled(connected and idle)
         self.backup_files_action.setEnabled(connected and idle)
         self.write_dirty_action.setEnabled(connected and idle and self.any_dirty())
+        dirty = sum(1 for loc in self._stacks if self.is_dirty(loc))
+        self.write_dirty_action.setText(S.write_dirty(dirty))
         self.copy_action.setEnabled(has_patch)
         self.paste_action.setEnabled(self._location is not None and self._clipboard is not None and idle)
         self.clear_action.setEnabled(self._location is not None and idle)
@@ -103,7 +106,7 @@ class LibraryMixin:
         if item is None:
             return
         self.patch_list.setCurrentItem(item)
-        menu = QMenu(self)
+        menu = GlassMenu(self, self.backdrop_root)
         for act in (self.copy_action, self.paste_action, self.clear_action, None, self.export_selected_action,
                     self.import_file_action):
             if act is None:

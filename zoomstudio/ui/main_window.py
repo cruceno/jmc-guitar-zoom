@@ -11,7 +11,7 @@ from PySide6.QtGui import (
     QAction, QBrush, QColor, QKeySequence, QShortcut, QRegularExpressionValidator, QUndoCommand, QUndoGroup, QUndoStack,
 )
 from PySide6.QtWidgets import (
-    QFileDialog, QFrame, QMenu, QScrollArea, QHBoxLayout, QLabel, QLineEdit, QListWidgetItem, QMainWindow,
+    QFileDialog, QFrame, QScrollArea, QHBoxLayout, QLabel, QLineEdit, QListWidgetItem, QMainWindow,
     QProgressBar, QPushButton, QSpinBox, QSplitter, QStatusBar, QToolButton, QVBoxLayout, QWidget,
 )
 
@@ -25,7 +25,7 @@ from . import tokens
 from .cards import ROLE_DIRTY, ROLE_NAME, ROLE_NUMBER, ROLE_STRIP
 from .dialogs import ConfirmDialog
 from .fonts import display_font
-from .glass import BackdropRoot, GlassPanel, GlowHost
+from .glass import BackdropRoot, GlassMenu, GlassPanel, GlowHost
 from .icons import icon
 from .painted import ConnectionPill, DotLabel, KeyChipButton, LiveSwitch, PaintedText, SectionLabel, StatusBar
 from .library import LibraryMixin
@@ -207,10 +207,13 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.redo_action.setIcon(icon("redo"))
         for act in (self.undo_action, self.redo_action):
             self.addAction(act)  # the shortcuts must not depend on the menu being shown
-        edit_menu = QMenu(self.edit_button)
+        edit_menu = GlassMenu(self.edit_button, backdrop_root)
         self.edit_button.setMenu(edit_menu)
         edit_menu.addAction(self.undo_action)
         edit_menu.addAction(self.redo_action)
+        edit_menu.addSeparator()
+        note = edit_menu.addAction(S.EDIT_MENU_NOTE)
+        note.setEnabled(False)
 
         self.patch_list = PatchList()
         self.patch_list.currentRowChanged.connect(self._on_row_changed)
@@ -259,7 +262,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         self.save_reason.setProperty("role", "reason")
         self.save_reason.setWordWrap(True)
         self.save_reason.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
-        self.save_reason.setMaximumWidth(250)
+        self.save_reason.setMaximumWidth(260)
         title_row = QHBoxLayout()
         title_row.setSpacing(6)
         title_row.addWidget(self.patch_number)
@@ -433,7 +436,7 @@ class MainWindow(LibraryMixin, QMainWindow):
         else:
             tip = S.SAVE_TIP
         self.save_button.setToolTip(tip)
-        self.save_reason.setText("" if self.save_button.isEnabled() else tip)
+        self.save_reason.setText(tip)  # one help line under the button, whatever the state
         self.save_reason.setProperty("blocking", bool(blockers))
         self.save_reason.style().unpolish(self.save_reason)
         self.save_reason.style().polish(self.save_reason)

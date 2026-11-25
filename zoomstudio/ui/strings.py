@@ -134,7 +134,7 @@ def unknown_model(code: int) -> str:
 
 SAVE_NEEDS_CONNECTION = "Conecte la pedalera para guardar"
 SAVE_NO_EDITS = "No hay cambios sin guardar en este patch"
-SAVE_TIP = "Hace una copia de seguridad del slot, escribe este patch en la pedalera y lo verifica leyéndolo de nuevo"
+SAVE_TIP = "Hace backup del slot, escribe este patch y lo vuelve a leer para verificarlo"
 ERR_NO_BACKUP_DIR = "No hay carpeta de copias de seguridad configurada: no se escribe en la pedalera"
 ERR_NOT_CONNECTED = "No hay conexión con la pedalera"
 SELECT_PATCH_TO_EDIT = "Seleccione un patch para editar"
@@ -256,7 +256,13 @@ CLEAR_SLOT = "Vaciar slot"
 CLEAR_SLOT_TIP = "Escribe el patch Empty de fábrica en el slot"
 BACKUP_ALL = "Copia de seguridad de todos los patches"
 BACKUP_FILES = "Copia de seguridad de patches y archivos de la pedalera"
-WRITE_DIRTY = "Escribir en la pedalera los patches modificados"
+WRITE_DIRTY = "Escribir en la pedalera todo lo editado"
+EDIT_MENU_NOTE = "Cada patch guarda su propio historial."
+
+
+def write_dirty(count: int) -> str:
+    """Menu text of the write-everything action, with how many patches it would write."""
+    return f"{WRITE_DIRTY} ({count})" if count else WRITE_DIRTY
 EXPORT_SELECTED = "Exportar patch seleccionado…"
 EXPORT_ALL = "Exportar todos los patches…"
 IMPORT_FILE = "Importar archivo de patch en el slot seleccionado…"
@@ -435,6 +441,9 @@ def with_detail(message: str, exc: object) -> str:
 # ----------------------------------------------------------------- chain, parameters, catalog
 
 PEDAL_EMPTY = "Vacío"
+PEDAL_EMPTY_TARGET = "Destino del catálogo"
+PEDAL_EMPTY_ADD = "Agregar desde el catálogo"
+TILE_PROBLEM = "No funciona en la A1 FOUR"
 REMOVE_EFFECT = "Quitar este efecto"
 SLOT_EMPTY_TIP = "Slot vacío"
 POWER_ON = "Encendido"

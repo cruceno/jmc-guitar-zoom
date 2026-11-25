@@ -14,7 +14,7 @@ from zoomstudio.patches.model import EffectSlot, Patch
 
 from . import strings as S
 from . import tokens
-from .cards import ROLE_EFFECT, EffectCardDelegate, Knob, PatchCardDelegate, card_path, svg_thumbnail, with_alpha
+from .cards import ROLE_EFFECT, EffectCardDelegate, Knob, PatchCardDelegate, card_path, pedal_thumbnail, svg_thumbnail, with_alpha
 from .fonts import display_font, ui_font
 from .icons import icon, pixmap
 from .painted import GroupChip, SectionLabel
@@ -449,6 +449,7 @@ class CatalogPanel(QWidget):
         self._current_dsp = 0.0
         self._replaced_dsp = 0.0
         self._target_enabled = False
+        self._has_svg = False
         self.search = QLineEdit()
         self.search.setPlaceholderText(S.SEARCH_EFFECTS)
         self.search.setClearButtonEnabled(True)
@@ -658,6 +659,7 @@ class CatalogPanel(QWidget):
 
     def _on_current(self, item: QListWidgetItem | None, _prev=None) -> None:
         self.preview.clear()
+        self._has_svg = False
         self.detail.setText("")
         self.detail_name.setText("")
         self.detail_facts.setText("")
@@ -667,13 +669,14 @@ class CatalogPanel(QWidget):
         if item is None:
             return
         info = self._catalog[item.data(_ID_ROLE)]
-        thumb = svg_thumbnail(info.svg_path, PREVIEW_W, PREVIEW_H, self.devicePixelRatioF()) if info.svg_path else None
-        if thumb is not None:
-            self.preview.setPixmap(thumb)
+        dpr = self.devicePixelRatioF()
+        thumb = svg_thumbnail(info.svg_path, PREVIEW_W, PREVIEW_H, dpr) if info.svg_path else None
+        self._has_svg = thumb is not None
+        self.preview.setPixmap(thumb or pedal_thumbnail(info.name, info.group, PREVIEW_W, PREVIEW_H, dpr))
         self.detail_name.setText(info.name)
         self.detail_facts.setText(f"{S.percent(info.dsp_load_percent)} · {S.slots_label(2 if info.is_wide else 1)}")
         self.detail.setText(info.description)
 
     def preview_has_image(self) -> bool:
-        pixmap = self.preview.pixmap()
-        return pixmap is not None and not pixmap.isNull()
+        """True when the preview is the effect's own SVG (a drawn stand-in does not count)."""
+        return self._has_svg

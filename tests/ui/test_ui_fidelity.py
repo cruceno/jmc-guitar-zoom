@@ -238,3 +238,126 @@ def test_status_bar_lives_in_a_glass_panel_and_marks_errors(window):
     assert bar.property("error") and "falló" in bar.currentMessage()
     window.statusBar().showMessage("otra")
     assert not bar.property("error")
+
+
+# ------------------------------------------------------------------ F09 live switch
+
+def test_live_is_a_switch_that_says_si_or_no(window):
+    from zoomstudio.ui.painted import LiveSwitch
+
+    assert isinstance(window.live_check, LiveSwitch) and window.live_check.isCheckable()
+    assert window.live_check.state_text() == strings.SWITCH_OFF and not window.live_check.isEnabled()
+    window.live_check.setEnabled(True)
+    window.live_check.click()
+    assert window.live_check.isChecked() and window.live_check.state_text() == strings.SWITCH_ON
+    assert window.live_check.accessibleName()
+
+
+# --------------------------------------------------------------- F11 patch list
+
+def test_patch_list_header_counts_patches_in_use(window):
+    in_use = sum(1 for p in window._patches.values() if any(not e.is_placeholder for e in p.effects))
+    assert window.patches_caption.text() == strings.patches_caption(in_use, 10, 59)
+
+
+def test_a_patch_without_effects_is_painted_without_a_fill(window):
+    from PySide6.QtCore import QSize
+    from PySide6.QtGui import QImage, QPainter
+    from PySide6.QtWidgets import QStyleOptionViewItem
+
+    from zoomstudio.ui.cards import ROLE_STRIP, PatchCardDelegate
+
+    item = window.patch_list.item(0)
+    index = window.patch_list.indexFromItem(item)
+    option = QStyleOptionViewItem()
+    option.rect.setSize(QSize(248, 56))
+
+    def middle_alpha() -> int:
+        image = QImage(248, 56, QImage.Format.Format_ARGB32_Premultiplied)
+        image.fill(0)
+        p = QPainter(image)
+        PatchCardDelegate().paint(p, option, index)
+        p.end()
+        return image.pixelColor(124, 28).alpha()
+
+    item.setData(ROLE_STRIP, [("DYNAMICS", 1, True)])
+    filled = middle_alpha()
+    item.setData(ROLE_STRIP, [(None, 1, False)] * 5)  # a patch whose slots are all empty
+    assert middle_alpha() < filled and middle_alpha() < 30  # only the dashed border is drawn
+
+
+# ------------------------------------------------------------------ F14 / F15 pedals
+
+def test_pedal_that_does_not_run_on_the_a1_says_so_in_place_of_its_group(window):
+    window.select_location(44)
+    window.allowed_ids = {i for i in window.catalog if i != window.current_patch.effects[0].effect_id}
+    window._show_patch(44)
+    tile = window.chain_tiles()[0]
+    assert tile.problem and tile.body.legend_text() == strings.TILE_PROBLEM
+    assert window.chain_tiles()[1].body.legend_text() == ""
+
+
+def test_empty_pedals_say_what_they_are_for(window):
+    window.select_location(44)
+    for tile in [t for t in window.chain_tiles() if not t.is_empty and not t.is_wide][:2]:
+        window.remove_effect(tile.slot_index)
+    empty = next(t for t in window.chain_tiles() if t.is_empty)
+    window.select_tile(empty.slot_index)
+    assert empty.body.legend_text() == strings.PEDAL_EMPTY_TARGET
+    other = next(t for t in window.chain_tiles() if t.is_empty and t is not empty)
+    assert other.body.legend_text() == strings.PEDAL_EMPTY_ADD
+
+
+# ------------------------------------------------------------------ F17 menus
+
+def test_menus_are_glass_with_the_first_item_focused_and_the_history_note(window):
+    from zoomstudio.ui.glass import GlassMenu
+
+    menu = window.edit_button.menu()
+    assert isinstance(menu, GlassMenu) and isinstance(window.library_button.menu(), GlassMenu)
+    note = [a for a in menu.actions() if a.text() == strings.EDIT_MENU_NOTE]
+    assert note and not note[0].isEnabled()
+    window.select_location(44)
+    window.set_param(1, 3, 12)  # something to undo: the first enabled item is Deshacer
+    menu.popup(window.edit_button.mapToGlobal(window.edit_button.rect().bottomLeft()))
+    assert menu.activeAction() is window.undo_action
+    assert not menu.grab().toImage().isNull()
+    menu.hide()
+
+
+def test_write_everything_action_counts_the_edited_patches(window):
+    assert window.write_dirty_action.text() == strings.WRITE_DIRTY
+    window.select_location(44)
+    window.set_param(1, 3, 12)
+    assert window.write_dirty_action.text() == strings.write_dirty(1) and "(1)" in window.write_dirty_action.text()
+
+
+# ------------------------------------------------------------------ F18 dialogs
+
+def test_confirm_dialog_dims_the_window_while_open_and_puts_the_destructive_choice_first(window, qtbot):
+    from zoomstudio.ui.dialogs import ConfirmDialog, Scrim
+
+    d = ConfirmDialog(window, "t", "x", strings.DISCARD_ACCEPT, danger=True)
+    qtbot.addWidget(d)
+    d.show()
+    scrim = window.findChild(Scrim)
+    assert scrim is not None and scrim.isVisible() and scrim.size() == window.size()
+    assert d.cancel_button.isDefault() and d.title_icon.isVisible()
+    assert d.accept_button.geometry().left() < d.cancel_button.geometry().left()
+    assert not d.grab().toImage().isNull()
+    d.close()
+    assert window.findChild(Scrim) is None or not window.findChild(Scrim).isVisible()
+
+
+# ------------------------------------------------------------------ F19 backdrop
+
+def test_backdrop_lights_are_placed_like_the_prototype():
+    from PySide6.QtCore import QSize
+    from zoomstudio.ui.glass import render_backdrop
+
+    image = render_backdrop(QSize(1440, 900))
+    # sampled from the prototype's state-01 gutter, where the backdrop shows untouched: (x, y, rgb)
+    for x, y, rgb in [(2, 200, (20, 15, 13)), (2, 450, (12, 10, 11)), (720, 893, (13, 18, 21)),
+                      (1430, 60, (17, 20, 29)), (1430, 450, (9, 9, 11)), (200, 3, (22, 17, 14))]:
+        c = image.pixelColor(x, y)
+        assert max(abs(c.red() - rgb[0]), abs(c.green() - rgb[1]), abs(c.blue() - rgb[2])) <= 4, (x, y)
