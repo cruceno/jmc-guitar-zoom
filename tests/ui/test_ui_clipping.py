@@ -21,7 +21,7 @@ from jmc_guitar_zoom.ui.painted import PaintedText
 
 from fixture_files import EFFECTS  # noqa: E402
 SIZES = [(1440, 900), (2000, 1056)]
-STATES = ["no-patch", "patch-selected", "effects-manager", "effects-repair", "not-installed", "patch-warnings", "unused-view", "usage-many", "usage-one", "usage-none", "usage-incomplete", "tuner", "calibration-relief", "calibration-action", "calibration-pickups", "calibration-pickups-run", "intonation", "intonation-result", "offline", "bank", "bank-empty", "bank-drag", *UPDATE_STATES]
+STATES = ["no-patch", "patch-selected", "effects-manager", "effects-repair", "not-installed", "patch-warnings", "unused-view", "usage-many", "usage-one", "usage-none", "usage-incomplete", "tuner", "calibration-relief", "calibration-action", "calibration-action-posts", "calibration-pickups", "calibration-pickups-run", "intonation", "intonation-result", "offline", "bank", "bank-empty", "bank-drag", *UPDATE_STATES]
 SLACK = 2  # px of rounding the metrics may differ from the painted text by
 
 
@@ -203,6 +203,13 @@ def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
         panel = w.intonation_panel
         panel.go_to_step(2)
         for number, value in zip((6, 5, 4, 3, 2, 1), (2.6, 2.2, 1.4, 1.9, 1.2, 1.6)):
+            panel.action.spins[number].setValue(value)
+    elif state == "calibration-action-posts":  # step 2 on a two-post bridge: two post advices, the info line, the view
+        w.intonation_button.click()
+        panel = w.intonation_panel
+        panel.go_to_step(2)
+        panel.preset_combo.setCurrentIndex(1)
+        for number, value in zip((6, 3, 1), (2.6, 2.3, 1.2)):
             panel.action.spins[number].setValue(value)
     elif state == "calibration-pickups":  # step 3 with both sides measured and a finished balance
         from jmc_guitar_zoom.calibration import PluckLevels, balance

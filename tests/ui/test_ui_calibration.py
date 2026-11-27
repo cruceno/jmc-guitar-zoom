@@ -215,6 +215,89 @@ def test_the_saddle_arc_text_and_drawing_follow_the_radius(qtbot):
     assert screen.preset_combo.currentText() == "Personalizado"
 
 
+def _two_posts(qtbot, store=None):
+    screen, _ = make(qtbot, store)
+    screen.preset_combo.setCurrentIndex(1)  # Gibson style: two posts
+    return screen, screen.action
+
+
+def test_the_bridge_selector_switches_the_action_panel_between_saddles_and_two_posts(qtbot):
+    screen, panel = make(qtbot)[0], None
+    panel = screen.action
+    assert panel.bridge_combo.currentText() == "Selletas con altura propia (tipo Fender)"
+    assert not panel.saddles.isHidden() and panel.posts.isHidden()  # views sit under the tuner, not in the panel
+    assert panel.arc_label_visible() and not panel.post_spacing_spin.isVisibleTo(panel)
+    panel.bridge_combo.setCurrentIndex(1)
+    assert panel.bridge_combo.currentText() == "Dos postes (Tune-o-matic, Gibraltar)"
+    assert not panel.posts.isHidden() and panel.saddles.isHidden()
+    assert not panel.arc_label_visible() and panel.post_spacing_spin.isVisibleTo(panel)
+    assert screen.preset_combo.currentText() == "Personalizado"  # no preset has Fender targets with two posts
+
+
+def test_choosing_the_bridge_a_preset_already_has_does_not_leave_the_preset(qtbot):
+    screen, panel = _two_posts(qtbot)
+    assert panel.bridge_combo.currentIndex() == 1 and screen.preset_combo.currentText() == "Estilo Gibson (humbucker)"
+    panel.bridge_combo.setCurrentIndex(1)
+    assert screen.preset_combo.currentText() == "Estilo Gibson (humbucker)"
+
+
+def test_the_presets_choose_the_bridge_type_and_the_post_spacing_field_is_for_two_posts_only(qtbot):
+    screen, panel = _two_posts(qtbot)
+    assert panel.post_spacing_spin.value() == pytest.approx(74) and panel.post_spacing_spin.isVisibleTo(panel)
+    screen.preset_combo.setCurrentIndex(0)
+    assert panel.bridge_combo.currentIndex() == 0 and not panel.post_spacing_spin.isVisibleTo(panel)
+
+
+def test_the_post_advice_is_written_per_post_with_decimal_commas(qtbot):
+    screen, panel = _two_posts(qtbot)  # targets 2,0 (6) and 1,5 (1); P=74, span 52
+    assert panel.post_text("bass") == "" and panel.remeasure_text() == ""
+    panel.spins[6].setValue(2.5)
+    panel.spins[1].setValue(1.2)
+    assert panel.post_text("bass") == "Poste graves: baje unos 1,34 mm"
+    assert panel.post_text("treble") == "Poste agudos: suba unos 0,94 mm"
+    assert panel.remeasure_text() == ("Mida de nuevo después de cada ajuste: cada poste también mueve la cuerda "
+                                      "del otro lado.")
+    assert [panel.posts.arrow(s) for s in ("bass", "treble")] == ["lower", "raise"]
+    assert all(panel.advice_text(n) == "" for n in range(1, 7))  # no per-saddle moves for two posts
+    panel.spins[6].setValue(2.0)
+    panel.spins[1].setValue(1.5)
+    assert panel.post_text("bass") == "Poste graves: está bien" and panel.post_text("treble") == "Poste agudos: está bien"
+    assert [panel.posts.arrow(s) for s in ("bass", "treble")] == ["ok", "ok"]
+
+
+def test_a_measured_middle_string_adds_the_radius_information_line(qtbot):
+    screen, panel = _two_posts(qtbot)
+    assert panel.middle_text() == ""
+    panel.spins[6].setValue(2.0)
+    panel.spins[1].setValue(1.5)
+    panel.spins[3].setValue(1.6)  # expected 2,0 - 0,5 * 3/5 = 1,70
+    assert panel.middle_text().startswith("Cuerdas del medio respecto de lo esperado tras el ajuste (3: −0,10 mm).")
+    assert "radio" in panel.middle_text()
+
+
+def test_the_post_spacing_is_editable_and_changes_the_advice_and_the_preset(qtbot):
+    screen, panel = _two_posts(qtbot)
+    panel.spins[6].setValue(2.5)
+    panel.spins[1].setValue(1.2)
+    before = panel.post_text("bass")
+    panel.post_spacing_spin.setValue(80)
+    assert screen.preset_combo.currentText() == "Personalizado"
+    assert panel.post_text("bass") != before
+
+
+def test_the_bridge_type_and_post_spacing_are_remembered(qtbot, tmp_path):
+    path = tmp_path / "calibration.json"
+    screen, panel = _two_posts(qtbot, CalibrationStore(path))
+    panel.post_spacing_spin.setValue(76)
+    store = CalibrationStore(path)
+    assert store.custom.bridge_type == "two_posts" and store.custom.post_spacing_mm == pytest.approx(76)
+    again, _ = make(qtbot, CalibrationStore(path))
+    assert again.action.bridge_combo.currentIndex() == 1 and again.action.post_spacing_spin.value() == pytest.approx(76)
+    path.write_text(json.dumps({"custom": {"bridge_type": "nada", "post_spacing_mm": 5}}), encoding="utf-8")
+    bad = CalibrationStore(path)
+    assert bad.custom.bridge_type == "saddles" and bad.custom.post_spacing_mm == pytest.approx(74)
+
+
 # ------------------------------------------------------------------ step 3: pickups
 
 

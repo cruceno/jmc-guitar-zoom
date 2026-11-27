@@ -1377,6 +1377,32 @@ def arc_text(radius_in: float, inner_mm: float, middle_mm: float) -> str:
             f"cuerdas 5 y 2 +{decimal(middle_mm, 2)} mm respecto de 6 y 1")
 
 
+ACTION_BRIDGE = "Tipo de puente"
+ACTION_BRIDGE_SADDLES = "Selletas con altura propia (tipo Fender)"
+ACTION_BRIDGE_POSTS = "Dos postes (Tune-o-matic, Gibraltar)"
+ACTION_POST_SPACING = "Separación entre postes"
+ACTION_POST_SPACING_TIP = "Distancia de centro a centro de los dos postes de altura, medida con regla."
+ACTION_POSTS_NAME = "Puente de dos postes visto de lado, con una flecha por poste"
+ACTION_POSTS_RULE = ("Con dos postes la altura se ajusta solo en los extremos: cada poste también mueve la cuerda "
+                     "del otro lado, y las selletas no cambian la altura.")
+ACTION_POSTS_REMEASURE = "Mida de nuevo después de cada ajuste: cada poste también mueve la cuerda del otro lado."
+ACTION_POSTS_SIDES = {"bass": "Poste graves", "treble": "Poste agudos"}
+
+
+def post_text(side: str, move: str, post_mm: float) -> str:
+    name = ACTION_POSTS_SIDES[side]
+    if move == "ok":
+        return f"{name}: está bien"
+    verb = "suba" if move == "raise" else "baje"
+    return f"{name}: {verb} unos {decimal(post_mm, 2)} mm"
+
+
+def post_middle_text(mismatch_mm: dict[int, float]) -> str:
+    parts = ", ".join(f"{n}: {decimal(mismatch_mm[n], 2, signed=True)} mm" for n in sorted(mismatch_mm, reverse=True))
+    return (f"Cuerdas del medio respecto de lo esperado tras el ajuste ({parts}). Una diferencia grande indica que el "
+            "radio de las selletas no coincide con el del diapasón; los postes no pueden corregirlo.")
+
+
 PICKUP_POSITIONS = {"neck": "Mástil", "middle": "Medio", "bridge": "Puente"}
 PICKUP_TYPES = {"single_coil": "simple", "humbucker": "humbucker", "p90": "P-90"}
 PICKUP_POSITION = "Posición del selector"

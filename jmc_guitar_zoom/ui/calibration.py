@@ -17,14 +17,14 @@ from PySide6.QtWidgets import (QButtonGroup, QComboBox, QDoubleSpinBox, QGridLay
                                QPushButton, QSizePolicy, QVBoxLayout, QWidget)
 
 from jmc_guitar_zoom.audio.pitch import PitchReading
-from jmc_guitar_zoom.calibration import (PRESETS, ActionMove, BalanceResult, PickupMove, PluckLevels, ReliefMove,
+from jmc_guitar_zoom.calibration import (BRIDGE_SADDLES, BRIDGE_TWO_POSTS, PRESETS, ActionMove, BalanceResult, PickupMove, PluckLevels, ReliefMove,
                                          action_advice, balance, magnetic_pull, pickup_advice, position_balance,
-                                         relief_advice, saddle_arc)
+                                         relief_advice, saddle_arc, two_post_advice)
 
 from . import strings as S
 from . import tokens
 from .fonts import ui_font
-from .settings import STEPS, CalibrationStore
+from .settings import POST_SPACING_RANGE, STEPS, CalibrationStore
 
 STRINGS = (6, 5, 4, 3, 2, 1)
 ROUNDS = S.INTONATION_ROUNDS_RANGE
@@ -369,6 +369,59 @@ class SaddleView(QWidget):
                 _arrow(p, cx, top - 6 if up else top - 52, up, 34, color)
 
 
+class PostView(QWidget):
+    """A two-post bridge seen from the side: the bass post to the left, the treble post to the right, an arrow on each."""
+
+    POST_W = 34
+    POST_H = 70
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._moves: dict[str, ActionMove] = {}
+        self.setMinimumHeight(150)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setAccessibleName(S.ACTION_POSTS_NAME)
+
+    def set_state(self, moves: dict[str, ActionMove]) -> None:
+        self._moves = dict(moves)
+        self.update()
+
+    def arrow(self, side: str) -> str | None:
+        """"raise", "lower", "ok" or None when there is no advice yet; ``side`` is "bass" or "treble"."""
+        move = self._moves.get(side)
+        return None if move is None else move.value
+
+    def paintEvent(self, _event) -> None:  # noqa: N802 (Qt API)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        width = min(self.width() - 24, 420)
+        left = (self.width() - width) / 2
+        floor = self.height() - 30
+        base_top = floor - 16
+        p.setPen(QPen(tokens.color("border-strong"), 1.5))
+        p.setBrush(tokens.color("surface-control"))
+        p.drawRoundedRect(QRectF(left, base_top, width, 16), 4, 4)  # the body under the bridge
+        top = base_top - self.POST_H
+        centres = {"bass": left + width * 0.2, "treble": left + width * 0.8}
+        p.drawRoundedRect(QRectF(left + width * 0.2, top - 14, width * 0.6, 14), 5, 5)  # the bridge bar on the posts
+        for side, cx in centres.items():
+            p.setPen(QPen(tokens.color("border-strong"), 1.5))
+            p.setBrush(tokens.color("surface-control"))
+            p.drawRoundedRect(QRectF(cx - self.POST_W / 2, top, self.POST_W, self.POST_H + 2), 5, 5)
+            p.setPen(tokens.color("text-secondary"))
+            p.setFont(ui_font(13))
+            p.drawText(QRectF(cx - 60, floor + 4, 120, 20), Qt.AlignmentFlag.AlignCenter, S.ACTION_POSTS_SIDES[side])
+            move = self._moves.get(side)
+            if move is None:
+                continue
+            color = tokens.color(MOVE_TOKEN[move.value])
+            if move is ActionMove.OK:
+                _tick(p, cx, top - 36, color)
+            else:
+                up = move is ActionMove.RAISE
+                _arrow(p, cx, top - 20 if up else top - 66, up, 34, color)
+
+
 class ActionPanel(QWidget):
     changed = Signal()
 
@@ -406,21 +459,51 @@ class ActionPanel(QWidget):
             targets.addWidget(_caption(caption))
             targets.addWidget(spin)
         targets.addStretch(1)
+        self.bridge_combo = QComboBox()
+        self.bridge_combo.setAccessibleName(S.ACTION_BRIDGE)
+        self.bridge_combo.addItem(S.ACTION_BRIDGE_SADDLES, BRIDGE_SADDLES)
+        self.bridge_combo.addItem(S.ACTION_BRIDGE_POSTS, BRIDGE_TWO_POSTS)
+        self.post_spacing_spin = _spin(POST_SPACING_RANGE[0], POST_SPACING_RANGE[1], 0.5, 1, " mm",
+                                       S.ACTION_POST_SPACING)
+        self.post_spacing_spin.setToolTip(S.ACTION_POST_SPACING_TIP)
+        self._post_caption = _caption(S.ACTION_POST_SPACING)
+        bridge_row = QHBoxLayout()
+        bridge_row.setSpacing(10)
+        bridge_row.addWidget(_caption(S.ACTION_BRIDGE))
+        bridge_row.addWidget(self.bridge_combo)
+        bridge_row.addWidget(self._post_caption)
+        bridge_row.addWidget(self.post_spacing_spin)
+        bridge_row.addStretch(1)
         self.saddles = SaddleView()
+        self.posts = PostView()
         self._arc = _label("instruction")
+        self._posts_rule = _label("hint", S.ACTION_POSTS_RULE)
+        self._post_labels = {side: _label("instruction") for side in ("bass", "treble")}
+        self._remeasure = _label("hint")
+        self._middle = _label("reason")
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(8)
         lay.addWidget(self._method)
+        lay.addLayout(bridge_row)
         lay.addLayout(targets)
         lay.addLayout(grid)
         lay.addWidget(self._rule)
         lay.addWidget(self._arc)
+        lay.addWidget(self._posts_rule)
+        for label in (*self._post_labels.values(), self._remeasure, self._middle):
+            lay.addWidget(label)
         lay.addStretch(1)
-        self.drawing = self.saddles
+        self.drawing = QWidget()  # both views live here; the screen shows it under the live tuner
+        drawing = QVBoxLayout(self.drawing)
+        drawing.setContentsMargins(0, 0, 0, 0)
+        drawing.addWidget(self.saddles)
+        drawing.addWidget(self.posts)
         self.load()
         for spin in (self.bass_target_spin, self.treble_target_spin, self.radius_spin):
             spin.valueChanged.connect(self._on_target)
+        self.post_spacing_spin.valueChanged.connect(self._on_spacing)
+        self.bridge_combo.currentIndexChanged.connect(self._on_bridge)
 
     def method_text(self) -> str:
         return self._method.text()
@@ -434,14 +517,42 @@ class ActionPanel(QWidget):
     def arc_text(self) -> str:
         return self._arc.text()
 
+    def post_text(self, side: str) -> str:
+        return self._post_labels[side].text()
+
+    def remeasure_text(self) -> str:
+        return self._remeasure.text()
+
+    def middle_text(self) -> str:
+        return self._middle.text()
+
+    def arc_label_visible(self) -> bool:
+        return self._arc.isVisibleTo(self)
+
     def load(self) -> None:
         preset = self.store.current()
         for spin, value in ((self.bass_target_spin, preset.action_bass_mm),
-                            (self.treble_target_spin, preset.action_treble_mm), (self.radius_spin, preset.radius_in)):
+                            (self.treble_target_spin, preset.action_treble_mm), (self.radius_spin, preset.radius_in),
+                            (self.post_spacing_spin, preset.post_spacing_mm)):
             spin.blockSignals(True)
             spin.setValue(value)
             spin.blockSignals(False)
+        self.bridge_combo.blockSignals(True)
+        self.bridge_combo.setCurrentIndex(max(0, self.bridge_combo.findData(preset.bridge_type)))
+        self.bridge_combo.blockSignals(False)
         self._refresh()
+
+    def _on_bridge(self, _index: int) -> None:
+        bridge = self.bridge_combo.currentData()
+        if bridge != self.store.current().bridge_type:  # choosing what the preset already has changes nothing
+            self.store.edit(bridge_type=bridge)
+            self.changed.emit()
+        self._refresh()
+
+    def _on_spacing(self, _value: float) -> None:
+        self.store.edit(post_spacing_mm=round(self.post_spacing_spin.value(), 1))
+        self._refresh()
+        self.changed.emit()
 
     def _on_target(self, _value: float) -> None:
         self.store.edit(action_bass_mm=round(self.bass_target_spin.value(), 2),
@@ -452,7 +563,20 @@ class ActionPanel(QWidget):
 
     def _refresh(self, *_args) -> None:
         preset = self.store.current()
+        posts = preset.bridge_type == BRIDGE_TWO_POSTS
+        for widget in (self.saddles, self._rule, self._arc):
+            widget.setVisible(not posts)
+        for widget in (self.posts, self.post_spacing_spin, self._post_caption, self._posts_rule, self._remeasure,
+                       *self._post_labels.values()):
+            widget.setVisible(posts)
         measured = {n: round(s.value(), 2) for n, s in self.spins.items() if s.value() > s.minimum()}
+        if posts:
+            for label in self._advice.values():
+                label.setText("")
+            self._refresh_posts(preset, measured)
+            return
+        self._middle.setText("")
+        self._middle.setVisible(False)
         advice = action_advice(measured, preset)
         for number, label in self._advice.items():
             item = advice.get(number)
@@ -461,6 +585,22 @@ class ActionPanel(QWidget):
         arc = saddle_arc(preset.radius_in, preset.bridge_span_mm)
         self._arc.setText(S.arc_text(preset.radius_in, arc[4], arc[5]))
         self.saddles.set_state(arc, {n: a.move for n, a in advice.items()})
+
+    def _refresh_posts(self, preset, measured: dict[int, float]) -> None:
+        if 6 not in measured or 1 not in measured:
+            for label in (*self._post_labels.values(), self._remeasure, self._middle):
+                label.setText("")
+            self._middle.setVisible(False)
+            self.posts.set_state({})
+            return
+        middle = {n: v for n, v in measured.items() if n not in (6, 1)}
+        advice = two_post_advice(measured[6], measured[1], preset, middle=middle)
+        self._post_labels["bass"].setText(S.post_text("bass", advice.bass_move.value, advice.bass_post_mm))
+        self._post_labels["treble"].setText(S.post_text("treble", advice.treble_move.value, advice.treble_post_mm))
+        self._remeasure.setText(S.ACTION_POSTS_REMEASURE)
+        self._middle.setText(S.post_middle_text(advice.middle_mismatch_mm) if advice.middle_mismatch_mm else "")
+        self._middle.setVisible(bool(advice.middle_mismatch_mm))
+        self.posts.set_state({"bass": advice.bass_move, "treble": advice.treble_move})
 
 
 # ---------------------------------------------------------------------------------------------- step 3: pickups

@@ -108,6 +108,21 @@ objetivo o cuánto **subir o bajar la selleta**: el traste 12 está a la mitad d
 se escribe el **perfil de selletas** del radio del diapasón (7,25", 9,5", 12", 16"; el del preset, editable), por
 ejemplo «Perfil de selletas para radio 9,5": cuerdas 4 y 3 +1,35 mm, cuerdas 5 y 2 +0,90 mm respecto de 6 y 1».
 
+**Tipo de puente.** El selector ofrece dos opciones. «Selletas con altura propia (tipo Fender)» es lo descrito
+arriba y es el valor de «Estilo Fender (simple)». «Dos postes (Tune-o-matic, Gibraltar)» es el valor de «Estilo
+Gibson (humbucker)» y sirve para los puentes que solo regulan la altura en dos postes (uno del lado graves y otro del
+lado agudos) y cuyas selletas se mueven únicamente para la octavación, como el Ibanez Gibraltar: ahí no hay una
+altura por selleta ni un perfil de selletas, así que esas flechas y el perfil se ocultan. Cambiar el tipo de puente
+pasa a «Personalizado», salvo que coincida con el del preset.
+
+Con dos postes aparece el campo **Separación entre postes**: mida con una regla la distancia de centro a centro de los
+dos tornillos de altura (74 mm por defecto) y escríbala. La aplicación calcula, con la geometría de palanca del
+puente, cuánto mover cada poste: «Poste graves: baje unos 0,35 mm» o «Poste agudos: suba unos 0,20 mm» (o «está
+bien»), y dibuja el puente de lado con una flecha en cada poste. Cada poste también mueve la cuerda del otro lado,
+por eso: **mida de nuevo después de cada ajuste**. Si midió también alguna cuerda del medio, se escribe cuánto se
+aparta de lo esperado tras el ajuste; una diferencia grande indica que el radio de las selletas no coincide con el
+del diapasón y los postes no pueden corregirlo.
+
 #### Paso 3: pastillas
 
 La altura se mide con la cuerda pisada en el último traste, desde la parte superior del polo hasta la parte inferior

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QStandardPaths
 
-from jmc_guitar_zoom.calibration import CUSTOM, FENDER_STYLE, PICKUP_TYPES, PRESETS, GuitarPreset
+from jmc_guitar_zoom.calibration import BRIDGE_TYPES, CUSTOM, FENDER_STYLE, PICKUP_TYPES, PRESETS, GuitarPreset
 
 PICKUP_POSITIONS = ("neck", "middle", "bridge")
 
@@ -168,6 +168,7 @@ class IntonationStore:
 CALIBRATION_FILE_NAME = "calibration.json"
 STEPS = (1, 4)  # the calibration steps: relief, action, pickups, intonation
 DEFAULT_STEP = 1
+POST_SPACING_RANGE = (60.0, 200.0)  # mm; always wider than the string span at the bridge
 
 
 def calibration_path() -> Path:
@@ -262,6 +263,9 @@ class CalibrationStore:
             action_bass_mm=_float(data.get("action_bass_mm"), 0.1, 10.0, base.action_bass_mm),
             action_treble_mm=_float(data.get("action_treble_mm"), 0.1, 10.0, base.action_treble_mm),
             radius_in=_float(data.get("radius_in"), 5.0, 30.0, base.radius_in),
+            bridge_type=data.get("bridge_type") if data.get("bridge_type") in BRIDGE_TYPES else base.bridge_type,
+            post_spacing_mm=_float(data.get("post_spacing_mm"), POST_SPACING_RANGE[0], POST_SPACING_RANGE[1],
+                                   base.post_spacing_mm),
             pickups=tuple((x[0], x[1]) for x in pickups) if valid else base.pickups,
             pickup_targets=tuple(targets))
 
@@ -272,6 +276,7 @@ class CalibrationStore:
         data = {"step": self.step, "preset": self.preset,
                 "custom": {"relief_mm": custom.relief_mm, "action_bass_mm": custom.action_bass_mm,
                            "action_treble_mm": custom.action_treble_mm, "radius_in": custom.radius_in,
+                           "bridge_type": custom.bridge_type, "post_spacing_mm": custom.post_spacing_mm,
                            "pickups": [list(x) for x in custom.pickups],
                            "pickup_targets": {t.pickup_type: [t.bass_mm, t.treble_mm]
                                               for t in custom.pickup_targets}}}

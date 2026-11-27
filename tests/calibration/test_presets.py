@@ -54,3 +54,11 @@ def test_with_changes_returns_a_new_preset_and_leaves_the_original_alone():
 def test_presets_are_frozen():
     with pytest.raises(dataclasses.FrozenInstanceError):
         FENDER_STYLE.relief_mm = 1.0  # type: ignore[misc]
+
+
+def test_the_presets_carry_their_bridge_type_and_post_spacing():
+    from jmc_guitar_zoom.calibration import BRIDGE_SADDLES, BRIDGE_TWO_POSTS
+    assert FENDER_STYLE.bridge_type == BRIDGE_SADDLES
+    assert GIBSON_STYLE.bridge_type == BRIDGE_TWO_POSTS
+    assert GIBSON_STYLE.post_spacing_mm == 74
+    assert CUSTOM.bridge_type == BRIDGE_SADDLES

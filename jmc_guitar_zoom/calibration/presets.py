@@ -15,6 +15,11 @@ HUMBUCKER = "humbucker"
 P90 = "p90"
 PICKUP_TYPES = (SINGLE_COIL, HUMBUCKER, P90)
 
+BRIDGE_SADDLES = "saddles"  # each saddle has its own height screw (Fender style)
+BRIDGE_TWO_POSTS = "two_posts"  # height only at two posts, bass and treble (Tune-o-matic, Ibanez Gibraltar)
+BRIDGE_TYPES = (BRIDGE_SADDLES, BRIDGE_TWO_POSTS)
+DEFAULT_POST_SPACING_MM = 74.0
+
 
 @dataclass(frozen=True)
 class PickupTarget:
@@ -36,7 +41,8 @@ class GuitarPreset:
 
     ``action_bass_mm`` and ``action_treble_mm`` are the action at the 12th fret of strings 6 and 1;
     ``bridge_span_mm`` is the E-to-E string spacing at the bridge; ``pickups`` maps each selector position
-    (``"neck"``, ``"middle"``, ``"bridge"``) to a pickup type, in order.
+    (``"neck"``, ``"middle"``, ``"bridge"``) to a pickup type, in order. ``bridge_type`` says where the action
+    height is set: at every saddle or at two posts (then ``post_spacing_mm`` is the post-to-post distance).
     """
 
     name: str
@@ -47,6 +53,8 @@ class GuitarPreset:
     bridge_span_mm: float = 52.0
     pickups: tuple[tuple[str, str], ...] = ()
     pickup_targets: tuple[PickupTarget, ...] = ()
+    bridge_type: str = BRIDGE_SADDLES
+    post_spacing_mm: float = DEFAULT_POST_SPACING_MM  # centre to centre, only used for two posts
 
     def with_changes(self, **changes) -> GuitarPreset:
         """A copy with some fields replaced; this preset is left alone."""
@@ -81,7 +89,8 @@ FENDER_STYLE = GuitarPreset(
 
 GIBSON_STYLE = GuitarPreset(
     "Estilo Gibson (humbucker)", relief_mm=0.30, action_bass_mm=2.0, action_treble_mm=1.5, radius_in=12,
-    pickups=(("neck", HUMBUCKER), ("bridge", HUMBUCKER)), pickup_targets=DEFAULT_PICKUP_TARGETS)
+    pickups=(("neck", HUMBUCKER), ("bridge", HUMBUCKER)), pickup_targets=DEFAULT_PICKUP_TARGETS,
+    bridge_type=BRIDGE_TWO_POSTS)
 
 CUSTOM = FENDER_STYLE.with_changes(name="Personalizado")
 

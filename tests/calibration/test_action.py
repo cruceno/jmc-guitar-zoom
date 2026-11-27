@@ -83,3 +83,55 @@ def test_a_flatter_radius_gives_a_flatter_arc_and_a_narrower_span_too():
 def test_the_arc_rejects_non_positive_inputs(radius, span):
     with pytest.raises(ValueError):
         saddle_arc(radius, span)
+
+
+def test_the_post_move_solves_the_lever_system_for_a_hand_computed_case():
+    from jmc_guitar_zoom.calibration import GIBSON_STYLE, two_post_advice
+    # P=74, span=52 -> a=11. Errors at the 12th: string 6 +0.5, string 1 -0.3 -> wanted saddle changes -1.0 and +0.6.
+    # The posts' lever equations are solved by hand below (Cramer's rule) and cross-checked.
+    preset = GIBSON_STYLE.with_changes(action_bass_mm=2.0, action_treble_mm=1.5)
+    advice = two_post_advice(2.5, 1.2, preset)
+    p, a = 74.0, 11.0
+    want6, want1 = -2 * 0.5, -2 * -0.3  # too high -> lower; too low -> raise
+    det = ((p - a) ** 2 - a ** 2) / p ** 2
+    b = (want6 * (p - a) / p - want1 * a / p) / det
+    t = (want1 * (p - a) / p - want6 * a / p) / det
+    assert advice.bass_post_mm == pytest.approx(abs(b)) and advice.treble_post_mm == pytest.approx(abs(t))
+    # the solution really produces the wanted heights
+    assert b * (p - a) / p + t * a / p == pytest.approx(want6)
+    assert b * a / p + t * (p - a) / p == pytest.approx(want1)
+    assert advice.bass_move is ActionMove.LOWER and advice.treble_move is ActionMove.RAISE
+
+
+def test_a_post_move_at_twice_the_tolerance_edge_is_ok_and_beyond_it_is_not():
+    from jmc_guitar_zoom.calibration import GIBSON_STYLE, two_post_advice
+    # equal errors on both strings -> both posts move by 2*error
+    ok = two_post_advice(2.1, 1.6, GIBSON_STYLE)  # errors +0.1, +0.1 -> moves 0.2 = 2*tolerance
+    assert ok.bass_move is ActionMove.OK and ok.treble_move is ActionMove.OK
+    off = two_post_advice(2.15, 1.65, GIBSON_STYLE)
+    assert off.bass_move is ActionMove.LOWER and off.treble_move is ActionMove.LOWER
+    assert off.bass_post_mm == pytest.approx(0.3)
+    low = two_post_advice(1.8, 1.3, GIBSON_STYLE)
+    assert low.bass_move is ActionMove.RAISE and low.bass_post_mm == pytest.approx(0.4)
+    assert two_post_advice(2.15, 1.65, GIBSON_STYLE, tolerance_mm=0.2).bass_move is ActionMove.OK
+
+
+def test_the_expected_middle_strings_are_linear_between_the_new_outer_heights():
+    from jmc_guitar_zoom.calibration import GIBSON_STYLE, two_post_advice
+    advice = two_post_advice(2.5, 1.2, GIBSON_STYLE)
+    # after the change strings 6 and 1 sit at their targets (2.0 and 1.5): the posts fix the outer strings
+    assert advice.expected_mm[6] == pytest.approx(2.0) and advice.expected_mm[1] == pytest.approx(1.5)
+    assert advice.expected_mm[3] == pytest.approx(2.0 - 0.5 * 3 / 5)
+    assert set(advice.expected_mm) == {1, 2, 3, 4, 5, 6}
+
+
+def test_a_measured_middle_string_reports_its_difference_from_the_expectation():
+    from jmc_guitar_zoom.calibration import GIBSON_STYLE, two_post_advice
+    advice = two_post_advice(2.5, 1.2, GIBSON_STYLE, middle={3: 2.0})
+    assert advice.middle_mismatch_mm[3] == pytest.approx(2.0 - (2.0 - 0.5 * 3 / 5))
+    assert two_post_advice(2.5, 1.2, GIBSON_STYLE).middle_mismatch_mm == {}
+
+
+def test_the_saddle_height_path_still_gives_todays_advice_for_the_fender_preset():
+    advice = action_advice({6: 2.5}, FENDER_STYLE)[6]
+    assert (advice.move, advice.saddle_mm) == (ActionMove.LOWER, pytest.approx(1.4))
