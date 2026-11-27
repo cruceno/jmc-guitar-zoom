@@ -168,3 +168,20 @@ def test_mostly_unsettled_readings_never_capture():
         hold(session, clock, 110.0, 1, HOP)
         hold(session, clock, 110.02, 1, 3 * HOP, stable=False)
     assert session.step is Step.REFERENCE
+
+
+def test_the_verdict_uses_the_tenth_of_a_cent_the_screen_shows():
+    assert verdict(1.04, 1.0) is Verdict.OK  # shown as «1,0»: it must not read «1,0 cents alto» with ±1
+    assert verdict(-1.04, 1.0) is Verdict.OK
+    assert verdict(1.06, 1.0) is Verdict.SHARP  # shown as «1,1»
+
+
+def test_a_capture_recovers_once_the_last_capture_window_is_settled():
+    clock = Clock()
+    session = IntonationSession(capture_seconds=0.6)
+    session.select(6)
+    for _ in range(25):  # two seconds where only one reading in four is settled: no capture, no full bar
+        hold(session, clock, 82.4, 1, HOP)
+        hold(session, clock, 82.41, 1, 3 * HOP, stable=False)
+    assert session.step is Step.REFERENCE and session.progress < 1.0
+    assert Event.REFERENCE_CAPTURED in hold(session, clock, 82.4, 1, 0.7)  # the note settles again: captured

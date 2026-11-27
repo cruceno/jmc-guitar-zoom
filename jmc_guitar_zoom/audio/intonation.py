@@ -21,7 +21,7 @@ WRONG_NOTE_CENTS = 50.0  # a fretted note this far from the expected pitch is an
 DEFAULT_TOLERANCE = 1.0
 DEFAULT_CAPTURE_SECONDS = 0.6
 DEPARTURE_CENTS = 3.0  # an unsettled reading this far from the captured median: the note moved, start again
-MIN_STABLE_SHARE = 0.6  # at least this share of the capture time must be settled readings
+MIN_STABLE_SHARE = 0.6  # settled readings must cover this share of the last capture_seconds
 
 
 class ReferenceKind(Enum):
@@ -78,7 +78,8 @@ def octave_offset(reference_hz: float, fretted_hz: float, kind: ReferenceKind = 
 
 
 def verdict(offset: float, tolerance: float = DEFAULT_TOLERANCE) -> Verdict:
-    if abs(offset) <= tolerance + 1e-9:
+    """Judged at the tenth of a cent the screen shows, so «1,0 cents» never reads out of a ±1 tolerance."""
+    if round(abs(offset), 1) <= tolerance + 1e-9:
         return Verdict.OK
     return Verdict.SHARP if offset > 0 else Verdict.FLAT
 
@@ -111,7 +112,7 @@ class IntonationSession:
         self._entry_id = -1
         self._rejected_id: int | None = None
         self._accumulating: int | None = None
-        self._captured: list[float] = []
+        self._captured: list[tuple[float, float]] = []  # (time, frequency) of the settled readings
         self._start: float | None = None
         self._hop = 0.0  # seconds between two readings, measured
         self._previous_time: float | None = None
@@ -152,11 +153,8 @@ class IntonationSession:
         self._start = None
         self.progress = 0.0
 
-    def _settled_enough(self, elapsed: float) -> bool:
-        """Settled readings cover at least MIN_STABLE_SHARE of the capture time (readings come every hop)."""
-        if self._hop <= 0:
-            return False
-        return len(self._captured) * self._hop >= MIN_STABLE_SHARE * (elapsed + self._hop)
+    def _captured_median(self) -> float:
+        return float(np.median([f for _, f in self._captured]))
 
     # ------------------------------------------------------------------ readings
 
@@ -174,8 +172,7 @@ class IntonationSession:
             self._reset_capture()
         if not reading.stable:
             # a short wobble of the same note is skipped; a real move (tuning, a bend) starts again
-            if self._captured and abs(cents_between(reading.frequency, float(np.median(self._captured)))) \
-                    > DEPARTURE_CENTS:
+            if self._captured and abs(cents_between(reading.frequency, self._captured_median())) > DEPARTURE_CENTS:
                 self._reset_capture()
             return None
         self._accumulating = reading.note_id
@@ -189,12 +186,20 @@ class IntonationSession:
                 return Event.NOT_THE_OCTAVE
         if self._start is None:
             self._start = reading.time
-        self._captured.append(reading.frequency)
+        self._captured.append((reading.time, reading.frequency))
+        # only the last capture_seconds count: a note that wobbled for a while can still settle and be taken
+        since = reading.time - self.capture_seconds - 1e-6
+        self._captured = [(t, f) for t, f in self._captured if t >= since]
         elapsed = reading.time - self._start
-        self.progress = min(1.0, elapsed / self.capture_seconds) if self.capture_seconds > 0 else 1.0
-        if elapsed + 1e-6 < self.capture_seconds or not self._settled_enough(elapsed):
+        needed = MIN_STABLE_SHARE * self.capture_seconds
+        settled = len(self._captured) * self._hop
+        if self.capture_seconds <= 0:
+            self.progress = 1.0
+        else:
+            self.progress = min(1.0, elapsed / self.capture_seconds, settled / needed if needed > 0 else 1.0)
+        if elapsed + 1e-6 < self.capture_seconds or settled + 1e-9 < needed:
             return None
-        captured = float(np.median(self._captured))
+        captured = self._captured_median()
         if self.step is Step.REFERENCE:
             self.reference_hz = captured
             self.reference_detune = nearest_note(captured, self.reference_pitch).cents

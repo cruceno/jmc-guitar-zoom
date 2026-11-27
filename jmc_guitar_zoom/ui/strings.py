@@ -1233,6 +1233,7 @@ MINUS = "−"
 
 def decimal(value: float, digits: int = 1, signed: bool = False) -> str:
     """A number the way the interface writes it: decimal comma and a true minus sign."""
+    value = round(value, digits) + 0.0  # -0.04 rounds to -0.0: never write a minus zero
     text = f"{value:+.{digits}f}" if signed else f"{value:.{digits}f}"
     return text.replace(".", ",").replace("-", MINUS)
 

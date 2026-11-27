@@ -604,3 +604,9 @@ def test_the_screen_lets_the_interpreter_exit_cleanly():
     env = {**os.environ, "PYTHONPATH": str(root)}
     result = subprocess.run([sys.executable, "-c", EXIT_SCRIPT], cwd=root, env=env, capture_output=True, timeout=120)
     assert result.returncode == 0, result.stderr.decode(errors="replace")[-400:]
+
+
+def test_a_rounded_zero_never_shows_a_minus_sign():
+    assert S.decimal(-0.04, 1, signed=True) == "+0,0"
+    assert S.decimal(-0.04) == "0,0"
+    assert S.decimal(-0.06, 1, signed=True) == "−0,1"
