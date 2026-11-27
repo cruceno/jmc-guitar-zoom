@@ -120,7 +120,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def self_check(report_path: str | None = None) -> int:
-    """Prove Qt, the bundled fonts and the MIDI backend load; opens no window and no port.
+    """Prove Qt, the bundled fonts, the MIDI backend and the audio tuner's libraries load; opens no window, no port
+    and no audio input.
 
     The report goes to stdout (stderr on failure) and, when ``report_path`` is given, to that file as well."""
     lines: list[str] = []
@@ -145,6 +146,12 @@ def self_check(report_path: str | None = None) -> int:
             outputs = ", ".join(ports) if ports else "none"
         except Exception as exc:  # noqa: BLE001 - no MIDI service on this machine (no ALSA sequencer): not a bundle fault
             outputs = f"unavailable ({type(exc).__name__}: {exc})"
+        import numpy
+        import PySide6.QtMultimedia  # noqa: F401 - the audio tuner's input; a missing bundle part fails here
+
+        from jmc_guitar_zoom.audio import capture
+
+        inputs = len(capture.list_input_devices())  # none on a build machine is not a bundle fault
         gl = paths.guitarlab_dir()
         lines = [
             f"jmc-guitar-zoom {__version__}",
@@ -153,6 +160,7 @@ def self_check(report_path: str | None = None) -> int:
             f"MIDI backend: rtmidi ({', '.join(apis)})",
             f"MIDI outputs: {outputs}",
             f"Guitar Lab: {gl if gl else 'none'}",
+            f"audio: numpy {numpy.__version__}, QtMultimedia, inputs: {inputs}",
         ]
         del app
     except Exception as exc:  # noqa: BLE001 - any load failure must be reported as a failed check

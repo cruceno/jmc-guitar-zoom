@@ -81,3 +81,31 @@ def test_a_machine_without_midi_is_reported_but_does_not_fail_the_check(monkeypa
     out = capsys.readouterr().out.splitlines()
     assert out[3].startswith("MIDI backend: rtmidi (")
     assert out[4] == "MIDI outputs: unavailable (SystemError: MidiInAlsa::initialize: error creating ALSA sequencer client object.)"
+
+
+def test_self_check_reports_the_audio_tuner_libraries_and_the_inputs(monkeypatch, capsys):
+    from jmc_guitar_zoom.audio import capture
+
+    monkeypatch.setattr(mido, "get_output_names", lambda: [])
+    monkeypatch.setattr(capture, "list_input_devices", lambda: [
+        capture.InputDevice("a", "Card A", 2, 48000, True), capture.InputDevice("b", "Card B", 4, 96000)])
+    assert main(["--self-check"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[6].startswith("audio: numpy ") and out[6].endswith(", QtMultimedia, inputs: 2")
+
+
+def test_a_machine_without_audio_inputs_is_reported_but_does_not_fail_the_check(monkeypatch, capsys):
+    from jmc_guitar_zoom.audio import capture
+
+    monkeypatch.setattr(capture, "list_input_devices", lambda: [])
+    assert main(["--self-check"]) == 0
+    assert capsys.readouterr().out.splitlines()[6].endswith("inputs: 0")
+
+
+def test_self_check_fails_when_qtmultimedia_does_not_load(monkeypatch, capsys):
+    import sys
+
+    monkeypatch.setitem(sys.modules, "PySide6.QtMultimedia", None)  # the bundle lacks it: import fails
+    assert main(["--self-check"]) == 1
+    err = capsys.readouterr().err
+    assert "self-check failed" in err and "QtMultimedia" in err

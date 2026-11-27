@@ -15,7 +15,7 @@ jobs:
       - name: Qt and ALSA runtime libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libasound2t64 libasound2-dev
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libasound2t64 libasound2-dev libpulse0
       - run: uv sync
       - name: "Tests (the zoom_files tests are skipped: no Zoom files are downloaded)"
         run: uv run pytest -q
