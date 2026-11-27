@@ -5,17 +5,17 @@ import re
 import numpy as np
 import pytest
 from PySide6.QtCore import QObject, Signal
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QPushButton, QWidget
 
 from audio_signals import pluck, silence, sine
 from test_ui_tuner import ON, pedal, sent_sysex  # noqa: F401 (pedal is a fixture)
 from test_ui_tuner import catalog  # noqa: F401 (the fixture the pedal one needs)
 from jmc_guitar_zoom.audio.capture import InputDevice
-from jmc_guitar_zoom.audio.intonation import Step, Verdict
+from jmc_guitar_zoom.audio.intonation import Round, Step, Stats, StringResult, Verdict
 from jmc_guitar_zoom.ui import intonation as intonation_module
 from jmc_guitar_zoom.ui import strings as S
 from jmc_guitar_zoom.ui.glass import BackdropRoot
-from jmc_guitar_zoom.ui.intonation import BridgeView, IntonationScreen
+from jmc_guitar_zoom.ui.intonation import BridgeView, DotPlot, IntonationScreen
 from jmc_guitar_zoom.ui.main_window import MainWindow
 from jmc_guitar_zoom.ui.settings import IntonationStore
 
@@ -52,21 +52,46 @@ class FakeAudio(QObject):
             self.samples.emit(data[i:i + block])
 
 
-def make_screen(qtbot, devices=DEVICES, audio=None, store=None):
+def make_screen(qtbot, devices=DEVICES, audio=None, store=None, rounds=None, tolerance=None):
     audio = audio if audio is not None else FakeAudio()
+    store = store if store is not None else IntonationStore()
+    if rounds is not None:
+        store.save(rounds=rounds)
+    if tolerance is not None:
+        store.save(tolerance=tolerance)
     root = BackdropRoot()
     qtbot.addWidget(root)
     screen = IntonationScreen(root, devices=lambda: list(devices), audio=audio,
-                              store=store if store is not None else IntonationStore())
+                              store=store)
     screen.open_screen()
     return screen, audio
 
 
-def play_string(audio, fretted_cents: float, open_hz: float = E2) -> None:
-    """The open string, a pause, then the 12th fret ``fretted_cents`` away from the exact octave."""
-    audio.push(pluck(open_hz, 2.0)[0])
+def play_note(audio, hz: float) -> None:
+    audio.push(pluck(hz, 1.6)[0])
     audio.push(silence(0.4))
-    audio.push(pluck(2 * open_hz * 2 ** (fretted_cents / 1200), 2.0)[0])
+
+
+def play_round(audio, fretted_cents: float, harmonic_cents: float = 0.0, open_hz: float = E2) -> None:
+    """The open string, the harmonic and the fretted note ``fretted_cents`` away from the harmonic."""
+    harmonic = 2 * open_hz * 2 ** (harmonic_cents / 1200)
+    play_note(audio, open_hz)
+    play_note(audio, harmonic)
+    play_note(audio, harmonic * 2 ** (fretted_cents / 1200))
+
+
+def play_string(audio, fretted_cents, harmonic_cents: float = 0.0) -> None:
+    """Every round of the string: ``fretted_cents`` is one value per round (or one for all the rounds of a screen)."""
+    for cents in fretted_cents:
+        play_round(audio, cents, harmonic_cents)
+
+
+def inject(screen, offsets, number: int = 6) -> None:
+    """A finished string whose rounds have exactly these fretted-vs-harmonic offsets (no audio involved)."""
+    rounds = tuple(Round(E2, 2 * E2, 2 * E2 * 2 ** (d / 1200)) for d in offsets)
+    screen.session.results[number] = StringResult(number, Stats(rounds))
+    screen.session.string, screen.session.step = number, Step.RESULT
+    screen.tolerance_combo.setCurrentIndex(0)  # the screen redraws on a tolerance change
 
 
 # ------------------------------------------------------------------ live tuner
@@ -115,95 +140,97 @@ def test_a_good_level_shows_no_warning(qtbot):
 # ------------------------------------------------------------------ guided assistant
 
 
-def test_the_assistant_opens_on_string_6_with_its_defaults(qtbot):
+def test_the_assistant_opens_on_string_6_round_1_with_its_defaults(qtbot):
     screen, _ = make_screen(qtbot)
-    assert screen.session.string == 6 and screen.session.step is Step.REFERENCE
+    assert screen.session.string == 6 and screen.session.step is Step.OPEN and screen.session.rounds == 5
     assert [c.text() for c in screen.string_chips.values()] == ["6 Mi", "5 La", "4 Re", "3 Sol", "2 Si", "1 Mi"]
     assert screen.tolerance_combo.currentText() == "±1" and screen.session.tolerance == 1.0
     assert screen.scale_combo.currentText() == "648 mm (25,5\")"
+    assert screen.rounds_combo.currentText() == "5"
+    assert screen.progress_text() == "Ronda 1 de 5 · Al aire"
     assert screen.instruction_text() == "Toque la cuerda 6 al aire y déjela sonar."
-    assert [s.text() for s in screen.step_labels] == ["1 Referencia", "2 Traste 12", "3 Resultado"]
-    assert screen.current_step_label() == "1 Referencia"
+    assert screen.reminder_text() == "Pulse siempre con la misma fuerza, suave."
     assert screen.hint_text() == S.INTONATION_HINT
+    assert screen.spread_text() == screen.mean_text() == screen.cross_text() == ""
+
+
+def test_the_open_string_or_harmonic_toggle_is_gone(qtbot):
+    screen, _ = make_screen(qtbot)
+    texts = [b.text() for b in screen.findChildren(QPushButton)]
+    assert "Cuerda al aire" not in texts and "Armónico del traste 12" not in texts
+    assert not hasattr(S, "INTONATION_REFERENCE_OPEN") and not hasattr(S, "INTONATION_REFERENCE_HARMONIC")
+
+
+def test_the_rounds_selector_offers_3_to_10_and_restarts_the_string(qtbot):
+    store = IntonationStore()
+    screen, _ = make_screen(qtbot, store=store)
+    assert [screen.rounds_combo.itemText(i) for i in range(screen.rounds_combo.count())] == [str(n) for n in range(3, 11)]
+    screen.rounds_combo.setCurrentIndex(0)
+    assert screen.session.rounds == 3 and store.rounds == 3
+    assert screen.progress_text() == "Ronda 1 de 3 · Al aire"
+    screen.rounds_combo.setCurrentIndex(7)
+    assert screen.session.rounds == 10 and store.rounds == 10
+    assert screen.progress_text() == "Ronda 1 de 10 · Al aire"
+
+
+def test_the_rounds_choice_is_remembered(qtbot, private_intonation):
+    screen, _ = make_screen(qtbot, store=IntonationStore(private_intonation))
+    screen.rounds_combo.setCurrentIndex(4)  # 7 rounds
+    again, _ = make_screen(qtbot, store=IntonationStore(private_intonation))
+    assert again.session.rounds == 7 and again.rounds_combo.currentText() == "7"
+    assert again.progress_text() == "Ronda 1 de 7 · Al aire"
 
 
 def test_choosing_a_chip_selects_that_string(qtbot):
     screen, _ = make_screen(qtbot)
     screen.string_chips[3].click()
-    assert screen.session.string == 3 and screen.session.step is Step.REFERENCE
+    assert screen.session.string == 3 and screen.session.step is Step.OPEN
     assert screen.instruction_text() == "Toque la cuerda 3 al aire y déjela sonar."
 
 
-def test_the_harmonic_reference_changes_the_instruction(qtbot):
-    screen, _ = make_screen(qtbot)
-    screen.harmonic_button.click()
-    assert screen.session.reference_kind.value == "harmonic"
+def test_the_progress_line_and_instruction_follow_the_notes_of_each_round(qtbot):
+    screen, audio = make_screen(qtbot, rounds=3)
+    play_note(audio, E2)
+    assert screen.progress_text() == "Ronda 1 de 3 · Armónico 12"
     assert screen.instruction_text() == "Toque el armónico del traste 12 de la cuerda 6 y déjelo sonar."
-
-
-@pytest.mark.parametrize("fretted, arrow, verdict, chip, words", [
-    (4.0, "down", Verdict.SHARP, "sharp", "alto: aleje la selleta del mástil unos"),
-    (-4.0, "up", Verdict.FLAT, "flat", "bajo: acerque la selleta al mástil unos"),
-    (0.0, "ok", Verdict.OK, "ok", "En tolerancia: la selleta 6 está bien."),
-])
-def test_a_guided_run_reaches_the_result_by_itself(qtbot, fretted, arrow, verdict, chip, words):
-    screen, audio = make_screen(qtbot)
-    play_string(audio, fretted)
-    assert screen.session.step is Step.RESULT
-    assert screen.session.results[6].verdict is verdict
-    assert screen.current_step_label() == "3 Resultado"
-    assert words in screen.instruction_text()
-    assert screen.bridge.arrow(6) == arrow
-    assert screen.chip_state(6) == chip
-    assert all(screen.bridge.arrow(n) is None for n in (5, 4, 3, 2, 1))
-
-
-def test_the_advice_gives_the_cents_and_the_saddle_move_with_decimal_commas(qtbot):
-    screen, audio = make_screen(qtbot)
-    play_string(audio, 4.0)
-    text = screen.instruction_text()
-    shift = re.search(r"está (\d,\d) cents alto: aleje la selleta del mástil unos (\d,\d) mm, "
-                      r"afine la cuerda y mida de nuevo\.", text)
-    assert shift is not None
-    cents = float(shift[1].replace(",", "."))
-    assert cents == pytest.approx(4.0, abs=0.8)
-    assert float(shift[2].replace(",", ".")) == pytest.approx(cents * 648 * 0.693147 / 1200, abs=0.06)
-
-
-def test_a_wrong_note_at_the_12th_fret_is_refused_with_a_hint(qtbot):
-    screen, audio = make_screen(qtbot)
-    audio.push(pluck(E2, 2.0)[0])
-    audio.push(silence(0.4))
-    assert screen.session.step is Step.FRETTED
+    play_note(audio, 2 * E2)
+    assert screen.progress_text() == "Ronda 1 de 3 · Traste 12"
     assert screen.instruction_text() == "Pise la cuerda 6 en el traste 12, sin apretar de más, y déjela sonar."
-    audio.push(pluck(E2, 2.0)[0])  # the open string again, not the octave
-    assert screen.message_text() == "Esa nota no es la octava de la referencia: pise la cuerda 6 en el traste 12."
-    assert screen.session.step is Step.FRETTED
+    play_note(audio, 2 * E2)
+    assert screen.progress_text() == "Ronda 2 de 3 · Al aire"
+    assert screen.instruction_text() == "Toque la cuerda 6 al aire y déjela sonar."
 
 
-def test_the_harmonic_mode_has_its_own_wrong_note_hint(qtbot):
+def test_a_note_that_is_not_the_expected_one_is_refused_with_a_hint_for_each_guard(qtbot):
+    screen, audio = make_screen(qtbot, rounds=3)
+    play_note(audio, E2)
+    play_note(audio, E2)  # the open string again where the harmonic goes
+    assert screen.message_text() == ("Esa nota no es el armónico del traste 12 (la octava de la cuerda al aire): "
+                                     "toque el armónico de la cuerda 6.")
+    assert screen.progress_text() == "Ronda 1 de 3 · Armónico 12"
+    play_note(audio, 2 * E2)
+    assert screen.message_text() == ""  # a note that is being captured is the right one
+    play_note(audio, E2)  # the open string again where the fretted note goes
+    assert screen.message_text() == "Esa nota no es la octava de la cuerda al aire: pise la cuerda 6 en el traste 12."
+    play_note(audio, 2 * E2)
+    play_note(audio, 2 * E2 * 1.2)  # round 2: an open string far from round 1
+    assert screen.message_text() == ("Esa nota no es la cuerda 6 al aire como en la ronda 1: "
+                                     "toque la cuerda 6 al aire sin cambiar la afinación.")
+    assert screen.progress_text() == "Ronda 2 de 3 · Al aire"
+
+
+def test_a_detuned_open_string_suggests_tuning_first(qtbot):
     screen, audio = make_screen(qtbot)
-    screen.harmonic_button.click()
-    audio.push(pluck(2 * E2, 2.0)[0])
-    audio.push(silence(0.4))
-    audio.push(pluck(E2, 2.0)[0])
-    assert screen.message_text() == "Esa nota no es la del armónico: pise la cuerda 6 en el traste 12."
-
-
-def test_a_detuned_reference_suggests_tuning_first(qtbot):
-    screen, audio = make_screen(qtbot)
-    audio.push(pluck(E2 * 2 ** (8 / 1200), 2.0)[0])
-    audio.push(silence(0.4))
-    assert screen.session.step is Step.FRETTED
+    play_note(audio, E2 * 2 ** (8 / 1200))
+    assert screen.session.step is Step.HARMONIC
     assert re.fullmatch(r"La cuerda está \d,\d cents desafinada: conviene afinarla antes de medir\.",
                         screen.info_text())
 
 
-def test_a_tuned_reference_shows_no_detune_line(qtbot):
+def test_a_tuned_open_string_shows_no_detune_line(qtbot):
     screen, audio = make_screen(qtbot)
-    audio.push(pluck(E2, 2.0)[0])
-    audio.push(silence(0.4))
-    assert screen.session.step is Step.FRETTED and screen.info_text() == ""
+    play_note(audio, E2)
+    assert screen.session.step is Step.HARMONIC and screen.info_text() == ""
 
 
 def test_the_capture_progress_bar_follows_the_session(qtbot):
@@ -214,12 +241,125 @@ def test_the_capture_progress_bar_follows_the_session(qtbot):
     assert screen.progress_bar.value() == round(screen.session.progress * 100)
 
 
-def test_measure_again_restarts_the_string_from_step_1(qtbot):
-    screen, audio = make_screen(qtbot)
-    play_string(audio, 4.0)
+@pytest.mark.parametrize("offsets, arrow, verdict, chip, words", [
+    ([4.0, 4.0, 4.0], "down", Verdict.SHARP, "sharp", "alto: aleje la selleta del mástil unos"),
+    ([-4.0, -4.0, -4.0], "up", Verdict.FLAT, "flat", "bajo: acerque la selleta al mástil unos"),
+    ([0.0, 0.0, 0.0], "ok", Verdict.OK, "ok", "En tolerancia: la selleta 6 está bien."),
+    ([-4.0, 0.0, 4.0], "unsure", Verdict.UNSURE, "unsure", "No concluyente: la dispersión (±"),
+])
+def test_a_guided_run_reaches_the_verdict_by_itself(qtbot, offsets, arrow, verdict, chip, words):
+    screen, audio = make_screen(qtbot, rounds=3, tolerance=2.0)
+    play_string(audio, offsets)
+    result = screen.session.results[6]
+    assert screen.session.step is Step.RESULT and result.verdict(2.0) is verdict
+    assert screen.progress_text() == "Resultado"
+    assert words in screen.instruction_text()
+    assert screen.bridge.arrow(6) == arrow
+    assert screen.chip_state(6) == chip
+    assert all(screen.bridge.arrow(n) is None for n in (5, 4, 3, 2, 1))
+
+
+def test_the_advice_gives_the_mean_cents_and_the_saddle_move_with_decimal_commas(qtbot):
+    screen, audio = make_screen(qtbot, rounds=3)
+    play_string(audio, [4.0, 4.0, 4.0])
+    text = screen.instruction_text()
+    shift = re.search(r"está (\d,\d) cents alto: aleje la selleta del mástil unos (\d,\d) mm, "
+                      r"afine la cuerda y mida de nuevo\.", text)
+    assert shift is not None
+    cents = float(shift[1].replace(",", "."))
+    assert cents == pytest.approx(screen.session.results[6].offset, abs=0.06)
+    assert float(shift[2].replace(",", ".")) == pytest.approx(cents * 648 * 0.693147 / 1200, abs=0.06)
+
+
+def test_the_unsure_text_quotes_the_spread_and_the_mean_and_does_not_advise_a_move(qtbot):
+    screen, _ = make_screen(qtbot)
+    inject(screen, [2.0, 0.5, 3.5])
+    assert screen.instruction_text() == ("No concluyente: la dispersión (±3,7 cents) es comparable al desvío (+2,0 cents). "
+                                         "Repita la medición o mejore el toque; no mueva la selleta todavía.")
+    assert "selleta del mástil" not in screen.instruction_text()
+
+
+def test_the_stats_show_the_touch_repeatability_the_mean_with_its_interval_and_the_rounds(qtbot):
+    screen, _ = make_screen(qtbot)
+    inject(screen, [3.0, 3.2, 2.8])
+    assert screen.spread_text() == "Toque (desvío estándar): al aire ±0,0 · armónico ±0,0 · traste 12 ±0,2 cents"
+    assert screen.mean_text() == "Desvío: +3,0 ± 0,5 cents (95 %, 3 rondas)"
+    assert screen.cross_text() == ""
+
+
+def test_the_cross_check_warning_shows_when_the_harmonic_and_the_open_string_disagree(qtbot):
+    screen, _ = make_screen(qtbot)
+    rounds = tuple(Round(E2, 2 * E2 * 2 ** (2.4 / 1200), 2 * E2 * 2 ** (2.4 / 1200)) for _ in range(3))
+    screen.session.results[6] = StringResult(6, Stats(rounds))
+    screen.session.step = Step.RESULT
+    screen.tolerance_combo.setCurrentIndex(0)
+    assert screen.cross_text() == ("El armónico y la cuerda al aire no coinciden (+2,4 cents): "
+                                   "revise la afinación o el toque.")
+
+
+def test_the_stats_appear_while_the_rounds_are_being_taken(qtbot):
+    screen, audio = make_screen(qtbot, rounds=3)
+    play_round(audio, 1.0)
+    assert screen.spread_text() == "" and screen.mean_text() == ""  # one round: no spread and no interval yet
+    assert screen.plot.interval(0) is not None and screen.plot.interval(0)[1] is None
+    play_round(audio, 1.0)
+    assert screen.spread_text().startswith("Toque (desvío estándar): al aire ±")
+    assert screen.mean_text() == ""  # two rounds: a spread, but no interval yet
+    play_round(audio, 1.0)
+    assert re.fullmatch(r"Desvío: \+\d,\d ± \d,\d cents \(95 %, 3 rondas\)", screen.mean_text())
+
+
+def test_the_dot_plot_shows_a_dot_per_take_the_mean_with_its_interval_and_the_tolerance(qtbot):
+    screen, _ = make_screen(qtbot)
+    inject(screen, [3.0, 3.2, 2.8])
+    plot = screen.plot
+    assert plot.row_names() == ("Traste 12 − armónico", "Traste 12 − 2×aire", "Armónico − 2×aire")
+    assert plot.dots(0) == pytest.approx((3.0, 3.2, 2.8), abs=1e-6)
+    assert plot.dots(1) == pytest.approx((3.0, 3.2, 2.8), abs=1e-6)  # the open string was perfect: same offsets
+    assert plot.dots(2) == pytest.approx((0.0, 0.0, 0.0), abs=1e-6)
+    mean, half = plot.interval(0)
+    assert mean == pytest.approx(3.0, abs=1e-6) and half == pytest.approx(4.303 * 0.2 / 3 ** 0.5, abs=1e-6)
+    assert plot.interval(2) == pytest.approx((0.0, 0.0), abs=1e-6)
+    assert plot.tolerance == 0.5  # inject() picks the first tolerance
+    screen.tolerance_combo.setCurrentIndex(2)
+    assert plot.tolerance == 2.0
+    plot.resize(420, 130)
+    plot.grab()  # paints without raising
+
+
+def test_the_dot_plot_is_empty_before_any_round(qtbot):
+    screen, _ = make_screen(qtbot)
+    assert [screen.plot.dots(i) for i in range(3)] == [(), (), ()]
+    assert [screen.plot.interval(i) for i in range(3)] == [None, None, None]
+    screen.plot.resize(420, 130)
+    screen.plot.grab()
+
+
+def test_repeat_last_take_goes_back_one_note_even_across_a_round(qtbot):
+    screen, audio = make_screen(qtbot, rounds=3)
+    assert screen.repeat_button.text() == "Repetir última toma" and not screen.repeat_button.isEnabled()
+    play_note(audio, E2)
+    play_note(audio, 2 * E2)
+    assert screen.repeat_button.isEnabled() and screen.progress_text() == "Ronda 1 de 3 · Traste 12"
+    screen.repeat_button.click()
+    assert screen.progress_text() == "Ronda 1 de 3 · Armónico 12"
+    assert screen.instruction_text() == "Toque el armónico del traste 12 de la cuerda 6 y déjelo sonar."
+    play_note(audio, 2 * E2)
+    play_note(audio, 2 * E2)
+    assert screen.progress_text() == "Ronda 2 de 3 · Al aire"
+    screen.repeat_button.click()  # back to the fretted note of round 1
+    assert screen.progress_text() == "Ronda 1 de 3 · Traste 12"
+    screen.repeat_button.click()
+    screen.repeat_button.click()
+    assert screen.progress_text() == "Ronda 1 de 3 · Al aire" and not screen.repeat_button.isEnabled()
+
+
+def test_measure_again_restarts_the_string_from_round_1(qtbot):
+    screen, audio = make_screen(qtbot, rounds=3)
+    play_string(audio, [4.0, 4.0, 4.0])
     screen.remeasure_button.click()
-    assert screen.session.step is Step.REFERENCE and screen.session.string == 6
-    assert screen.current_step_label() == "1 Referencia"
+    assert screen.session.step is Step.OPEN and screen.session.string == 6 and screen.session.round == 1
+    assert screen.progress_text() == "Ronda 1 de 3 · Al aire"
     assert 6 in screen.session.results  # the measure stays until it is replaced
 
 
@@ -227,31 +367,27 @@ def test_next_string_moves_on_and_the_last_one_says_all_are_in_tolerance(qtbot):
     screen, audio = make_screen(qtbot)
     screen.next_button.click()
     assert screen.session.string == 5
-    screen.session.results.update({n: _ok(n) for n in range(1, 7)})
+    ok = tuple(Round(E2, 2 * E2, 2 * E2) for _ in range(3))
+    screen.session.results.update({n: StringResult(n, Stats(ok)) for n in range(1, 7)})
     screen.next_button.click()
     assert screen.message_text() == S.INTONATION_ALL_OK
 
 
-def _ok(number):
-    from jmc_guitar_zoom.audio.intonation import StringResult
-
-    return StringResult(number, 100.0, 200.0, 0.0, Verdict.OK)
-
-
 def test_the_verdict_shown_follows_the_current_tolerance(qtbot):
-    screen, audio = make_screen(qtbot)
-    play_string(audio, 1.6)  # about +1.6 to +2 cents once the known bias is in
-    offset = screen.session.results[6].offset
-    wide = [c for c in range(screen.tolerance_combo.count()) if screen.tolerance_combo.itemData(c) == 2.0][0]
-    screen.tolerance_combo.setCurrentIndex(wide)
+    screen, _ = make_screen(qtbot)
+    inject(screen, [1.6, 1.8, 1.4])  # mean 1.6 ± 0.5
+    assert screen.chip_state(6) == "sharp" and screen.bridge.arrow(6) == "down"
+    screen.tolerance_combo.setCurrentIndex(1)  # ±1
+    assert screen.chip_state(6) == "sharp"
+    screen.tolerance_combo.setCurrentIndex(2)  # ±2: the interval (1.1 to 2.1) crosses the edge
     assert screen.session.tolerance == 2.0
-    assert screen.session.results[6].offset == offset  # nothing measured is replaced
-    assert screen.chip_state(6) == "ok" and screen.bridge.arrow(6) == "ok"
+    assert screen.chip_state(6) == "unsure" and screen.bridge.arrow(6) == "unsure"
+    assert screen.session.results[6].offset == pytest.approx(1.6, abs=1e-6)  # nothing measured is replaced
 
 
 def test_the_scale_changes_the_advised_saddle_move(qtbot):
-    screen, audio = make_screen(qtbot)
-    play_string(audio, 12.0)
+    screen, _ = make_screen(qtbot)
+    inject(screen, [12.0, 12.2, 11.8])
     before = re.search(r"unos (\d,\d) mm", screen.instruction_text())[1]
     screen.scale_combo.setCurrentIndex(0)  # 628 mm
     after = re.search(r"unos (\d,\d) mm", screen.instruction_text())[1]
@@ -271,6 +407,16 @@ def test_the_bridge_shows_an_arrow_per_verdict_with_its_offset(qtbot):
     assert bridge.active_string == 3
     bridge.resize(700, 260)
     bridge.grab()  # paints without raising
+
+
+def test_an_unsure_string_shows_a_neutral_mark_and_no_arrow(qtbot):
+    bridge = BridgeView()
+    qtbot.addWidget(bridge)
+    bridge.set_results({6: (2.0, Verdict.UNSURE), 5: (0.0, Verdict.OK)}, active=6)
+    assert bridge.arrow(6) == "unsure" and bridge.arrow_length(6) == 0.0 and bridge.arrow(5) == "ok"
+    assert bridge.offset_label(6) == "+2,0"
+    bridge.resize(700, 260)
+    bridge.grab()
 
 
 def test_a_longer_arrow_for_a_bigger_offset(qtbot):
@@ -314,12 +460,12 @@ def test_the_remembered_choice_survives_a_new_store_on_the_same_file(qtbot, priv
     screen, _ = make_screen(qtbot, store=IntonationStore(private_intonation))
     screen.device_combo.setCurrentIndex(1)
     screen.tolerance_combo.setCurrentIndex(0)
-    screen.harmonic_button.click()
+    screen.rounds_combo.setCurrentIndex(5)  # 8 rounds
     screen.scale_combo.setCurrentIndex(3)
     again, audio = make_screen(qtbot, store=IntonationStore(private_intonation))
     assert audio.started == [("dev2", 0)]
-    assert again.session.tolerance == 0.5 and again.session.reference_kind.value == "harmonic"
-    assert again.scale_combo.currentText() == "650 mm (clásica)" and again.harmonic_button.isChecked()
+    assert again.session.tolerance == 0.5 and again.session.rounds == 8
+    assert again.scale_combo.currentText() == "650 mm (clásica)" and again.rounds_combo.currentText() == "8"
 
 
 def test_the_screen_uses_the_remembered_file_by_default(qtbot, private_intonation):
@@ -384,25 +530,41 @@ def test_the_tracker_follows_the_sample_rate_of_the_input(qtbot):
 
 
 def test_the_store_defaults_when_the_file_is_missing_or_corrupt(tmp_path):
-    defaults = (None, 0, 1.0, 648.0, "open")
+    defaults = (None, 0, 1.0, 648.0, 5)
     for content in (None, "{not json", "[]", json.dumps({"tolerance": 9, "scale_mm": "x", "channel": -1,
-                                                          "reference": "other", "device": 4})):
+                                                          "rounds": "many", "device": 4})):
         path = tmp_path / "intonation.json"
         path.unlink(missing_ok=True)
         if content is not None:
             path.write_text(content, encoding="utf-8")
         store = IntonationStore(path)
-        assert (store.device, store.channel, store.tolerance, store.scale_mm, store.reference) == defaults
+        assert (store.device, store.channel, store.tolerance, store.scale_mm, store.rounds) == defaults
+
+
+@pytest.mark.parametrize("stored, expected", [(3, 3), (7, 7), (10, 10), (1, 3), (0, 3), (99, 10), (True, 5),
+                                              (6.5, 5), (None, 5), ("8", 5)])
+def test_the_stored_rounds_are_clamped_to_3_to_10_and_bad_values_are_the_default(tmp_path, stored, expected):
+    path = tmp_path / "intonation.json"
+    path.write_text(json.dumps({"rounds": stored}), encoding="utf-8")
+    assert IntonationStore(path).rounds == expected
 
 
 def test_the_store_writes_and_reads_every_key(tmp_path):
     path = tmp_path / "sub" / "intonation.json"
-    IntonationStore(path).save(device="d", channel=1, tolerance=2.0, scale_mm=635.0, reference="harmonic")
+    IntonationStore(path).save(device="d", channel=1, tolerance=2.0, scale_mm=635.0, rounds=8)
     assert json.loads(path.read_text(encoding="utf-8")) == {
-        "device": "d", "channel": 1, "tolerance": 2.0, "scale_mm": 635.0, "reference": "harmonic"}
+        "device": "d", "channel": 1, "tolerance": 2.0, "scale_mm": 635.0, "rounds": 8}
     again = IntonationStore(path)
-    assert (again.device, again.channel, again.tolerance, again.scale_mm, again.reference) == (
-        "d", 1, 2.0, 635.0, "harmonic")
+    assert (again.device, again.channel, again.tolerance, again.scale_mm, again.rounds) == ("d", 1, 2.0, 635.0, 8)
+
+
+def test_the_store_ignores_the_old_reference_key_and_rejects_it_on_save(tmp_path):
+    path = tmp_path / "intonation.json"
+    path.write_text(json.dumps({"reference": "harmonic", "rounds": 4}), encoding="utf-8")
+    store = IntonationStore(path)
+    assert store.rounds == 4 and not hasattr(store, "reference")
+    with pytest.raises(KeyError):
+        store.save(reference="open")
 
 
 def test_the_store_never_raises_when_it_cannot_write(tmp_path):

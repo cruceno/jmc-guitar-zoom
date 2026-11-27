@@ -95,7 +95,8 @@ class UpdateStore:
 INTONATION_FILE_NAME = "intonation.json"
 TOLERANCES = (0.5, 1.0, 2.0)  # cents
 SCALES_MM = (628.0, 635.0, 648.0, 650.0)
-REFERENCES = ("open", "harmonic")
+ROUNDS = (3, 10)  # the rounds the assistant may take per string, inclusive
+DEFAULT_ROUNDS = 5
 
 
 def intonation_path() -> Path:
@@ -114,7 +115,7 @@ class IntonationStore:
     ``path=None`` keeps them in memory. A stored device that is no longer listed is the screen's business.
     """
 
-    DEFAULTS = {"device": None, "channel": 0, "tolerance": 1.0, "scale_mm": 648.0, "reference": "open"}
+    DEFAULTS = {"device": None, "channel": 0, "tolerance": 1.0, "scale_mm": 648.0, "rounds": DEFAULT_ROUNDS}
 
     def __init__(self, path: Path | None = None) -> None:
         self.path = Path(path) if path is not None else None
@@ -122,7 +123,7 @@ class IntonationStore:
         self.channel = 0
         self.tolerance = 1.0
         self.scale_mm = 648.0
-        self.reference = "open"
+        self.rounds = DEFAULT_ROUNDS
         self._load()
 
     def _load(self) -> None:
@@ -131,7 +132,7 @@ class IntonationStore:
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
             device, channel = data.get("device"), data.get("channel")
-            reference = data.get("reference")
+            rounds = data.get("rounds")
             tolerance, scale = data.get("tolerance"), data.get("scale_mm")
         except (OSError, ValueError, AttributeError):
             return
@@ -139,10 +140,11 @@ class IntonationStore:
         self.channel = channel if isinstance(channel, int) and not isinstance(channel, bool) and channel >= 0 else 0
         self.tolerance = _number(tolerance, TOLERANCES, self.DEFAULTS["tolerance"])
         self.scale_mm = _number(scale, SCALES_MM, self.DEFAULTS["scale_mm"])
-        self.reference = reference if reference in REFERENCES else "open"
+        ok = isinstance(rounds, int) and not isinstance(rounds, bool)
+        self.rounds = max(ROUNDS[0], min(ROUNDS[1], rounds)) if ok else DEFAULT_ROUNDS
 
     def save(self, **changes) -> None:
-        """Remember ``changes`` (device, channel, tolerance, scale_mm, reference) and write the file."""
+        """Remember ``changes`` (device, channel, tolerance, scale_mm, rounds) and write the file."""
         for key, value in changes.items():
             if key not in self.DEFAULTS:
                 raise KeyError(key)

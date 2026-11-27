@@ -80,22 +80,43 @@ resolución, y no necesita la pedalera conectada.
 - **Afinador:** la nota, la octava, los cents con un decimal y la frecuencia se ven siempre; «Estable» aparece cuando
   la nota dejó de moverse después del ataque.
 
-**Octavación paso a paso.** Elija la cuerda (empieza por la 6) y siga los pasos; cada uno se toma solo cuando la nota
-está estable, así que las manos quedan en la guitarra:
+**Octavación estadística, cuerda por cuerda.** Una sola toma mide también el pulso de quien toca, así que la
+herramienta pide **rondas** repetidas y juzga con la media y su incertidumbre, para no calibrar ruido. Elija la
+cuerda (empieza por la 6), el número de **Rondas** (de 3 a 10; 5 por defecto, la aplicación recuerda la elección) y
+siga los pasos; cada nota se toma sola cuando está estable, así que las manos quedan en la guitarra. Cada ronda pide
+tres notas, siempre en este orden:
 
-1. **Referencia:** toque la cuerda al aire (o su armónico del traste 12, si eligió «Armónico del traste 12») y déjela
-   sonar. Si la cuerda está desafinada más de 5 cents, la pantalla lo avisa.
-2. **Traste 12:** pise la cuerda en el traste 12, sin apretar de más, y déjela sonar. Una nota que no es la octava de
-   la referencia se rechaza con un aviso.
-3. **Resultado:** el desvío en cents frente a la tolerancia (±1 cent si no elige otra). El puente dibujado muestra la
-   selleta de esa cuerda con una flecha **hacia el mástil** si el traste 12 está bajo, **alejándose del mástil** si
-   está alto, o una marca si está en tolerancia. Los mm son una estimación según la escala elegida (628, 635, 648 o
-   650 mm).
+1. **Al aire:** toque la cuerda al aire y déjela sonar. Desde la ronda 2 debe sonar casi igual que en la ronda 1; si
+   la cuerda está desafinada más de 5 cents, la pantalla lo avisa.
+2. **Armónico 12:** toque el armónico del traste 12 de la misma cuerda.
+3. **Traste 12:** pise la cuerda en el traste 12, sin apretar de más, y déjela sonar.
 
-Después de mover una selleta, afine la cuerda y pulse **Medir de nuevo**; **Siguiente cuerda** pasa a la próxima que
-falte medir o que no esté en tolerancia. Se comparan dos notas de la misma entrada, así que el resultado no depende
-del La de referencia ni del reloj de la placa. Con un sonido limpio, la precisión esperada ronda ±0,5 cent; pulse con
-suavidad, porque un ataque fuerte sube la nota en el primer instante.
+Una nota que no es la esperada (por ejemplo, la cuerda al aire cuando toca el armónico) se rechaza con un aviso, y
+solo cuenta una nota nueva: no hace falta esperar a que la anterior se apague. «Pulse siempre con la misma fuerza,
+suave»: un ataque fuerte sube la nota en el primer instante.
+
+**Qué muestra.** En cada ronda se compara el traste 12 con el armónico (el desvío del veredicto), el traste 12 con el
+doble de la cuerda al aire y el armónico con el doble de la cuerda al aire (control cruzado). El gráfico de puntos
+dibuja un punto por toma, la media con su intervalo de confianza del 95 % (t de Student) y la banda de tolerancia
+sombreada. Además se ve la **repetibilidad del toque** (desvío estándar en cents de cada tipo de nota, a partir de la
+segunda ronda) y, desde la tercera, **Desvío: media ± intervalo cents**. Si el armónico y la cuerda al aire difieren
+más de 1,5 cents de media, la pantalla avisa: la afinación se movió o el toque no es parejo.
+
+**Tres veredictos** frente a la tolerancia (±1 cent si no elige otra):
+
+- **En tolerancia:** todo el intervalo cae dentro de la tolerancia; la selleta está bien y el puente muestra una marca.
+- **Mover la selleta:** todo el intervalo cae fuera. Solo entonces el puente dibuja una flecha **hacia el mástil** si el
+  traste 12 está bajo o **alejándose del mástil** si está alto, y los mm salen de la media según la escala elegida
+  (628, 635, 648 o 650 mm).
+- **No concluyente:** el intervalo cruza el borde de la tolerancia (la dispersión es comparable al desvío). El puente
+  muestra un «?» y no hay que mover la selleta todavía: repita la medición o mejore el toque.
+
+**Botones.** **Repetir última toma** descarta la última nota tomada (la del paso anterior de la ronda, o la última de
+la ronda anterior) y la pide otra vez, por ejemplo cuando una nota salió mal. **Medir de nuevo** reinicia la cuerda
+desde la ronda 1, por ejemplo después de mover una selleta y afinar. **Siguiente cuerda** pasa a la próxima que falte
+medir o que no esté en tolerancia (una «no concluyente» también cuenta como pendiente). Se comparan notas de la misma
+entrada, así que el resultado no depende del La de referencia ni del reloj de la placa. Con un sonido limpio, la
+precisión de cada toma ronda ±0,5 cent.
 
 ## 5. Biblioteca: copias, archivos y banco
 

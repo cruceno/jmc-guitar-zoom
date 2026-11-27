@@ -2,20 +2,23 @@
 
 The screen replaces the editor like the pedal tuner does, but it needs no pedal: samples from
 ``AudioInput`` go through a ``PitchTracker``; its readings drive the live tuner, the level meter and an
-``IntonationSession`` (the open string, then the same string fretted at the 12th, then the verdict). The
-result of every string is drawn on a bridge seen from above, with an arrow for the way its saddle must move.
+``IntonationSession`` (rounds of the open string, the 12th-fret harmonic and the fretted 12th, then a verdict
+from the mean offset and its confidence interval). The result of every string is drawn on a bridge seen from
+above, with an arrow for the way its saddle must move.
 """
 
 from __future__ import annotations
 
+import math
+
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QFont, QPainter, QPainterPath, QPen, QPolygonF
+from PySide6.QtGui import QFont, QFontMetrics, QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import (QButtonGroup, QComboBox, QHBoxLayout, QLabel, QProgressBar, QPushButton,
                                QSizePolicy, QToolButton, QVBoxLayout, QWidget)
 
 from jmc_guitar_zoom.audio.capture import AudioInput, InputDevice, list_input_devices
-from jmc_guitar_zoom.audio.intonation import (ORDER, Event, IntonationSession, ReferenceKind, Step, Verdict,
-                                              saddle_shift_mm, verdict)
+from jmc_guitar_zoom.audio.intonation import (MAX_ROUNDS, MIN_ROUNDS, ORDER, Event, IntonationSession, Stats, Step,
+                                              Verdict, mean_interval, saddle_shift_mm)
 from jmc_guitar_zoom.audio.pitch import PitchReading, PitchTracker
 
 from . import settings as settings_module
@@ -33,10 +36,10 @@ CLIP_HOLD_SECONDS = 1.5  # the clipping warning outlives the hop that raised it
 DETUNED_CENTS = 5.0  # a reference this far from its note is worth tuning before measuring
 METER_RANGE = 50.0  # the live meter spans ±50 cents
 NEAR_CENTS = 5.0
-REFERENCE_KINDS = (ReferenceKind.OPEN, ReferenceKind.HARMONIC)  # the reference buttons' ids, in order
 
-VERDICT_TOKEN = {Verdict.OK: "status-ok", Verdict.SHARP: "status-danger", Verdict.FLAT: "status-warn"}
-ARROW_OF = {Verdict.OK: "ok", Verdict.SHARP: "down", Verdict.FLAT: "up"}  # up: toward the neck
+VERDICT_TOKEN = {Verdict.OK: "status-ok", Verdict.SHARP: "status-danger", Verdict.FLAT: "status-warn",
+                 Verdict.UNSURE: "status-info"}
+ARROW_OF = {Verdict.OK: "ok", Verdict.SHARP: "down", Verdict.FLAT: "up", Verdict.UNSURE: "unsure"}  # up: toward the neck
 
 
 class LevelMeter(QWidget):
@@ -127,7 +130,8 @@ class BridgeView(QWidget):
     """A guitar bridge seen from above, the neck toward the top: six strings, six saddles and one arrow each.
 
     A string measured flat at the 12th fret gets an arrow toward the neck (move the saddle closer), a sharp
-    one an arrow away from it, an in-tolerance one a check mark; the arrow grows with the offset.
+    one an arrow away from it, an in-tolerance one a check mark and a not conclusive one a «?»; the arrow grows
+    with the offset.
     """
 
     MIN_ARROW = 14
@@ -153,13 +157,13 @@ class BridgeView(QWidget):
         self.update()
 
     def arrow(self, number: int) -> str | None:
-        """"up" (toward the neck), "down" (away from it), "ok" or None for a string not measured."""
+        """"up" (toward the neck), "down" (away from it), "ok", "unsure" or None for a string not measured."""
         result = self._results.get(number)
         return None if result is None else ARROW_OF[result[1]]
 
     def arrow_length(self, number: int) -> float:
         result = self._results.get(number)
-        if result is None or result[1] is Verdict.OK:
+        if result is None or result[1] in (Verdict.OK, Verdict.UNSURE):
             return 0.0
         share = min(1.0, abs(result[0]) / self.FULL_SCALE_CENTS)
         return self.MIN_ARROW + (self.MAX_ARROW - self.MIN_ARROW) * share
@@ -243,6 +247,12 @@ class BridgeView(QWidget):
         if kind == "ok":
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawPolyline(QPolygonF([QPointF(x - 10, top - 14), QPointF(x - 3, top - 7), QPointF(x + 10, top - 24)]))
+        elif kind == "unsure":
+            p.setBrush(tokens.color("surface-raised"))
+            p.drawEllipse(QPointF(x, top - 20), 11, 11)
+            p.setPen(color)
+            p.setFont(ui_font(15, QFont.Weight.Bold))
+            p.drawText(QRectF(x - 11, top - 31, 22, 22), Qt.AlignmentFlag.AlignCenter, "?")
         else:
             length = self.arrow_length(number)
             sign = -1 if kind == "up" else 1
@@ -258,6 +268,87 @@ class BridgeView(QWidget):
                    Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self.offset_label(number))
 
 
+class DotPlot(QWidget):
+    """One row per comparison, a dot per take, the mean with its 95 % interval as a bar and the ±tolerance band."""
+
+    MIN_RANGE = 5.0  # cents each side of zero, at least
+    MAX_RANGE = 50.0
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._dots: list[tuple[float, ...]] = [() for _ in S.INTONATION_PLOT_ROWS]
+        self._intervals: list[tuple[float, float | None] | None] = [None for _ in S.INTONATION_PLOT_ROWS]
+        self.tolerance = 1.0
+        self.setMinimumHeight(112)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.setAccessibleName(S.INTONATION_PLOT_NAME)
+
+    def set_stats(self, stats: Stats | None, tolerance: float) -> None:
+        self.tolerance = tolerance
+        rows = () if stats is None else (stats.offsets, stats.vs_open, stats.cross)
+        self._dots = [tuple(rows[i]) if rows else () for i in range(len(S.INTONATION_PLOT_ROWS))]
+        self._intervals = [mean_interval(values) if values else None for values in self._dots]
+        self.update()
+
+    # -- read-only values (tests and callers)
+
+    def row_names(self) -> tuple[str, ...]:
+        return S.INTONATION_PLOT_ROWS
+
+    def dots(self, row: int) -> tuple[float, ...]:
+        """The cents of each take of the comparison, in round order."""
+        return self._dots[row]
+
+    def interval(self, row: int) -> tuple[float, float | None] | None:
+        """(mean, half-width of the 95 % interval); the half-width is None under three rounds."""
+        return self._intervals[row]
+
+    def _range(self) -> float:
+        reach = [self.tolerance]
+        for values, interval in zip(self._dots, self._intervals):
+            reach += [abs(v) for v in values]
+            if interval is not None:
+                reach.append(abs(interval[0]) + (interval[1] or 0.0))
+        return min(self.MAX_RANGE, max(self.MIN_RANGE, math.ceil(max(reach) * 1.1)))
+
+    def paintEvent(self, _event) -> None:  # noqa: N802 (Qt API)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        font = ui_font(12)
+        p.setFont(font)
+        label_w = max(QFontMetrics(font).horizontalAdvance(name) for name in S.INTONATION_PLOT_ROWS) + 12
+        left, right, top, bottom = label_w, self.width() - 14, 6, self.height() - 22
+        span = max(1.0, right - left)
+        reach = self._range()
+        x_of = lambda c: left + span * (max(-reach, min(reach, c)) + reach) / (2 * reach)  # noqa: E731
+        row_h = (bottom - top) / len(self._dots)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(tokens.color("status-ok-bg"))
+        p.drawRect(QRectF(x_of(-self.tolerance), top, x_of(self.tolerance) - x_of(-self.tolerance), bottom - top))
+        p.setPen(QPen(tokens.color("tuner-baseline"), 1))
+        p.drawLine(QPointF(x_of(0), top), QPointF(x_of(0), bottom))
+        p.setPen(tokens.color("text-secondary"))
+        for edge, shift, align in ((-reach, 0, Qt.AlignmentFlag.AlignLeft), (0, -40, Qt.AlignmentFlag.AlignHCenter),
+                                   (reach, -80, Qt.AlignmentFlag.AlignRight)):
+            label = "0" if edge == 0 else f"{edge:+.0f}".replace("-", S.MINUS)
+            p.drawText(QRectF(x_of(edge) + shift, bottom + 3, 80, 16), align, label)
+        for row, (name, values, interval) in enumerate(zip(S.INTONATION_PLOT_ROWS, self._dots, self._intervals)):
+            mid = top + row_h * (row + 0.5)
+            p.setPen(tokens.color("text-secondary"))
+            p.drawText(QRectF(0, mid - 9, label_w - 8, 18), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                       name)
+            if interval is not None and interval[1] is not None:
+                p.setPen(QPen(tokens.color("status-info"), 4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
+                p.drawLine(QPointF(x_of(interval[0] - interval[1]), mid), QPointF(x_of(interval[0] + interval[1]), mid))
+            if interval is not None:
+                p.setPen(QPen(tokens.color("text-primary"), 2))
+                p.drawLine(QPointF(x_of(interval[0]), mid - 9), QPointF(x_of(interval[0]), mid + 9))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(tokens.color("accent"))
+            for i, value in enumerate(values):
+                p.drawEllipse(QPointF(x_of(value), mid + ((i % 3) - 1) * 4), 3.5, 3.5)
+
+
 class IntonationScreen(GlassPanel):
     """Shown in place of the editor: the input choice, the live tuner, the guided steps and the bridge."""
 
@@ -268,8 +359,7 @@ class IntonationScreen(GlassPanel):
         self._list_devices = devices if devices is not None else list_input_devices
         self.audio = audio if audio is not None else AudioInput(self)
         self.store = store if store is not None else IntonationStore(settings_module.intonation_path())
-        self.session = IntonationSession(tolerance=self.store.tolerance,
-                                         reference_kind=ReferenceKind(self.store.reference))
+        self.session = IntonationSession(tolerance=self.store.tolerance, rounds=self.store.rounds)
         self.scale_mm = self.store.scale_mm
         self._devices: list[InputDevice] = []
         self._tracker: PitchTracker | None = None
@@ -374,34 +464,31 @@ class IntonationScreen(GlassPanel):
             self.string_chips[number] = chip
         group.idClicked.connect(self._select)
         # the options
-        self.open_button = QPushButton(S.INTONATION_REFERENCE_OPEN)
-        self.harmonic_button = QPushButton(S.INTONATION_REFERENCE_HARMONIC)
-        references = QButtonGroup(box)
-        references.setExclusive(True)
-        for index, (kind, button) in enumerate(zip(REFERENCE_KINDS, (self.open_button, self.harmonic_button))):
-            button.setCheckable(True)
-            button.setChecked(self.session.reference_kind is kind)
-            references.addButton(button, index)
-        references.idClicked.connect(self._on_reference_id)
+        self.rounds_combo = QComboBox()
+        self.rounds_combo.setAccessibleName(S.INTONATION_ROUNDS)
+        for n in range(MIN_ROUNDS, MAX_ROUNDS + 1):
+            self.rounds_combo.addItem(str(n), n)
+        self.rounds_combo.setCurrentIndex(max(0, self.rounds_combo.findData(self.session.rounds)))
         self.tolerance_combo = self._combo(S.INTONATION_TOLERANCES, self.session.tolerance, S.INTONATION_TOLERANCE)
         self.scale_combo = self._combo(S.INTONATION_SCALES, self.scale_mm, S.INTONATION_SCALE)
+        self.rounds_combo.currentIndexChanged.connect(self._on_rounds)
         self.tolerance_combo.currentIndexChanged.connect(self._on_tolerance)
         self.scale_combo.currentIndexChanged.connect(self._on_scale)
         options = QHBoxLayout()
         options.setSpacing(8)
-        for w in (self.open_button, self.harmonic_button):
-            options.addWidget(w)
+        options.addWidget(self._caption(S.INTONATION_ROUNDS))
+        options.addWidget(self.rounds_combo)
         options.addStretch(1)
         options.addWidget(self._caption(S.INTONATION_TOLERANCE))
         options.addWidget(self.tolerance_combo)
         options.addWidget(self._caption(S.INTONATION_SCALE))
         options.addWidget(self.scale_combo)
-        # the steps and the capture progress
-        self.step_labels = [QLabel(text) for text in S.INTONATION_STEPS]
+        # the progress line and the capture progress
+        self._progress_label = QLabel("")
+        self._progress_label.setProperty("role", "step")
+        self._progress_label.setProperty("current", True)
         steps = QHBoxLayout()
-        for label in self.step_labels:
-            label.setProperty("role", "step")
-            steps.addWidget(label)
+        steps.addWidget(self._progress_label)
         steps.addStretch(1)
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
@@ -409,24 +496,35 @@ class IntonationScreen(GlassPanel):
         self._instruction = self._text_label("instruction")
         self._message_label = self._text_label("notice")
         self._info = self._text_label("reason")
+        self._spread = self._text_label("reason")
+        self._mean = self._text_label("instruction")
+        self._cross = self._text_label("notice")
+        self.plot = DotPlot()
+        self.repeat_button = QPushButton(S.INTONATION_REPEAT)
+        self.repeat_button.clicked.connect(self._on_repeat)
         self.remeasure_button = QPushButton(S.INTONATION_REMEASURE)
         self.remeasure_button.setIcon(icon("reset"))
         self.remeasure_button.clicked.connect(self._on_remeasure)
         self.next_button = QPushButton(S.INTONATION_NEXT)
         self.next_button.clicked.connect(self._on_next)
         buttons = QHBoxLayout()
+        buttons.addWidget(self.repeat_button)
         buttons.addWidget(self.remeasure_button)
         buttons.addWidget(self.next_button)
         buttons.addStretch(1)
+        self._reminder = self._text_label("hint")
+        self._reminder.setText(S.INTONATION_TOUCH_REMINDER)
         self._hint = self._text_label("hint")
         self._hint.setText(S.INTONATION_HINT)
         lay.addLayout(chips)
         lay.addLayout(options)
         lay.addLayout(steps)
         lay.addWidget(self.progress_bar)
-        for w in (self._instruction, self._message_label, self._info):
+        for w in (self._instruction, self._message_label, self._info, self._spread, self._mean, self._cross):
             lay.addWidget(w)
+        lay.addWidget(self.plot)
         lay.addLayout(buttons)
+        lay.addWidget(self._reminder)
         lay.addWidget(self._hint)
         lay.addStretch(1)
         return box
@@ -478,13 +576,25 @@ class IntonationScreen(GlassPanel):
     def hint_text(self) -> str:
         return self._hint.text()
 
-    def current_step_label(self) -> str:
-        return next((label.text() for label in self.step_labels if label.property("current")), "")
+    def reminder_text(self) -> str:
+        return self._reminder.text()
+
+    def progress_text(self) -> str:
+        return self._progress_label.text()
+
+    def spread_text(self) -> str:
+        return self._spread.text()
+
+    def mean_text(self) -> str:
+        return self._mean.text()
+
+    def cross_text(self) -> str:
+        return self._cross.text()
 
     def chip_state(self, number: int) -> str:
-        """"pending", "ok", "sharp" or "flat": the last result of the string against the current tolerance."""
+        """"pending", "ok", "sharp", "flat" or "unsure": the last result of the string against the tolerance."""
         result = self.session.results.get(number)
-        return "pending" if result is None else verdict(result.offset, self.session.tolerance).value
+        return "pending" if result is None else result.verdict(self.session.tolerance).value
 
     # ------------------------------------------------------------------ opening and closing
 
@@ -633,8 +743,8 @@ class IntonationScreen(GlassPanel):
 
     def _on_event(self, event: Event | None) -> None:
         string = self.session.string
-        if event is Event.NOT_THE_OCTAVE:
-            self._message = S.intonation_not_octave(self.session.reference_kind.value, string)
+        if event in (Event.NOT_THE_OCTAVE, Event.NOT_THE_OPEN_STRING):
+            self._message = S.intonation_refusal(self.session.step.value, string)
         elif event is not None:
             self._message = ""
         elif self.session.progress > 0:
@@ -662,13 +772,16 @@ class IntonationScreen(GlassPanel):
         else:
             self._select(number)
 
-    def _on_reference_id(self, index: int) -> None:
-        self._on_reference(REFERENCE_KINDS[index])
+    def _on_repeat(self) -> None:
+        self.session.repeat_last()
+        self._message = ""
+        self._refresh()
 
-    def _on_reference(self, kind: ReferenceKind) -> None:
-        self.session.reference_kind = kind
-        self.store.save(reference=kind.value)
-        self._on_remeasure()
+    def _on_rounds(self, index: int) -> None:
+        self.session.set_rounds(int(self.rounds_combo.itemData(index)))
+        self.store.save(rounds=self.session.rounds)
+        self._message = ""
+        self._refresh()
 
     def _on_tolerance(self, index: int) -> None:
         self.session.tolerance = float(self.tolerance_combo.itemData(index))
@@ -686,19 +799,28 @@ class IntonationScreen(GlassPanel):
             return ""
         if session.step is Step.RESULT:
             result = session.results[session.string]
-            return S.intonation_result(verdict(result.offset, session.tolerance).value, session.string,
-                                       result.offset, saddle_shift_mm(result.offset, self.scale_mm))
-        return S.intonation_instruction(session.step.value, session.reference_kind.value, session.string)
+            kind = result.verdict(session.tolerance)
+            return S.intonation_result(kind.value, session.string, result.offset,
+                                       saddle_shift_mm(result.offset, self.scale_mm), result.stats.half_width)
+        return S.intonation_instruction(session.step.value, session.string)
+
+    def _refresh_stats(self) -> None:
+        stats = self.session.current_stats()
+        spread = stats is not None and stats.n >= 2
+        self._spread.setText(S.intonation_spread(stats.sd_open, stats.sd_harmonic, stats.sd_fretted) if spread else "")
+        interval = stats is not None and stats.half_width is not None
+        self._mean.setText(S.intonation_mean(stats.mean, stats.half_width, stats.n) if interval else "")
+        warn = stats is not None and stats.cross_warning
+        self._cross.setText(S.intonation_cross(stats.mean_cross) if warn else "")
+        for label in (self._spread, self._mean, self._cross):
+            label.setVisible(bool(label.text()))
+        self.plot.set_stats(stats, self.session.tolerance)
 
     def _refresh(self) -> None:
-        """Everything the session state decides: chips, steps, texts and the bridge."""
+        """Everything the session state decides: chips, progress, texts, statistics and the bridge."""
         session = self.session
-        steps = {Step.REFERENCE: 0, Step.FRETTED: 1, Step.RESULT: 2}
-        current = steps.get(session.step)
-        for i, label in enumerate(self.step_labels):
-            label.setProperty("current", i == current)
-            label.style().unpolish(label)
-            label.style().polish(label)
+        self._progress_label.setText("" if session.step is None else S.intonation_progress(
+            session.round, session.rounds, session.step.value))
         for number, chip in self.string_chips.items():
             state = self.chip_state(number)
             chip.setChecked(number == session.string)
@@ -709,10 +831,12 @@ class IntonationScreen(GlassPanel):
         self._instruction.setText(self._instruction_text())
         self._message_label.setText(self._message)
         self._message_label.setVisible(bool(self._message))
-        detuned = (session.step in (Step.FRETTED, Step.RESULT) and session.reference_detune is not None
-                   and abs(session.reference_detune) > DETUNED_CENTS)
-        self._info.setText(S.intonation_detuned(session.reference_detune) if detuned else "")
+        detune = session.open_detune
+        detuned = detune is not None and abs(detune) > DETUNED_CENTS
+        self._info.setText(S.intonation_detuned(detune) if detuned else "")
         self._info.setVisible(detuned)
+        self._refresh_stats()
+        self.repeat_button.setEnabled(session.can_repeat)
         self.progress_bar.setValue(round(session.progress * 100))
-        self.bridge.set_results({n: (r.offset, verdict(r.offset, session.tolerance))
-                                 for n, r in session.results.items()}, session.string)
+        self.bridge.set_results({n: (r.offset, r.verdict(session.tolerance)) for n, r in session.results.items()},
+                                session.string)

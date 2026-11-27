@@ -21,7 +21,7 @@ from jmc_guitar_zoom.ui.painted import PaintedText
 
 from fixture_files import EFFECTS  # noqa: E402
 SIZES = [(1440, 900), (2000, 1056)]
-STATES = ["no-patch", "patch-selected", "effects-manager", "effects-repair", "not-installed", "patch-warnings", "unused-view", "usage-many", "usage-one", "usage-none", "usage-incomplete", "tuner", "intonation", "offline", "bank", "bank-empty", "bank-drag", *UPDATE_STATES]
+STATES = ["no-patch", "patch-selected", "effects-manager", "effects-repair", "not-installed", "patch-warnings", "unused-view", "usage-many", "usage-one", "usage-none", "usage-incomplete", "tuner", "intonation", "intonation-result", "offline", "bank", "bank-empty", "bank-drag", *UPDATE_STATES]
 SLACK = 2  # px of rounding the metrics may differ from the painted text by
 
 
@@ -111,7 +111,7 @@ def settle(qtbot, w: MainWindow, size) -> None:
 
 
 def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
-    if state == "intonation":  # no real sound card: two listed inputs and an input that never delivers
+    if state in ("intonation", "intonation-result"):  # no real sound card: two listed inputs and an input that never delivers
         from PySide6.QtCore import QObject, Signal
 
         from jmc_guitar_zoom.audio.capture import InputDevice
@@ -197,6 +197,16 @@ def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
         qtbot.waitUntil(lambda: w.tuner_panel.isVisible() or not w.isVisible(), timeout=3000)
     elif state == "intonation":  # the audio screen: two inputs (the second with four channels), a note playing
         w.intonation_button.click()
+    elif state == "intonation-result":  # the fullest layout: a not conclusive result with every statistics line
+        from jmc_guitar_zoom.audio.intonation import Round, Stats, Step, StringResult
+
+        w.intonation_button.click()
+        session = w.intonation_panel.session
+        rounds = tuple(Round(82.41, 2 * 82.41 * 2 ** (2.4 / 1200), 2 * 82.41 * 2 ** ((2.4 + d) / 1200))
+                       for d in (-4.0, 0.0, 4.0, 1.0, 2.0))
+        session.results[6] = StringResult(6, Stats(rounds))
+        session.string, session.step = 6, Step.RESULT
+        w.intonation_panel.tolerance_combo.setCurrentIndex(0)  # redraws the screen
     return w
 
 
