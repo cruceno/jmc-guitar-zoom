@@ -134,6 +134,8 @@ QPushButton[chip="true"][result="sharp"] { background: $status_danger_bg; border
 QPushButton[chip="true"][result="flat"] { background: $status_warn_bg; border: 1px solid $status_warn; }
 QPushButton[chip="true"][result="unsure"] { background: $status_info_bg; border: 1px solid $status_info; }
 QPushButton[chip="true"]:checked { border: 2px solid $accent; }
+QPushButton[stepbar="true"] { padding: 0 14px; }
+QPushButton[stepbar="true"]:checked { background: $surface_selected; border: 2px solid $accent; font-weight: 600; }
 QLabel[role="step"] { color: $text_secondary; border: 1px solid transparent; border-radius: 12px; padding: 3px 12px; }
 QLabel[role="step"][current="true"] { color: $text_primary; background: $surface_selected; border: 1px solid $accent; font-weight: 600; }
 QLabel[role="instruction"] { color: $text_primary; font-size: 17px; }

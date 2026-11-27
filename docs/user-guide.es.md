@@ -65,20 +65,68 @@ desvío: el centro es «AFINADO». **La pedalera queda muda mientras el afinador
 la tecla T lo apagan. La pedalera informa el desvío en 15 pasos (de −7 a +7), no en cents: sirve para afinar, pero no
 para medir la octavación.
 
-### Afinador de precisión y octavación (placa de audio)
+### Calibración (placa de audio)
 
-La pantalla **Afinación y octavación** mide la nota directamente desde una placa de sonido, con una décima de cent de
-resolución, y no necesita la pedalera conectada.
+La pantalla **Calibración** reúne los cuatro ajustes de una guitarra en el orden en que conviene hacerlos y mide la
+nota directamente desde una placa de sonido, con una décima de cent de resolución. No necesita la pedalera conectada.
 
-- **Abrirla:** el botón del puente en la barra superior (aparece cuando hay lugar), **Biblioteca > Afinación y
-  octavación…** o la tecla **O**. «Cerrar» o la tecla O la cierran.
+- **Abrirla:** el botón del puente en la barra superior (aparece cuando hay lugar), **Biblioteca > Calibración…** o la
+  tecla **O**. «Cerrar» o la tecla O la cierran. La pantalla recuerda el último paso en que estaba; la primera vez
+  abre en el paso 1.
+- **Pasos:** «1 Curvatura del mástil», «2 Acción», «3 Pastillas» y «4 Octavación». Se puede ir a cualquiera, pero el
+  **orden recomendado es curvatura → acción → pastillas → octavación**: la octavación va última porque las otras la
+  cambian. Cambiar la curvatura o la altura de las cuerdas mueve la afinación del traste 12, y la altura de las
+  pastillas puede tirar de las cuerdas y desafinarlas.
 - **Entrada:** elija el dispositivo y el canal donde llega la guitarra: directo a la entrada de instrumento de la placa,
   o la salida de la pedalera conectada a la placa. Sirve cualquier placa que el sistema reconozca y la aplicación
   recuerda la elección. El medidor de nivel avisa si la señal satura (baje la ganancia) o es baja (súbala): el nivel
   importa más que los bits del conversor.
-- **Sonido:** use un sonido limpio, sin chorus, pitch ni modulación, y con el afinador de la pedalera apagado.
-- **Afinador:** la nota, la octava, los cents con un decimal y la frecuencia se ven siempre; «Estable» aparece cuando
-  la nota dejó de moverse después del ataque.
+- **Afinador:** la nota, la octava, los cents con un decimal y la frecuencia se ven siempre, en cualquier paso (después
+  de cada ajuste hay que volver a afinar); «Estable» aparece cuando la nota dejó de moverse después del ataque.
+- **Presets:** en los pasos 1 a 3, el selector **Estilo de guitarra** ofrece «Estilo Fender (simple)», «Estilo Gibson
+  (humbucker)» y «Personalizado». Son **valores típicos de partida, no especificaciones de fábrica**: cada guitarra y
+  cada estilo de toque piden los suyos. Los objetivos de cada paso se pueden editar; al hacerlo, el selector pasa a
+  «Personalizado» con esos valores, y la aplicación los recuerda.
+
+#### Paso 1: curvatura del mástil
+
+La curvatura es la flexión hacia delante del mástil. **Método:** ponga una cejilla en el traste 1, pise la cuerda 6 en
+el traste donde el mástil se une al cuerpo y mida con una galga la luz entre la cuerda y el traste 7 u 8. Escriba la
+medida en mm (de 0,00 a 2,00). La aplicación la compara con el objetivo del preset y dice si está bien o si hay que
+**apretar** la tuerca del alma (sentido horario, si hay demasiada luz) o **aflojarla** (sentido antihorario, si falta).
+El dibujo muestra el mástil de lado con la curvatura exagerada (la medida en línea llena, el objetivo en línea de
+trazos) y la tuerca con una flecha curva del giro. **Como máximo 1/8 de vuelta por vez; afine y espere unos minutos
+antes de medir de nuevo.** Si la tuerca del alma no gira con facilidad, no la fuerce: consulte a un luthier.
+
+#### Paso 2: acción
+
+La acción es la altura de la cuerda sobre el traste 12. **Método:** mida desde el borde superior del traste 12 hasta
+la parte inferior de la cuerda. Las cuerdas 6 y 1 son necesarias; las demás son opcionales (el objetivo de las del
+medio se interpola entre los de la 6 y la 1). Para cada cuerda medida, la aplicación dice si la acción está en el
+objetivo o cuánto **subir o bajar la selleta**: el traste 12 está a la mitad de la escala, así que la selleta se mueve
+**unas 2 veces el error medido**. Una vista de las seis selletas muestra una flecha por cuerda. Además se dibuja y
+se escribe el **perfil de selletas** del radio del diapasón (7,25", 9,5", 12", 16"; el del preset, editable), por
+ejemplo «Perfil de selletas para radio 9,5": cuerdas 4 y 3 +1,35 mm, cuerdas 5 y 2 +0,90 mm respecto de 6 y 1».
+
+#### Paso 3: pastillas
+
+La altura se mide con la cuerda pisada en el último traste, desde la parte superior del polo hasta la parte inferior
+de la cuerda: la cuerda 6 del lado graves y la 1 del lado agudos. Elija la **posición del selector** (las del preset,
+cada una con su tipo de pastilla: simple, humbucker o P-90), escriba las dos alturas y la aplicación dice, para cada
+lado, si hay que subir o bajar la pastilla, con una flecha en el dibujo.
+
+La **ayuda con audio** ayuda a verificar el resultado:
+
+- **Medir balance:** toque cada cuerda al aire, de la 6 a la 1, con la misma fuerza. La aplicación pide «Ronda i de n ·
+  Toque la cuerda s al aire» (el número de **Rondas** es el mismo de la octavación, de 3 a 10) y rechaza una nota que
+  no es la cuerda pedida. Al final dibuja el nivel de cada cuerda respecto de la media, con su dispersión, y dice si
+  los graves o los agudos suenan más fuerte (la diferencia tolerada es 2 dB) y qué pastilla bajar o subir. Si mide
+  dos o más posiciones del selector, también compara una posición con otra y marca las que suenan más bajo.
+- **Comprobar atracción magnética:** pise la cuerda 6 en el traste 15 y déjela sonar. Si la nota ondula, es decir, si el
+  tono oscila más de 4 cents, la pastilla puede estar demasiado cerca de la cuerda: la aplicación avisa y sugiere bajar
+  el lado graves.
+
+#### Paso 4: octavación
 
 **Octavación estadística, cuerda por cuerda.** Una sola toma mide también el pulso de quien toca, así que la
 herramienta pide **rondas** repetidas y juzga con la media y su incertidumbre, para no calibrar ruido. Elija la

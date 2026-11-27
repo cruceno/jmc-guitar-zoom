@@ -1,4 +1,4 @@
-"""The «Afinación y octavación» screen: live tuner from the audio input, guided assistant and the painted bridge."""
+"""The «Calibración» screen, step 4 (intonation): live tuner from the audio input, guided assistant, painted bridge."""
 import json
 import re
 
@@ -64,6 +64,7 @@ def make_screen(qtbot, devices=DEVICES, audio=None, store=None, rounds=None, tol
     screen = IntonationScreen(root, devices=lambda: list(devices), audio=audio,
                               store=store)
     screen.open_screen()
+    screen.go_to_step(4)  # the assistant is the fourth step of the calibration; the screen opens on the first
     return screen, audio
 
 
@@ -590,8 +591,8 @@ def test_the_button_opens_and_closes_the_screen_without_a_pedal(qtbot, catalog, 
     w = MainWindow(catalog)
     qtbot.addWidget(w)
     assert w.intonation_button.isEnabled() and w.intonation_button.isCheckable()
-    assert w.intonation_button.accessibleName() == "Afinación y octavación"
-    assert w.intonation_button.toolTip() == "Afinación y octavación con la placa de audio (O)"
+    assert w.intonation_button.accessibleName() == "Calibración"
+    assert w.intonation_button.toolTip() == "Calibración: curvatura, acción, pastillas y octavación (O)"
     w.intonation_button.click()
     assert w.intonation_panel.isVisibleTo(w) and not w.splitter.isVisibleTo(w)
     assert fakes.started == [("dev1", 0)]
@@ -719,7 +720,7 @@ def test_in_the_approved_1440_header_the_button_gives_way_and_nothing_else_chang
 
 def test_the_library_menu_entry_opens_and_closes_the_screen_and_follows_the_button_rule(qtbot, themed, fakes):
     w = offline_window(qtbot, themed, fakes, 1440)
-    assert w.intonation_action.text().startswith("Afinación y octavación…")
+    assert w.intonation_action.text().startswith("Calibración…")
     assert w.intonation_action.isEnabled() and w.intonation_action in w.library_button.menu().actions()
     w.intonation_action.trigger()
     assert w.intonation_panel.isVisibleTo(w) and w.intonation_button.isChecked()

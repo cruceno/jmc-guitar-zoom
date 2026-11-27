@@ -1,6 +1,7 @@
-"""«Afinación y octavación»: a tuner and a guided intonation assistant that listen to a sound-card input.
+"""«Calibración»: four steps (neck relief, action, pickups, intonation) around a tuner that listens to a sound card.
 
-The screen replaces the editor like the pedal tuner does, but it needs no pedal: samples from
+The screen replaces the editor like the pedal tuner does, but it needs no pedal. The input bar and the live tuner
+stay for every step; steps 1 to 3 live in ``calibration.py``. Step 4 is the intonation assistant: samples from
 ``AudioInput`` go through a ``PitchTracker``; its readings drive the live tuner, the level meter and an
 ``IntonationSession`` (rounds of the open string, the 12th-fret harmonic and the fretted 12th, then a verdict
 from the mean offset and its confidence interval). The result of every string is drawn on a bridge seen from
@@ -25,10 +26,11 @@ from . import settings as settings_module
 from . import strings as S
 from . import tokens
 from .fonts import display_font, ui_font
+from .calibration import ActionPanel, PickupsPanel, PresetRow, ReliefPanel, StepBar
 from .glass import BackdropRoot, GlassPanel
 from .icons import icon
 from .painted import KeyChipButton, PaintedText, SectionLabel
-from .settings import IntonationStore
+from .settings import CalibrationStore, IntonationStore
 
 LOW_LEVEL_DB = -40.0  # a note quieter than this peak asks for more gain
 METER_FLOOR_DB = -60.0
@@ -139,13 +141,15 @@ class BridgeView(QWidget):
     FULL_SCALE_CENTS = 10.0  # the arrow reaches its full length at this offset
     SADDLE_W = 28
     SADDLE_H = 20
+    UNSURE_RADIUS = 15  # the «?» mark of a not conclusive string
+    UNSURE_DX = 22  # its centre sits this far to the left of the string, so the string line never crosses it
     STAGGER = {6: 9, 5: 6, 4: 3, 3: 0, 2: 0, 1: -3}  # the bass saddles sit further from the neck
 
     def __init__(self) -> None:
         super().__init__()
         self.active_string: int | None = None
         self._results: dict[int, tuple[float, Verdict]] = {}
-        self.setMinimumSize(460, 200)
+        self.setMinimumSize(460, 186)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setAccessibleName(S.INTONATION_BRIDGE_NAME)
 
@@ -248,11 +252,14 @@ class BridgeView(QWidget):
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawPolyline(QPolygonF([QPointF(x - 10, top - 14), QPointF(x - 3, top - 7), QPointF(x + 10, top - 24)]))
         elif kind == "unsure":
+            radius = self.UNSURE_RADIUS
+            mark = QPointF(x - self.UNSURE_DX, top - radius - 6)
             p.setBrush(tokens.color("surface-raised"))
-            p.drawEllipse(QPointF(x, top - 20), 11, 11)
+            p.drawEllipse(mark, radius, radius)
             p.setPen(color)
-            p.setFont(ui_font(15, QFont.Weight.Bold))
-            p.drawText(QRectF(x - 11, top - 31, 22, 22), Qt.AlignmentFlag.AlignCenter, "?")
+            p.setFont(ui_font(20, QFont.Weight.Bold))
+            p.drawText(QRectF(mark.x() - radius, mark.y() - radius, 2 * radius, 2 * radius),
+                       Qt.AlignmentFlag.AlignCenter, "?")
         else:
             length = self.arrow_length(number)
             sign = -1 if kind == "up" else 1
@@ -354,11 +361,15 @@ class IntonationScreen(GlassPanel):
 
     exit_requested = Signal()
 
-    def __init__(self, root: BackdropRoot, *, devices=None, audio=None, store: IntonationStore | None = None) -> None:
+    def __init__(self, root: BackdropRoot, *, devices=None, audio=None, store: IntonationStore | None = None,
+                 calibration: CalibrationStore | None = None) -> None:
         super().__init__(root)
         self._list_devices = devices if devices is not None else list_input_devices
         self.audio = audio if audio is not None else AudioInput(self)
         self.store = store if store is not None else IntonationStore(settings_module.intonation_path())
+        self.calibration = (calibration if calibration is not None
+                            else CalibrationStore(settings_module.calibration_path()))
+        self._step = self.calibration.step
         self.session = IntonationSession(tolerance=self.store.tolerance, rounds=self.store.rounds)
         self.scale_mm = self.store.scale_mm
         self._devices: list[InputDevice] = []
@@ -379,8 +390,12 @@ class IntonationScreen(GlassPanel):
         self.exit_button.setIcon(icon("x"))
         self.exit_button.setToolTip(S.INTONATION_EXIT)
         self.exit_button.clicked.connect(self.exit_requested)
+        self.step_bar = StepBar()
+        self.step_buttons = self.step_bar.buttons
         top = QHBoxLayout()
-        top.addWidget(self.title, stretch=1)
+        top.addWidget(self.title)
+        top.addSpacing(18)
+        top.addWidget(self.step_bar, stretch=1)
         top.addWidget(self.exit_button)
 
         self.device_combo = QComboBox()
@@ -408,23 +423,43 @@ class IntonationScreen(GlassPanel):
         self._frequency = PaintedText("", ui_font(16), "text-secondary")
         self._stable = PaintedText("", display_font(16, 600), "tuner-in-tune")
         self.meter = CentsMeter()
-        tuner = QVBoxLayout()
+        # the tuner serves every step: centred in step 4, on top with the step's drawing under it in steps 1 to 3
+        self._tuner_column = tuner = QVBoxLayout()
         tuner.addStretch(1)
         for w in (self._note, self._cents, self._frequency, self.meter, self._stable):
             tuner.addWidget(w)
+        self._tuner_tail = tuner.count()
         tuner.addStretch(1)
 
+        self._order = self._text_label("hint")
+        self._order.setText(S.CALIBRATION_ORDER)
+        self.preset_row = PresetRow()
+        self.preset_combo = self.preset_row.combo
+        self.preset_row.set_name(self.calibration.preset)
+        self.relief = ReliefPanel(self.calibration)
+        self.action = ActionPanel(self.calibration)
+        self.pickups = PickupsPanel(self.calibration, self.session.rounds)
         self.assistant_box = self._build_assistant()
+        self._pages = {1: self.relief, 2: self.action, 3: self.pickups, 4: self.assistant_box}
+        self._drawings = {1: self.relief.drawing, 2: self.action.drawing, 3: self.pickups.drawing}
+        for drawing in self._drawings.values():
+            tuner.insertWidget(self._tuner_tail, drawing, stretch=1)
+        right = QVBoxLayout()
+        right.setSpacing(8)
+        right.addWidget(self.preset_row)
+        for page in self._pages.values():
+            right.addWidget(page)
         body = QHBoxLayout()
         body.setSpacing(24)
         body.addLayout(tuner, stretch=5)
-        body.addWidget(self.assistant_box, stretch=6)
+        body.addLayout(right, stretch=6)
 
         self.bridge = BridgeView()
         lay = QVBoxLayout(self)
         lay.setContentsMargins(24, 14, 24, 14)
         lay.setSpacing(8)
         lay.addLayout(top)
+        lay.addWidget(self._order)
         lay.addLayout(device_row)
         lay.addWidget(self._status)
         lay.addLayout(body, stretch=1)
@@ -433,6 +468,12 @@ class IntonationScreen(GlassPanel):
         self.device_combo.currentIndexChanged.connect(self._on_device_changed)
         self.channel_combo.currentIndexChanged.connect(self._on_channel_changed)
         self.refresh_button.clicked.connect(self._on_refresh)
+        self.step_bar.step_chosen.connect(self.go_to_step)
+        self.preset_row.preset_selected.connect(self._on_preset_selected)
+        for panel in (self.relief, self.action, self.pickups):
+            panel.changed.connect(self._on_calibration_edited)
+        self.pickups.rounds_changed.connect(self._on_pickup_rounds)
+        self._apply_step()
 
     @staticmethod
     def _text_label(role: str) -> QLabel:
@@ -591,6 +632,14 @@ class IntonationScreen(GlassPanel):
     def cross_text(self) -> str:
         return self._cross.text()
 
+    def order_text(self) -> str:
+        return self._order.text()
+
+    @property
+    def step(self) -> int:
+        """The calibration step shown: 1 relief, 2 action, 3 pickups, 4 intonation."""
+        return self._step
+
     def chip_state(self, number: int) -> str:
         """"pending", "ok", "sharp", "flat" or "unsure": the last result of the string against the tolerance."""
         result = self.session.results.get(number)
@@ -608,6 +657,7 @@ class IntonationScreen(GlassPanel):
         self._refresh()
 
     def close_screen(self) -> None:
+        self.pickups.cancel()
         self.audio.stop()
         self._tracker = None
 
@@ -633,6 +683,7 @@ class IntonationScreen(GlassPanel):
         self.device_combo.setEnabled(has_input)
         self.channel_combo.setEnabled(has_input)
         self.assistant_box.setEnabled(has_input)
+        self.pickups.set_audio_enabled(has_input)
         self._set_status("" if has_input else S.INTONATION_NO_INPUT)
 
     def _fill_channels(self, device: InputDevice, wanted: int) -> None:
@@ -706,8 +757,10 @@ class IntonationScreen(GlassPanel):
     def _on_reading(self, reading: PitchReading) -> None:
         self._show_reading(reading)
         self._show_level(reading)
-        if self.assistant_box.isEnabled():
+        if self._step == 4 and self.assistant_box.isEnabled():
             self._on_event(self.session.feed(reading))
+        elif self._step == 3:
+            self.pickups.feed(reading)
         self.progress_bar.setValue(round(self.session.progress * 100))
 
     def _show_reading(self, reading: PitchReading | None) -> None:
@@ -752,6 +805,45 @@ class IntonationScreen(GlassPanel):
         if event is not None or self._message != self._message_label.text():
             self._refresh()
 
+    # ------------------------------------------------------------------ the calibration steps
+
+    def go_to_step(self, number: int) -> None:
+        """Show step 1..4 and remember it; leaving the pickups step stops its audio helpers."""
+        if number == self._step:
+            return
+        if self._step == 3:
+            self.pickups.cancel()
+        self._step = number
+        self.calibration.set_step(number)
+        self._apply_step()
+
+    def _apply_step(self) -> None:
+        self.step_bar.set_step(self._step)
+        for number, page in self._pages.items():
+            page.setVisible(number == self._step)
+        for number, drawing in self._drawings.items():
+            drawing.setVisible(number == self._step)
+        self.preset_row.setVisible(self._step != 4)
+        self.bridge.setVisible(self._step == 4)
+        # steps 1 to 3: the tuner on top and the drawing under it; step 4: the tuner centred
+        self._tuner_column.setStretch(0, 1 if self._step == 4 else 0)
+        self._tuner_column.setStretch(self._tuner_column.count() - 1, 1 if self._step == 4 else 0)
+
+    def _on_preset_selected(self, name: str) -> None:
+        self.calibration.select_preset(name)
+        self._reload_panels()
+
+    def _on_calibration_edited(self) -> None:
+        self.preset_row.set_name(self.calibration.preset)
+        self._reload_panels()
+
+    def _reload_panels(self) -> None:
+        for panel in (self.relief, self.action, self.pickups):
+            panel.load()
+
+    def _on_pickup_rounds(self, rounds: int) -> None:
+        self.rounds_combo.setCurrentIndex(max(0, self.rounds_combo.findData(rounds)))
+
     # ------------------------------------------------------------------ the assistant
 
     def _select(self, number: int) -> None:
@@ -780,6 +872,7 @@ class IntonationScreen(GlassPanel):
     def _on_rounds(self, index: int) -> None:
         self.session.set_rounds(int(self.rounds_combo.itemData(index)))
         self.store.save(rounds=self.session.rounds)
+        self.pickups.set_rounds(self.session.rounds)
         self._message = ""
         self._refresh()
 

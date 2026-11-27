@@ -20,9 +20,12 @@ Spanish version: [README.es.md](README.es.md). The interface of the application 
   and memory meters, and a searchable effect catalog with favourites.
 - **Live edit.** With "En vivo" on, parameter and on/off changes are sent to the pedal while you edit.
 - **Tuner.** The pedal's tuner shown on screen (the pedal is muted while it is on).
-- **Precise tuner and intonation assistant.** Reads any sound-card input (the guitar straight in, or the pedal's
-  output), shows cents to a tenth and guides the octave check of each string step by step, with a drawn bridge whose
-  saddle arrows say which way to move each saddle. It needs no pedal.
+- **Calibration.** Four steps in a luthier's order, with a precise tuner (any sound-card input, cents to a tenth) always
+  on screen: 1 neck relief (feeler-gauge measure, truss-rod turn drawn), 2 action (12th-fret measure per string, saddle
+  moves and the saddle arc of the fretboard radius), 3 pickup height (per side, with audio help for the balance between
+  strings and positions and a magnetic-pull check) and 4 intonation (statistical rounds, with a drawn bridge whose saddle
+  arrows say which way to move each saddle). The targets come from editable presets (typical starting values). It needs
+  no pedal.
 - **Librarian and backups.** Read all patches, write one or all of them, import and export `.zptc` files, back up
   the patches and the pedal's files. Every write is preceded by a backup and followed by a read-back check.
 - **Patch bank.** Keep patches outside the pedal and load them into any position; an occupied position's patch goes

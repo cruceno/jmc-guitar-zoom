@@ -22,9 +22,13 @@ Versión en inglés: [README.md](README.md).
 - **Edición en vivo.** Con «En vivo» activado, los cambios de parámetros y de encendido se envían a la pedalera
   mientras se edita.
 - **Afinador.** El afinador de la pedalera en pantalla (la pedalera queda muda mientras está encendido).
-- **Afinador de precisión y asistente de octavación.** Lee cualquier entrada de la placa de sonido (la guitarra
-  directo o la salida de la pedalera), muestra los cents con un decimal y guía paso a paso la octavación de cada
-  cuerda, con un puente dibujado cuyas flechas indican hacia dónde mover cada selleta. No necesita la pedalera.
+- **Calibración.** Cuatro pasos en el orden del luthier, con un afinador de precisión (cualquier entrada de la placa de
+  sonido, cents con un decimal) siempre a la vista: 1 curvatura del mástil (medida con galga, con el giro del alma
+  dibujado), 2 acción (medida en el traste 12 por cuerda, movimiento de las selletas y perfil de selletas del radio del
+  diapasón), 3 altura de las pastillas (por lado, con ayuda de audio para el balance entre cuerdas y entre posiciones y
+  una prueba de atracción magnética) y 4 octavación (rondas estadísticas, con un puente dibujado cuyas flechas indican
+  hacia dónde mover cada selleta). Los objetivos salen de presets editables (valores típicos de partida). No necesita
+  la pedalera.
 - **Biblioteca y copias de seguridad.** Lectura de todos los patches, escritura de uno o de todos, importación y
   exportación de archivos `.zptc`, copia de seguridad de los patches y de los archivos de la pedalera. Cada
   escritura va precedida de una copia y seguida de una verificación por relectura.

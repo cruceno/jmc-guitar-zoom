@@ -53,6 +53,16 @@ def private_intonation(monkeypatch, tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def private_calibration(monkeypatch, tmp_path_factory):
+    """The remembered calibration step and presets: a private file per test, never the user's config."""
+    from jmc_guitar_zoom.ui import settings
+
+    path = tmp_path_factory.mktemp("config-calibration") / settings.CALIBRATION_FILE_NAME
+    monkeypatch.setattr(settings, "calibration_path", lambda: path)
+    return path
+
+
+@pytest.fixture(autouse=True)
 def no_effect_list_read_after_connect(monkeypatch):
     """After the patches the editor reads the pedal's effect list (a PC-mode session with file reads). Most tests
     script exact traffic and have no pedal files, so they run without that read; the tests of the installed
