@@ -62,7 +62,40 @@ cambia lo que se ve en pantalla.
 
 El botón **Afinador** (o la tecla **T**) enciende el afinador de la pedalera y abre una pantalla con la nota y el
 desvío: el centro es «AFINADO». **La pedalera queda muda mientras el afinador está encendido.** «Salir del afinador» o
-la tecla T lo apagan.
+la tecla T lo apagan. La pedalera informa el desvío en 15 pasos (de −7 a +7), no en cents: sirve para afinar, pero no
+para medir la octavación.
+
+### Afinador de precisión y octavación (placa de audio)
+
+La pantalla **Afinación y octavación** mide la nota directamente desde una placa de sonido, con una décima de cent de
+resolución, y no necesita la pedalera conectada.
+
+- **Abrirla:** el botón del puente en la barra superior (aparece cuando hay lugar), **Biblioteca > Afinación y
+  octavación…** o la tecla **O**. «Cerrar» o la tecla O la cierran.
+- **Entrada:** elija el dispositivo y el canal donde llega la guitarra: directo a la entrada de instrumento de la placa,
+  o la salida de la pedalera conectada a la placa. Sirve cualquier placa que el sistema reconozca y la aplicación
+  recuerda la elección. El medidor de nivel avisa si la señal satura (baje la ganancia) o es baja (súbala): el nivel
+  importa más que los bits del conversor.
+- **Sonido:** use un sonido limpio, sin chorus, pitch ni modulación, y con el afinador de la pedalera apagado.
+- **Afinador:** la nota, la octava, los cents con un decimal y la frecuencia se ven siempre; «Estable» aparece cuando
+  la nota dejó de moverse después del ataque.
+
+**Octavación paso a paso.** Elija la cuerda (empieza por la 6) y siga los pasos; cada uno se toma solo cuando la nota
+está estable, así que las manos quedan en la guitarra:
+
+1. **Referencia:** toque la cuerda al aire (o su armónico del traste 12, si eligió «Armónico del traste 12») y déjela
+   sonar. Si la cuerda está desafinada más de 5 cents, la pantalla lo avisa.
+2. **Traste 12:** pise la cuerda en el traste 12, sin apretar de más, y déjela sonar. Una nota que no es la octava de
+   la referencia se rechaza con un aviso.
+3. **Resultado:** el desvío en cents frente a la tolerancia (±1 cent si no elige otra). El puente dibujado muestra la
+   selleta de esa cuerda con una flecha **hacia el mástil** si el traste 12 está bajo, **alejándose del mástil** si
+   está alto, o una marca si está en tolerancia. Los mm son una estimación según la escala elegida (628, 635, 648 o
+   650 mm).
+
+Después de mover una selleta, afine la cuerda y pulse **Medir de nuevo**; **Siguiente cuerda** pasa a la próxima que
+falte medir o que no esté en tolerancia. Se comparan dos notas de la misma entrada, así que el resultado no depende
+del La de referencia ni del reloj de la placa. Con un sonido limpio, la precisión esperada ronda ±0,5 cent; pulse con
+suavidad, porque un ataque fuerte sube la nota en el primer instante.
 
 ## 5. Biblioteca: copias, archivos y banco
 
@@ -134,6 +167,10 @@ Los archivos descargados son de Zoom y se guardan solo en su equipo, para su uso
 
 - **No conecta:** cierre Guitar Lab y cualquier programa que use la pedalera; reconecte el USB; en Linux, compruebe
   que su usuario pertenece al grupo `audio`.
+- **No aparecen entradas de audio:** conecte la placa y pulse el botón de buscar entradas de nuevo. En Linux la
+  aplicación usa PulseAudio o PipeWire (biblioteca `libpulse`).
+- **La nota no se estabiliza:** suba la ganancia si el medidor marca señal baja, apague los efectos de modulación y
+  deje sonar la cuerda sin tocar las demás.
 - **El catálogo está vacío:** use el actualizador, o indique carpetas con archivos `.zd2` con `--catalog`.
 - **No se puede guardar:** el mensaje indica el motivo (efectos no instalados, patch demasiado grande, modelo de solo
   lectura, sin conexión).
