@@ -650,6 +650,7 @@ EFFECTS_BUTTON = "Efectos"
 EFFECTS_TIP = "Instala o quita efectos de la pedalera. La edición de patches queda bloqueada mientras está abierta"
 CATALOG_MANAGE = "Administrar"
 LIBRARY_EFFECTS = "Instalar o quitar efectos…"
+LIBRARY_INTONATION = "Calibración…"
 EFFECTS_TITLE = "Efectos de la pedalera"
 EFFECTS_CLOSE = "Cerrar"
 EFFECTS_INSTALLED = "Instalados"
@@ -1193,3 +1194,271 @@ def update_reloaded(ok: int) -> str:
 
 def update_library_folder(path: object) -> str:
     return f"Se guardan en {path}"
+
+
+# ----------------------------------------------------------------- intonation (audio input)
+
+INTONATION = "Calibración"
+INTONATION_TIP = "Calibración: curvatura, acción, pastillas y octavación (O)"
+INTONATION_TITLE = "Calibración"
+INTONATION_EXIT = "Cerrar"
+INTONATION_KEY = "O"
+INTONATION_NO_INPUT = "No hay entradas de audio disponibles"
+INTONATION_INPUT_FAILED = "No se pudo abrir la entrada de audio"
+INTONATION_REFRESH = "Buscar entradas de audio de nuevo"
+INTONATION_DEVICE = "Entrada de audio"
+INTONATION_CHANNEL = "Canal de entrada"
+INTONATION_CLIPPING = "Saturación: baje la ganancia de la placa"
+INTONATION_LOW_LEVEL = "Señal baja: suba la ganancia"
+INTONATION_STABLE = "Estable"
+INTONATION_NO_NOTE = "—"
+INTONATION_ROUNDS = "Rondas"
+INTONATION_ROUNDS_RANGE = (3, 10)
+INTONATION_TOLERANCE = "Tolerancia"
+INTONATION_SCALE = "Escala"
+INTONATION_NOTE_NAMES = {"open": "Al aire", "harmonic": "Armónico 12", "fretted": "Traste 12"}
+INTONATION_RESULT_STEP = "Resultado"
+INTONATION_TOUCH_REMINDER = "Pulse siempre con la misma fuerza, suave."
+INTONATION_PLOT_NAME = "Desvíos de cada ronda, con su media y su intervalo"
+INTONATION_PLOT_ROWS = ("Traste 12 − armónico", "Traste 12 − 2×aire", "Armónico − 2×aire")
+INTONATION_REPEAT = "Repetir última toma"
+INTONATION_REMEASURE = "Medir de nuevo"
+INTONATION_NEXT = "Siguiente cuerda"
+INTONATION_ALL_OK = "Las seis cuerdas están en tolerancia."
+INTONATION_HINT = "Use un sonido limpio (sin modulación ni pitch) y el afinador de la pedalera apagado."
+INTONATION_BRIDGE_NECK = "Hacia el mástil"
+INTONATION_BRIDGE_NAME = "Puente de la guitarra visto desde arriba"
+INTONATION_STRING_NAMES = {6: "Mi", 5: "La", 4: "Re", 3: "Sol", 2: "Si", 1: "Mi"}
+INTONATION_VERDICT_NAMES = {None: "sin medir", "ok": "en tolerancia", "sharp": "alta", "flat": "baja",
+                            "unsure": "no concluyente"}
+INTONATION_SCALES = (("628 mm (24,75\")", 628.0), ("635 mm (25\")", 635.0), ("648 mm (25,5\")", 648.0),
+                     ("650 mm (clásica)", 650.0))
+INTONATION_TOLERANCES = (("±0,5", 0.5), ("±1", 1.0), ("±2", 2.0))
+MINUS = "−"
+
+
+def decimal(value: float, digits: int = 1, signed: bool = False) -> str:
+    """A number the way the interface writes it: decimal comma and a true minus sign."""
+    value = round(value, digits) + 0.0  # -0.04 rounds to -0.0: never write a minus zero
+    text = f"{value:+.{digits}f}" if signed else f"{value:.{digits}f}"
+    return text.replace(".", ",").replace("-", MINUS)
+
+
+def string_chip(number: int) -> str:
+    return f"{number} {INTONATION_STRING_NAMES[number]}"
+
+
+def string_chip_name(number: int, verdict: str | None) -> str:
+    return f"Cuerda {string_chip(number)}: {INTONATION_VERDICT_NAMES[verdict]}"
+
+
+def intonation_cents(cents: float) -> str:
+    return f"{decimal(cents, 1, True)} cents"
+
+
+def intonation_hz(hz: float) -> str:
+    return f"{decimal(hz, 2)} Hz"
+
+
+def intonation_progress(round_number: int, rounds: int, step: str) -> str:
+    if step == "result":
+        return INTONATION_RESULT_STEP
+    return f"Ronda {round_number} de {rounds} · {INTONATION_NOTE_NAMES[step]}"
+
+
+def intonation_instruction(step: str, number: int) -> str:
+    if step == "open":
+        return f"Toque la cuerda {number} al aire y déjela sonar."
+    if step == "harmonic":
+        return f"Toque el armónico del traste 12 de la cuerda {number} y déjelo sonar."
+    return f"Pise la cuerda {number} en el traste 12, sin apretar de más, y déjela sonar."
+
+
+def intonation_refusal(step: str, number: int) -> str:
+    """Why the note just played was refused at this step (the open string of round 2 on, the harmonic, the fretted)."""
+    if step == "open":
+        return (f"Esa nota no es la cuerda {number} al aire como en la ronda 1: "
+                f"toque la cuerda {number} al aire sin cambiar la afinación.")
+    if step == "harmonic":
+        return ("Esa nota no es el armónico del traste 12 (la octava de la cuerda al aire): "
+                f"toque el armónico de la cuerda {number}.")
+    return f"Esa nota no es la octava de la cuerda al aire: pise la cuerda {number} en el traste 12."
+
+
+def intonation_spread(open_sd: float, harmonic_sd: float, fretted_sd: float) -> str:
+    return (f"Toque (desvío estándar): al aire ±{decimal(open_sd)} · armónico ±{decimal(harmonic_sd)} · "
+            f"traste 12 ±{decimal(fretted_sd)} cents")
+
+
+def intonation_mean(mean: float, half_width: float, rounds: int) -> str:
+    return f"Desvío: {decimal(mean, 1, True)} ± {decimal(half_width)} cents (95 %, {rounds} rondas)"
+
+
+def intonation_cross(cents: float) -> str:
+    return (f"El armónico y la cuerda al aire no coinciden ({decimal(cents, 1, True)} cents): "
+            "revise la afinación o el toque.")
+
+
+def intonation_result(verdict: str, number: int, offset: float, shift_mm: float, half_width: float | None = None) -> str:
+    cents, mm = decimal(abs(offset)), decimal(abs(shift_mm))
+    if verdict == "ok":
+        return f"En tolerancia: la selleta {number} está bien."
+    if verdict == "unsure":
+        return (f"No concluyente: la dispersión (±{decimal(half_width or 0.0)} cents) es comparable al desvío "
+                f"({decimal(offset, 1, True)} cents). Repita la medición o mejore el toque; "
+                "no mueva la selleta todavía.")
+    if verdict == "sharp":
+        return (f"El traste 12 está {cents} cents alto: aleje la selleta del mástil unos {mm} mm, "
+                "afine la cuerda y mida de nuevo.")
+    return (f"El traste 12 está {cents} cents bajo: acerque la selleta al mástil unos {mm} mm, "
+            "afine la cuerda y mida de nuevo.")
+
+
+def intonation_detuned(cents: float) -> str:
+    return f"La cuerda está {decimal(abs(cents))} cents desafinada: conviene afinarla antes de medir."
+
+
+# ----------------------------------------------------------------- calibration (the four steps around the intonation)
+
+CALIBRATION_STEP_NAMES = ("Curvatura del mástil", "Acción", "Pastillas", "Octavación")
+CALIBRATION_STEPS_NAME = "Pasos de la calibración"
+CALIBRATION_ORDER = ("Orden recomendado: curvatura → acción → pastillas → octavación. "
+                     "La octavación va última porque las otras la cambian.")
+CALIBRATION_PRESET = "Estilo de guitarra"
+CALIBRATION_PRESET_TIP = ("Valores típicos de partida, no especificaciones de fábrica: edite los objetivos "
+                          "y quedan en «Personalizado».")
+CALIBRATION_TARGET = "Objetivo"
+CALIBRATION_MEASURED = "Medido"
+CALIBRATION_NOT_MEASURED = "—"
+CALIBRATION_BASS = "Graves"
+CALIBRATION_TREBLE = "Agudos"
+CALIBRATION_ROUNDS = INTONATION_ROUNDS
+
+RELIEF_METHOD = ("Ponga una cejilla en el traste 1, pise la cuerda 6 en el traste donde el mástil se une al cuerpo "
+                 "y mida con una galga la luz entre la cuerda y el traste 7 u 8.")
+RELIEF_MEASURED = "Luz medida"
+RELIEF_TARGET = "Luz objetivo"
+RELIEF_SAFETY = "Si la tuerca del alma no gira con facilidad, no la fuerce: consulte a un luthier."
+RELIEF_NECK_NAME = "Mástil visto de lado, con la curvatura exagerada y la tuerca del alma"
+RELIEF_ASK = "Ingrese la luz medida en milímetros."
+RELIEF_RETUNE = "como máximo 1/8 de vuelta; afine y espere unos minutos antes de medir de nuevo"
+
+
+def relief_text(move: str, error_mm: float, measured_mm: float, target_mm: float) -> str:
+    if move == "ok":
+        return f"Curvatura correcta: {decimal(measured_mm, 2)} mm (objetivo {decimal(target_mm, 2)} mm)."
+    if move == "tighten":
+        return (f"Hay {decimal(abs(error_mm), 2)} mm de más: apriete la tuerca del alma (sentido horario), "
+                f"{RELIEF_RETUNE}.")
+    return (f"Faltan {decimal(abs(error_mm), 2)} mm: afloje la tuerca del alma (sentido antihorario), "
+            f"{RELIEF_RETUNE}.")
+
+
+ACTION_METHOD = ("Mida en el traste 12, desde el borde superior del traste hasta la parte inferior de la cuerda. "
+                 "Las cuerdas 6 y 1 son necesarias; las demás son opcionales.")
+ACTION_RULE = "La selleta se mueve unas 2 veces el error medido en el traste 12."
+ACTION_RADIUS = "Radio del diapasón"
+ACTION_SADDLES_NAME = "Selletas vistas de frente, con una flecha por cuerda"
+
+
+def action_text(move: str, error_mm: float, target_mm: float, saddle_mm: float) -> str:
+    if move == "ok":
+        return f"En objetivo ({decimal(target_mm, 2)} mm)."
+    verb = "Suba" if move == "raise" else "Baje"
+    return f"{verb} la selleta unos {decimal(saddle_mm, 2)} mm (2 × {decimal(abs(error_mm), 2)})."
+
+
+def radius_text(radius_in: float) -> str:
+    return f"{radius_in:g}".replace(".", ",")
+
+
+def arc_text(radius_in: float, inner_mm: float, middle_mm: float) -> str:
+    return (f"Perfil de selletas para radio {radius_text(radius_in)}\": cuerdas 4 y 3 +{decimal(inner_mm, 2)} mm, "
+            f"cuerdas 5 y 2 +{decimal(middle_mm, 2)} mm respecto de 6 y 1")
+
+
+ACTION_BRIDGE = "Tipo de puente"
+ACTION_BRIDGE_SADDLES = "Selletas con altura propia (tipo Fender)"
+ACTION_BRIDGE_POSTS = "Dos postes (Tune-o-matic, Gibraltar)"
+ACTION_POST_SPACING = "Separación entre postes"
+ACTION_POST_SPACING_TIP = "Distancia de centro a centro de los dos postes de altura, medida con regla."
+ACTION_POSTS_NAME = "Puente de dos postes visto de lado, con una flecha por poste"
+ACTION_POSTS_RULE = ("Con dos postes la altura se ajusta solo en los extremos: cada poste también mueve la cuerda "
+                     "del otro lado, y las selletas no cambian la altura.")
+ACTION_POSTS_REMEASURE = "Mida de nuevo después de cada ajuste: cada poste también mueve la cuerda del otro lado."
+ACTION_POSTS_SIDES = {"bass": "Poste graves", "treble": "Poste agudos"}
+
+
+def post_text(side: str, move: str, post_mm: float) -> str:
+    name = ACTION_POSTS_SIDES[side]
+    if move == "ok":
+        return f"{name}: está bien"
+    verb = "suba" if move == "raise" else "baje"
+    return f"{name}: {verb} unos {decimal(post_mm, 2)} mm"
+
+
+def post_middle_text(mismatch_mm: dict[int, float]) -> str:
+    parts = ", ".join(f"{n}: {decimal(mismatch_mm[n], 2, signed=True)} mm" for n in sorted(mismatch_mm, reverse=True))
+    return (f"Cuerdas del medio respecto de lo esperado tras el ajuste ({parts}). Una diferencia grande indica que el "
+            "radio de las selletas no coincide con el del diapasón; los postes no pueden corregirlo.")
+
+
+PICKUP_POSITIONS = {"neck": "Mástil", "middle": "Medio", "bridge": "Puente"}
+PICKUP_TYPES = {"single_coil": "simple", "humbucker": "humbucker", "p90": "P-90"}
+PICKUP_POSITION = "Posición del selector"
+PICKUP_METHOD = ("Pise la cuerda en el último traste y mida desde la parte superior del polo hasta la parte inferior "
+                 "de la cuerda: la cuerda 6 del lado graves y la 1 del lado agudos.")
+PICKUP_VIEW_NAME = "Pastilla vista de frente, con una flecha por lado"
+PICKUP_ASK = "Ingrese las dos alturas medidas."
+PICKUP_AUDIO_HINT = ("Ayuda con audio: toque cada cuerda al aire con la misma fuerza. "
+                     "Una pastilla muy cerca de las cuerdas graves hace ondular la nota.")
+PICKUP_BALANCE = "Medir balance"
+PICKUP_MAGNET = "Comprobar atracción magnética"
+PICKUP_STOP = "Cancelar"
+PICKUP_CHART_NAME = "Nivel de cada cuerda respecto de la media, con su dispersión"
+PICKUP_PULL_ASK = "Pise la cuerda 6 en el traste 15 y déjela sonar"
+PICKUP_PULL_CLEAN = "Sin ondulación apreciable."
+PICKUP_PULL_SHORT = "La nota fue demasiado corta: pise la cuerda 6 en el traste 15 y déjela sonar más tiempo."
+
+
+def pickup_text(move: str, side: str, string: int, measured_mm: float, target_mm: float) -> str:
+    name = CALIBRATION_BASS.lower() if side == "bass" else CALIBRATION_TREBLE.lower()
+    if move == "ok":
+        return f"Lado {name}: en objetivo ({decimal(measured_mm, 1)} mm)."
+    verb = "Suba" if move == "raise" else "Baje"
+    return (f"Lado {name}: {verb.lower()} la pastilla (mide {decimal(measured_mm, 1)} mm, "
+            f"objetivo {decimal(target_mm, 1)} mm).")
+
+
+def balance_round_text(round_number: int, rounds: int, string: int) -> str:
+    return f"Ronda {round_number} de {rounds} · Toque la cuerda {string} al aire"
+
+
+def balance_refusal(string: int) -> str:
+    return f"Esa nota no es la cuerda {string} al aire: toque la cuerda {string} sin pisar."
+
+
+def balance_summary(advice: str, diff_db: float | None) -> str:
+    if advice == "bass_louder":
+        return (f"Los graves suenan {decimal(abs(diff_db or 0.0))} dB más que los agudos: baje la pastilla del "
+                "lado graves o suba la del lado agudos.")
+    if advice == "treble_louder":
+        return (f"Los agudos suenan {decimal(abs(diff_db or 0.0))} dB más que los graves: baje la pastilla del "
+                "lado agudos o suba la del lado graves.")
+    if advice == "ok":
+        return f"Balance entre graves y agudos correcto ({decimal(diff_db or 0.0, 1, True)} dB)."
+    return ""
+
+
+def position_summary(relative_db: dict[str, float], flagged: tuple[str, ...]) -> str:
+    parts = [f"{PICKUP_POSITIONS[p]} {decimal(v, 1, True)} dB" for p, v in relative_db.items()]
+    text = "Posiciones, respecto de la más fuerte: " + " · ".join(parts) + "."
+    if flagged:
+        names = ", ".join(PICKUP_POSITIONS[p].lower() for p in flagged)
+        text += f" Suena más bajo en: {names}; suba esa pastilla."
+    return text
+
+
+def pull_warning(cents: float) -> str:
+    return (f"La nota ondula {decimal(cents, 1)} cents: la pastilla puede estar demasiado cerca; "
+            "baje el lado graves.")

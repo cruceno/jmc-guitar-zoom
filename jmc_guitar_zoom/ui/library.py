@@ -64,13 +64,16 @@ class LibraryMixin:
             self.patch_list.addAction(act)  # shortcuts act only while the patch list has focus
         self.effects_action = action(S.LIBRARY_EFFECTS, self.open_effects_screen)
         self.effects_action.setIcon(icon("package"))
+        self.intonation_action = action(S.LIBRARY_INTONATION + "\t" + S.INTONATION_KEY, self._on_intonation_shortcut)
+        self.intonation_action.setIcon(icon("bridge"))
+        self.intonation_action.setCheckable(True)  # shown ticked while the screen is open; the button may be hidden
         self.bank_action = action(S.LIBRARY_BANK, self.open_bank_screen)
         self.bank_action.setIcon(icon("bank"))
         self.stash_from_menu_action = action(S.MOVE_TO_BANK, lambda: self._with_selected(self.stash_from_menu),
                                              tip=S.BANK_STASH_TIP)
         menu = GlassMenu(self.library_button, self.backdrop_root)
         self.library_button.setMenu(menu)
-        for act in (self.effects_action, self.bank_action, None, self.backup_action, self.backup_files_action, None, self.copy_action, self.paste_action,
+        for act in (self.effects_action, self.intonation_action, self.bank_action, None, self.backup_action, self.backup_files_action, None, self.copy_action, self.paste_action,
                     self.clear_action, None, self.export_selected_action, self.export_all_action,
                     self.import_file_action, self.import_folder_action, None, self.write_dirty_action):
             if act is None:

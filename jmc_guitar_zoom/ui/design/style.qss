@@ -127,6 +127,19 @@ QWidget#tunerPill[state="in_tune"] { border-color: $tuner_in_tune; }
 QWidget#tunerPill[state="near"] { border-color: $tuner_near; }
 QWidget#tunerPill[state="off"] { border-color: $tuner_off; }
 
+/* intonation screen */
+QPushButton[chip="true"] { min-width: 52px; padding: 0 10px; }
+QPushButton[chip="true"][result="ok"] { background: $status_ok_bg; border: 1px solid $status_ok; }
+QPushButton[chip="true"][result="sharp"] { background: $status_danger_bg; border: 1px solid $status_danger; }
+QPushButton[chip="true"][result="flat"] { background: $status_warn_bg; border: 1px solid $status_warn; }
+QPushButton[chip="true"][result="unsure"] { background: $status_info_bg; border: 1px solid $status_info; }
+QPushButton[chip="true"]:checked { border: 2px solid $accent; }
+QPushButton[stepbar="true"] { padding: 0 14px; }
+QPushButton[stepbar="true"]:checked { background: $surface_selected; border: 2px solid $accent; font-weight: 600; }
+QLabel[role="step"] { color: $text_secondary; border: 1px solid transparent; border-radius: 12px; padding: 3px 12px; }
+QLabel[role="step"][current="true"] { color: $text_primary; background: $surface_selected; border: 1px solid $accent; font-weight: 600; }
+QLabel[role="instruction"] { color: $text_primary; font-size: 17px; }
+
 /* effects manager */
 QProgressBar#effectsMemory { min-height: 10px; max-height: 10px; border-radius: 5px; }
 QProgressBar#effectsMemory::chunk { border-radius: 4px; }

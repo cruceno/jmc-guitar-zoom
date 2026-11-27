@@ -21,7 +21,7 @@ from jmc_guitar_zoom.ui.painted import PaintedText
 
 from fixture_files import EFFECTS  # noqa: E402
 SIZES = [(1440, 900), (2000, 1056)]
-STATES = ["no-patch", "patch-selected", "effects-manager", "effects-repair", "not-installed", "patch-warnings", "unused-view", "usage-many", "usage-one", "usage-none", "usage-incomplete", "tuner", "offline", "bank", "bank-empty", "bank-drag", *UPDATE_STATES]
+STATES = ["no-patch", "patch-selected", "effects-manager", "effects-repair", "not-installed", "patch-warnings", "unused-view", "usage-many", "usage-one", "usage-none", "usage-incomplete", "tuner", "calibration-relief", "calibration-action", "calibration-action-posts", "calibration-pickups", "calibration-pickups-run", "intonation", "intonation-result", "offline", "bank", "bank-empty", "bank-drag", *UPDATE_STATES]
 SLACK = 2  # px of rounding the metrics may differ from the painted text by
 
 
@@ -111,6 +111,26 @@ def settle(qtbot, w: MainWindow, size) -> None:
 
 
 def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
+    if state.startswith(("intonation", "calibration")):  # no real sound card: two listed inputs and an input that never delivers
+        from PySide6.QtCore import QObject, Signal
+
+        from jmc_guitar_zoom.audio.capture import InputDevice
+        from jmc_guitar_zoom.ui import intonation as screen_module
+
+        class Silent(QObject):
+            samples = Signal(object)
+            failed = Signal(str)
+            running, sample_rate = False, 48000
+
+            def start(self, device_id, channel):
+                return True
+
+            def stop(self):
+                pass
+
+        devices = [InputDevice("a", "PreSonus AudioBox USB", 2, 48000, True), InputDevice("b", "Micrófono", 4, 44100)]
+        monkeypatch.setattr(screen_module, "list_input_devices", lambda: devices)
+        monkeypatch.setattr(screen_module, "AudioInput", lambda parent=None: Silent())
     if state.startswith("update-"):  # the effect-library update flow (a private library, a fake channel)
         return update_state(qtbot, tmp_path, catalog, state)
     if state == "offline":
@@ -175,6 +195,58 @@ def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
     elif state == "tuner":
         w.tuner_button.click()
         qtbot.waitUntil(lambda: w.tuner_panel.isVisible() or not w.isVisible(), timeout=3000)
+    elif state == "calibration-relief":  # step 1 with a measure that needs the nut turned
+        w.intonation_button.click()
+        w.intonation_panel.relief.measured_spin.setValue(0.55)
+    elif state == "calibration-action":  # step 2 with every string measured: six advice texts and six arrows
+        w.intonation_button.click()
+        panel = w.intonation_panel
+        panel.go_to_step(2)
+        for number, value in zip((6, 5, 4, 3, 2, 1), (2.6, 2.2, 1.4, 1.9, 1.2, 1.6)):
+            panel.action.spins[number].setValue(value)
+    elif state == "calibration-action-posts":  # step 2 on a two-post bridge: two post advices, the info line, the view
+        w.intonation_button.click()
+        panel = w.intonation_panel
+        panel.go_to_step(2)
+        panel.preset_combo.setCurrentIndex(1)
+        for number, value in zip((6, 3, 1), (2.6, 2.3, 1.2)):
+            panel.action.spins[number].setValue(value)
+    elif state == "calibration-pickups":  # step 3 with both sides measured and a finished balance
+        from jmc_guitar_zoom.calibration import PluckLevels, balance
+
+        w.intonation_button.click()
+        panel = w.intonation_panel
+        panel.go_to_step(3)
+        panel.pickups.bass_spin.setValue(4.0)
+        panel.pickups.treble_spin.setValue(1.2)
+        levels = {n: [-10.0 - 2 * (n > 3), -11.0 - 2 * (n > 3), -10.5 - 2 * (n > 3)] for n in range(1, 7)}
+        result = balance(levels)
+        panel.pickups.chart.set_result(result)
+        panel.pickups._balance.setText(S.balance_summary(result.advice.value, result.bass_minus_treble_db))
+        panel.pickups._magnetic.setText(S.pull_warning(5.2))
+        panel.pickups._positions.setText(S.position_summary({"neck": 0.0, "bridge": -3.5}, ("bridge",)))
+        panel.pickups._sync_buttons()
+    elif state == "calibration-pickups-run":  # step 3 asking for plucks, with a refusal on screen
+        w.intonation_button.click()
+        panel = w.intonation_panel
+        panel.go_to_step(3)
+        panel.pickups.balance_button.click()
+        panel.pickups._message.setText(S.balance_refusal(6))
+        panel.pickups._sync_buttons()
+    elif state == "intonation":  # the audio screen: two inputs (the second with four channels), a note playing
+        w.intonation_button.click()
+        w.intonation_panel.go_to_step(4)
+    elif state == "intonation-result":  # the fullest layout: a not conclusive result with every statistics line
+        from jmc_guitar_zoom.audio.intonation import Round, Stats, Step, StringResult
+
+        w.intonation_button.click()
+        w.intonation_panel.go_to_step(4)
+        session = w.intonation_panel.session
+        rounds = tuple(Round(82.41, 2 * 82.41 * 2 ** (2.4 / 1200), 2 * 82.41 * 2 ** ((2.4 + d) / 1200))
+                       for d in (-4.0, 0.0, 4.0, 1.0, 2.0))
+        session.results[6] = StringResult(6, Stats(rounds))
+        session.string, session.step = 6, Step.RESULT
+        w.intonation_panel.tolerance_combo.setCurrentIndex(0)  # redraws the screen
     return w
 
 

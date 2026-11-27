@@ -35,6 +35,7 @@ from . import memory
 from .painted import ConnectionPill, DotLabel, KeyChipButton, LiveSwitch, PaintedText, SectionLabel, StatusBar
 from .bank_screen import BankMixin, BankScreen
 from .library import LibraryMixin
+from .intonation import IntonationScreen
 from .tuner import TunerPanel
 from .update_view import UpdateMixin
 from . import favorites as favorites_module
@@ -203,6 +204,8 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self._closed = False
         self._tuner_on = False
         self._effects_open = False
+        self._intonation_open = False
+        self._intonation_in_header = True  # False while the header is too narrow for its button (the menu has it)
         self._effects_busy = False
         self._installed_files: set[str] | None = None  # pedal files installed and present; None: not read (nothing guessed)
         self._installed_ids: set[int] | None = None  # the catalog effects those files are
@@ -270,6 +273,9 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self.tuner_button.setIcon(icon("tuner"))
         self.tuner_button.setCheckable(True)
         self.tuner_button.setToolTip(S.TUNER_TIP)
+        self.intonation_button = self._icon_button("bridge", S.INTONATION_TIP)  # icon only, like the bank's
+        self.intonation_button.setCheckable(True)
+        self.intonation_button.setAccessibleName(S.INTONATION)
         # the effects screen has no button in the bar: its open state is this checkable action, driven by the
         # catalog's «Administrar» button, the Biblioteca menu entry and the screen's own «Cerrar»
         self.effects_toggle = QAction(S.EFFECTS_BUTTON, self)
@@ -293,7 +299,7 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         h.addWidget(self.memory_word)
         h.addWidget(self.memory_value)
         h.addStretch(1)
-        for w in (self.bank_button, self.tuner_button, self.live_check, self.open_file_button, self.save_file_button,
+        for w in (self.bank_button, self.tuner_button, self.intonation_button, self.live_check, self.open_file_button, self.save_file_button,
                   self.open_button, self.reload_button, self.connect_button, self.disconnect_button):
             h.addWidget(w)
         self.connect_button.clicked.connect(self._on_connect_clicked)
@@ -309,6 +315,9 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self.bank_button.toggled.connect(self._on_bank_toggled)
         self.tuner_shortcut = QShortcut(QKeySequence("T"), self)
         self.tuner_shortcut.activated.connect(self._on_tuner_shortcut)
+        self.intonation_button.toggled.connect(self._on_intonation_toggled)
+        self.intonation_shortcut = QShortcut(QKeySequence(S.INTONATION_KEY), self)
+        self.intonation_shortcut.activated.connect(self._on_intonation_shortcut)
 
         self.undo_action = self.undo_group.createUndoAction(self, S.UNDO)
         self.undo_action.setShortcut(QKeySequence("Ctrl+Z"))
@@ -489,6 +498,9 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self.tuner_panel = TunerPanel(backdrop_root)
         self.tuner_panel.hide()
         self.tuner_panel.exit_requested.connect(lambda: self.tuner_button.setChecked(False))
+        self.intonation_panel = IntonationScreen(backdrop_root)
+        self.intonation_panel.hide()
+        self.intonation_panel.exit_requested.connect(lambda: self.intonation_button.setChecked(False))
         self.effects_panel = EffectsManager(backdrop_root, self.catalog, self.allowed_ids, self.favorites)
         self.effects_panel.hide()
         self.effects_panel.close_requested.connect(lambda: self.effects_toggle.setChecked(False))
@@ -531,6 +543,7 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         rv.addWidget(self.pedal_notice)
         rv.addWidget(splitter, stretch=1)
         rv.addWidget(self.tuner_panel, stretch=1)
+        rv.addWidget(self.intonation_panel, stretch=1)
         rv.addWidget(self.effects_panel, stretch=1)
         rv.addWidget(self.bank_panel, stretch=1)
         rv.addWidget(self.update_panel, stretch=1)
@@ -594,18 +607,27 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self.save_file_button.setEnabled(patch is not None)
         self.live_check.setEnabled(self._can_write)
         self.tuner_button.setEnabled(self._is_connected and self._worker is not None and not self._saving
-                                     and not self._effects_open and not self._bank_open and not self._update_open)
+                                     and not self._effects_open and not self._bank_open and not self._update_open
+                                     and not self._intonation_open)
+        # the audio screen needs no pedal; like the bank it stays closable, and never opens over another screen
+        self.intonation_button.setEnabled(self._intonation_open or (
+            not self._saving and not self._tuner_on and not self._effects_open and not self._bank_open
+            and not self._update_open))
         self.effects_toggle.setEnabled(not self._tuner_on and not self._saving and not self._effects_busy
-                                       and not self._bank_open and not self._update_open)
+                                       and not self._bank_open and not self._update_open
+                                       and not self._intonation_open)
         self.update_toggle.setEnabled(self._updater is not None and not self._tuner_on and not self._saving
                                       and not self._effects_busy and not self._bank_open
-                                      and not self._update_busy)
+                                      and not self._update_busy and not self._intonation_open)
         self.update_action.setEnabled(self.update_toggle.isEnabled() and not self._update_open)
         self.bank_button.setVisible(not self._tuner_on)  # the tuner's «Salir del afinador» needs the room at 1440 px
         # the bank screen stays closable while its own write runs; it never opens over the tuner or the effects screen
         self.bank_button.setEnabled(not self._tuner_on and not self._effects_open and not self._effects_busy
-                                    and not self._update_open and (self._bank_open or not self._saving))
+                                    and not self._update_open and not self._intonation_open
+                                    and (self._bank_open or not self._saving))
         self.effects_action.setEnabled(self.effects_toggle.isEnabled() and not self._effects_open)
+        self.intonation_action.setEnabled(self.intonation_button.isEnabled())
+        self.intonation_action.setChecked(self._intonation_open)
         self.catalog_panel.manage_button.setEnabled(self.effects_action.isEnabled())
         self.catalog_panel.set_install_block(self.write_block_reason() or (
             S.EFFECTS_BUSY_INSTALL if self._effects_busy or self._saving else None))
@@ -627,7 +649,7 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self.save_button.setAccessibleDescription(tip)
         self.dirty_label.setVisible(dirty)
         can_discard = dirty and not self._saving and not (self._tuner_on or self._effects_open or self._bank_open
-                                                          or self._update_open)
+                                                          or self._update_open or self._intonation_open)
         self.discard_button.setEnabled(can_discard)
         self.discard_action.setEnabled(can_discard)
         self.discard_button.setToolTip(S.discard_tooltip(DISCARD_SHORTCUT, "" if dirty else S.DISCARD_NOTHING))
@@ -641,7 +663,8 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self.missing_button.setAccessibleName(tip)
         self.centralWidget().update()
         self._update_library_actions()
-        if self._tuner_on or self._effects_open or self._bank_open or self._update_open:  # the tuner mutes the pedal; each screen owns the window
+        if (self._tuner_on or self._effects_open or self._bank_open or self._update_open
+                or self._intonation_open):  # the tuner mutes the pedal; each screen owns the window
             for w in (self.save_button, self.discard_button, self.open_file_button, self.save_file_button, self.live_check,
                       self.reload_button, self.connect_button, self.open_button):
                 w.setEnabled(False)
@@ -986,6 +1009,26 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
     def _on_tuner_state(self, on: bool) -> None:
         if self._tuner_on != on:  # the worker refused or lost the tuner
             self._apply_tuner_state(on)
+
+    # ------------------------------------------------------------- intonation (audio input, no pedal)
+
+    def _on_intonation_shortcut(self) -> None:
+        if self.intonation_button.isEnabled() or self.intonation_button.isChecked():
+            self.intonation_button.toggle()
+
+    def _on_intonation_toggled(self, on: bool) -> None:
+        """Show/hide the audio tuner screen and lock/unlock the editor; it never touches the pedal."""
+        self._intonation_open = on
+        self.splitter.setEnabled(not on)
+        self.splitter.setVisible(not on)
+        self.intonation_panel.setVisible(on)
+        self.edit_button.setEnabled(not on)
+        self.library_button.setEnabled(not on)
+        self._update_buttons()
+        if on:
+            self.intonation_panel.open_screen()
+        else:
+            self.intonation_panel.close_screen()
 
     # ------------------------------------------------------------- patches
 
@@ -1841,6 +1884,7 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
     def _set_header_level(self, level: int) -> None:
         """Words give way before anything overlaps: the caption, then the buttons' text (their tooltips stay)."""
         self._header_level = level
+        self.intonation_button.setVisible(self._intonation_in_header)  # the first thing to give way
         self.memory_caption.setVisible(level < 1)
         self.memory_word.setVisible(level < 1 and bool(self.memory_word.text()))  # icon and % stay in a compact bar
         for button, text in ((self.tuner_button, S.TUNER),
@@ -1864,15 +1908,19 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
         self._fitting_header = True
         try:
             fallback = None
-            for level in range(self.HEADER_LEVELS):
+            # the audio-screen button gives way before anything else: every other element keeps its old level
+            steps = [(0, True)] + [(level, False) for level in range(self.HEADER_LEVELS)]
+            for level, with_button in steps:
+                self._intonation_in_header = with_button
                 self._set_header_level(level)
                 header.layout().invalidate()
                 header.layout().activate()
                 if header.layout().sizeHint().width() <= header.width():
                     return
                 if fallback is None and header.layout().minimumSize().width() <= header.width():
-                    fallback = level
-            self._set_header_level(fallback if fallback is not None else self.HEADER_LEVELS - 1)
+                    fallback = (level, with_button)
+            self._intonation_in_header = fallback[1] if fallback is not None else False
+            self._set_header_level(fallback[0] if fallback is not None else self.HEADER_LEVELS - 1)
         finally:
             self._fitting_header = False
 
@@ -1887,6 +1935,7 @@ class MainWindow(UpdateMixin, BankMixin, LibraryMixin, QMainWindow):
                 event.ignore()
                 return
             self._closed = True
+            self.intonation_panel.close_screen()
             self._shutdown_updates()
             if self._worker is not None and self._thread is not None:
                 self._worker.cancel()

@@ -28,9 +28,12 @@ datas = [
 
 
 def _dist_file(dist, wanted):
-    """A licence file shipped inside an installed wheel (never hand-copied)."""
+    """A licence file shipped inside an installed wheel (never hand-copied).
+
+    ``wanted`` is a file name, or a path suffix (with a "/") when the wheel holds several files of that name.
+    """
     for f in metadata.files(dist) or []:
-        if f.name == wanted:
+        if (f.as_posix().endswith(wanted) if "/" in wanted else f.name == wanted):
             return str(f.locate())
     raise SystemExit(f"{wanted} not found in the installed {dist} distribution")
 
@@ -52,19 +55,22 @@ datas += [
     (_dist_file("mido", "LICENSE"), "licenses/mido"),  # mido (MIT)
     (_dist_file("construct", "LICENSE"), "licenses/construct"),  # construct (MIT)
     (_dist_file("crcmod", "LICENSE"), "licenses/crcmod"),  # crcmod (MIT)
+    # numpy (BSD-3-Clause); the same file carries the licences of what its wheel bundles (OpenBLAS, LAPACK, ...)
+    (_dist_file("numpy", ".dist-info/licenses/LICENSE.txt"), "licenses/numpy"),
     (_dist_file("pyinstaller", "COPYING.txt"), "licenses/pyinstaller"),  # PyInstaller bootloader (GPLv2 + exception)
 ]
 
-# mido loads its backend by name at run time, so PyInstaller cannot see it.
-HIDDEN_IMPORTS = ["mido.backends.rtmidi", "rtmidi"]
+# mido loads its backend by name at run time, so PyInstaller cannot see it. The audio tuner imports
+# QtMultimedia only when it lists or opens an input (jmc_guitar_zoom/audio/capture.py).
+HIDDEN_IMPORTS = ["mido.backends.rtmidi", "rtmidi", "PySide6.QtMultimedia"]
 
-# Qt modules the app never imports (it uses QtCore, QtGui, QtWidgets, QtSvg and QtNetwork). QtSvg, QtNetwork and
-# the image-format plugins (svg, ico) stay.
+# Qt modules the app never imports (it uses QtCore, QtGui, QtWidgets, QtSvg, QtNetwork and QtMultimedia). QtSvg,
+# QtNetwork, QtMultimedia (with its FFmpeg plugin) and the image-format plugins (svg, ico) stay.
 EXCLUDES = [f"PySide6.{m}" for m in (
     "QtWebEngineCore", "QtWebEngineWidgets", "QtWebEngineQuick", "QtWebChannel", "QtWebSockets", "QtWebView",
     "QtQml", "QtQuick", "QtQuickWidgets", "QtQuickControls2", "QtQuick3D", "QtQuickTest",
     "Qt3DCore", "Qt3DRender", "Qt3DInput", "Qt3DLogic", "Qt3DAnimation", "Qt3DExtras",
-    "QtMultimedia", "QtMultimediaWidgets", "QtSpatialAudio", "QtCharts", "QtGraphs", "QtDataVisualization",
+    "QtMultimediaWidgets", "QtSpatialAudio", "QtCharts", "QtGraphs", "QtDataVisualization",
     "QtPdf", "QtPdfWidgets", "QtDesigner", "QtHelp", "QtSql", "QtTest", "QtBluetooth", "QtNfc", "QtSensors",
     "QtSerialPort", "QtSerialBus", "QtPositioning", "QtLocation", "QtRemoteObjects", "QtScxml",
     "QtStateMachine", "QtTextToSpeech", "QtOpenGL", "QtOpenGLWidgets", "QtPrintSupport", "QtVirtualKeyboard",

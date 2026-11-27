@@ -62,7 +62,124 @@ cambia lo que se ve en pantalla.
 
 El botón **Afinador** (o la tecla **T**) enciende el afinador de la pedalera y abre una pantalla con la nota y el
 desvío: el centro es «AFINADO». **La pedalera queda muda mientras el afinador está encendido.** «Salir del afinador» o
-la tecla T lo apagan.
+la tecla T lo apagan. La pedalera informa el desvío en 15 pasos (de −7 a +7), no en cents: sirve para afinar, pero no
+para medir la octavación.
+
+### Calibración (placa de audio)
+
+La pantalla **Calibración** reúne los cuatro ajustes de una guitarra en el orden en que conviene hacerlos y mide la
+nota directamente desde una placa de sonido, con una décima de cent de resolución. No necesita la pedalera conectada.
+
+- **Abrirla:** el botón del puente en la barra superior (aparece cuando hay lugar), **Biblioteca > Calibración…** o la
+  tecla **O**. «Cerrar» o la tecla O la cierran. La pantalla recuerda el último paso en que estaba; la primera vez
+  abre en el paso 1.
+- **Pasos:** «1 Curvatura del mástil», «2 Acción», «3 Pastillas» y «4 Octavación». Se puede ir a cualquiera, pero el
+  **orden recomendado es curvatura → acción → pastillas → octavación**: la octavación va última porque las otras la
+  cambian. Cambiar la curvatura o la altura de las cuerdas mueve la afinación del traste 12, y la altura de las
+  pastillas puede tirar de las cuerdas y desafinarlas.
+- **Entrada:** elija el dispositivo y el canal donde llega la guitarra: directo a la entrada de instrumento de la placa,
+  o la salida de la pedalera conectada a la placa. Sirve cualquier placa que el sistema reconozca y la aplicación
+  recuerda la elección. El medidor de nivel avisa si la señal satura (baje la ganancia) o es baja (súbala): el nivel
+  importa más que los bits del conversor.
+- **Afinador:** la nota, la octava, los cents con un decimal y la frecuencia se ven siempre, en cualquier paso (después
+  de cada ajuste hay que volver a afinar); «Estable» aparece cuando la nota dejó de moverse después del ataque.
+- **Presets:** en los pasos 1 a 3, el selector **Estilo de guitarra** ofrece «Estilo Fender (simple)», «Estilo Gibson
+  (humbucker)» y «Personalizado». Son **valores típicos de partida, no especificaciones de fábrica**: cada guitarra y
+  cada estilo de toque piden los suyos. Los objetivos de cada paso se pueden editar; al hacerlo, el selector pasa a
+  «Personalizado» con esos valores, y la aplicación los recuerda.
+
+#### Paso 1: curvatura del mástil
+
+La curvatura es la flexión hacia delante del mástil. **Método:** ponga una cejilla en el traste 1, pise la cuerda 6 en
+el traste donde el mástil se une al cuerpo y mida con una galga la luz entre la cuerda y el traste 7 u 8. Escriba la
+medida en mm (de 0,00 a 2,00). La aplicación la compara con el objetivo del preset y dice si está bien o si hay que
+**apretar** la tuerca del alma (sentido horario, si hay demasiada luz) o **aflojarla** (sentido antihorario, si falta).
+El dibujo muestra el mástil de lado con la curvatura exagerada (la medida en línea llena, el objetivo en línea de
+trazos) y la tuerca con una flecha curva del giro. **Como máximo 1/8 de vuelta por vez; afine y espere unos minutos
+antes de medir de nuevo.** Si la tuerca del alma no gira con facilidad, no la fuerce: consulte a un luthier.
+
+#### Paso 2: acción
+
+La acción es la altura de la cuerda sobre el traste 12. **Método:** mida desde el borde superior del traste 12 hasta
+la parte inferior de la cuerda. Las cuerdas 6 y 1 son necesarias; las demás son opcionales (el objetivo de las del
+medio se interpola entre los de la 6 y la 1). Para cada cuerda medida, la aplicación dice si la acción está en el
+objetivo o cuánto **subir o bajar la selleta**: el traste 12 está a la mitad de la escala, así que la selleta se mueve
+**unas 2 veces el error medido**. Una vista de las seis selletas muestra una flecha por cuerda. Además se dibuja y
+se escribe el **perfil de selletas** del radio del diapasón (7,25", 9,5", 12", 16"; el del preset, editable), por
+ejemplo «Perfil de selletas para radio 9,5": cuerdas 4 y 3 +1,35 mm, cuerdas 5 y 2 +0,90 mm respecto de 6 y 1».
+
+**Tipo de puente.** El selector ofrece dos opciones. «Selletas con altura propia (tipo Fender)» es lo descrito
+arriba y es el valor de «Estilo Fender (simple)». «Dos postes (Tune-o-matic, Gibraltar)» es el valor de «Estilo
+Gibson (humbucker)» y sirve para los puentes que solo regulan la altura en dos postes (uno del lado graves y otro del
+lado agudos) y cuyas selletas se mueven únicamente para la octavación, como el Ibanez Gibraltar: ahí no hay una
+altura por selleta ni un perfil de selletas, así que esas flechas y el perfil se ocultan. Cambiar el tipo de puente
+pasa a «Personalizado», salvo que coincida con el del preset.
+
+Con dos postes aparece el campo **Separación entre postes**: mida con una regla la distancia de centro a centro de los
+dos tornillos de altura (74 mm por defecto) y escríbala. La aplicación calcula, con la geometría de palanca del
+puente, cuánto mover cada poste: «Poste graves: baje unos 0,35 mm» o «Poste agudos: suba unos 0,20 mm» (o «está
+bien»), y dibuja el puente de lado con una flecha en cada poste. Cada poste también mueve la cuerda del otro lado,
+por eso: **mida de nuevo después de cada ajuste**. Si midió también alguna cuerda del medio, se escribe cuánto se
+aparta de lo esperado tras el ajuste; una diferencia grande indica que el radio de las selletas no coincide con el
+del diapasón y los postes no pueden corregirlo.
+
+#### Paso 3: pastillas
+
+La altura se mide con la cuerda pisada en el último traste, desde la parte superior del polo hasta la parte inferior
+de la cuerda: la cuerda 6 del lado graves y la 1 del lado agudos. Elija la **posición del selector** (las del preset,
+cada una con su tipo de pastilla: simple, humbucker o P-90), escriba las dos alturas y la aplicación dice, para cada
+lado, si hay que subir o bajar la pastilla, con una flecha en el dibujo.
+
+La **ayuda con audio** ayuda a verificar el resultado:
+
+- **Medir balance:** toque cada cuerda al aire, de la 6 a la 1, con la misma fuerza. La aplicación pide «Ronda i de n ·
+  Toque la cuerda s al aire» (el número de **Rondas** es el mismo de la octavación, de 3 a 10) y rechaza una nota que
+  no es la cuerda pedida. Al final dibuja el nivel de cada cuerda respecto de la media, con su dispersión, y dice si
+  los graves o los agudos suenan más fuerte (la diferencia tolerada es 2 dB) y qué pastilla bajar o subir. Si mide
+  dos o más posiciones del selector, también compara una posición con otra y marca las que suenan más bajo.
+- **Comprobar atracción magnética:** pise la cuerda 6 en el traste 15 y déjela sonar. Si la nota ondula, es decir, si el
+  tono oscila más de 4 cents, la pastilla puede estar demasiado cerca de la cuerda: la aplicación avisa y sugiere bajar
+  el lado graves.
+
+#### Paso 4: octavación
+
+**Octavación estadística, cuerda por cuerda.** Una sola toma mide también el pulso de quien toca, así que la
+herramienta pide **rondas** repetidas y juzga con la media y su incertidumbre, para no calibrar ruido. Elija la
+cuerda (empieza por la 6), el número de **Rondas** (de 3 a 10; 5 por defecto, la aplicación recuerda la elección) y
+siga los pasos; cada nota se toma sola cuando está estable, así que las manos quedan en la guitarra. Cada ronda pide
+tres notas, siempre en este orden:
+
+1. **Al aire:** toque la cuerda al aire y déjela sonar. Desde la ronda 2 debe sonar casi igual que en la ronda 1; si
+   la cuerda está desafinada más de 5 cents, la pantalla lo avisa.
+2. **Armónico 12:** toque el armónico del traste 12 de la misma cuerda.
+3. **Traste 12:** pise la cuerda en el traste 12, sin apretar de más, y déjela sonar.
+
+Una nota que no es la esperada (por ejemplo, la cuerda al aire cuando toca el armónico) se rechaza con un aviso, y
+solo cuenta una nota nueva: no hace falta esperar a que la anterior se apague. «Pulse siempre con la misma fuerza,
+suave»: un ataque fuerte sube la nota en el primer instante.
+
+**Qué muestra.** En cada ronda se compara el traste 12 con el armónico (el desvío del veredicto), el traste 12 con el
+doble de la cuerda al aire y el armónico con el doble de la cuerda al aire (control cruzado). El gráfico de puntos
+dibuja un punto por toma, la media con su intervalo de confianza del 95 % (t de Student) y la banda de tolerancia
+sombreada. Además se ve la **repetibilidad del toque** (desvío estándar en cents de cada tipo de nota, a partir de la
+segunda ronda) y, desde la tercera, **Desvío: media ± intervalo cents**. Si el armónico y la cuerda al aire difieren
+más de 1,5 cents de media, la pantalla avisa: la afinación se movió o el toque no es parejo.
+
+**Tres veredictos** frente a la tolerancia (±1 cent si no elige otra):
+
+- **En tolerancia:** todo el intervalo cae dentro de la tolerancia; la selleta está bien y el puente muestra una marca.
+- **Mover la selleta:** todo el intervalo cae fuera. Solo entonces el puente dibuja una flecha **hacia el mástil** si el
+  traste 12 está bajo o **alejándose del mástil** si está alto, y los mm salen de la media según la escala elegida
+  (628, 635, 648 o 650 mm).
+- **No concluyente:** el intervalo cruza el borde de la tolerancia (la dispersión es comparable al desvío). El puente
+  muestra un «?» y no hay que mover la selleta todavía: repita la medición o mejore el toque.
+
+**Botones.** **Repetir última toma** descarta la última nota tomada (la del paso anterior de la ronda, o la última de
+la ronda anterior) y la pide otra vez, por ejemplo cuando una nota salió mal. **Medir de nuevo** reinicia la cuerda
+desde la ronda 1, por ejemplo después de mover una selleta y afinar. **Siguiente cuerda** pasa a la próxima que falte
+medir o que no esté en tolerancia (una «no concluyente» también cuenta como pendiente). Se comparan notas de la misma
+entrada, así que el resultado no depende del La de referencia ni del reloj de la placa. Con un sonido limpio, la
+precisión de cada toma ronda ±0,5 cent.
 
 ## 5. Biblioteca: copias, archivos y banco
 
@@ -134,6 +251,10 @@ Los archivos descargados son de Zoom y se guardan solo en su equipo, para su uso
 
 - **No conecta:** cierre Guitar Lab y cualquier programa que use la pedalera; reconecte el USB; en Linux, compruebe
   que su usuario pertenece al grupo `audio`.
+- **No aparecen entradas de audio:** conecte la placa y pulse el botón de buscar entradas de nuevo. En Linux la
+  aplicación usa PulseAudio o PipeWire (biblioteca `libpulse`).
+- **La nota no se estabiliza:** suba la ganancia si el medidor marca señal baja, apague los efectos de modulación y
+  deje sonar la cuerda sin tocar las demás.
 - **El catálogo está vacío:** use el actualizador, o indique carpetas con archivos `.zd2` con `--catalog`.
 - **No se puede guardar:** el mensaje indica el motivo (efectos no instalados, patch demasiado grande, modelo de solo
   lectura, sin conexión).

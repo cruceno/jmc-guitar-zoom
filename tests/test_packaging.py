@@ -152,3 +152,22 @@ def test_the_appimage_leaves_fontconfig_and_freetype_to_the_system():
     # from Ubuntu 22.04 printed dozens of "Fontconfig error: ... invalid attribute 'xsi:nil'" lines on Fedora 45)
     for lib in ("libfontconfig.so", "libfreetype.so"):
         assert re.search(rf"rm -f [^\n]*/{re.escape(lib)}\*", APPIMAGE_SCRIPT), lib
+
+
+def test_the_spec_keeps_qtmultimedia_for_the_audio_tuner():
+    excludes = SPEC.split("EXCLUDES", 1)[1].split("]", 1)[0]
+    assert '"QtMultimedia"' not in excludes  # audio/capture.py reads the sound card through it
+    hidden = SPEC.split("HIDDEN_IMPORTS =", 1)[1].split("]", 1)[0]
+    assert '"PySide6.QtMultimedia"' in hidden  # imported inside a function, only when an input is listed or opened
+
+
+def test_the_numpy_licence_is_its_own_top_level_file():
+    # the wheel holds several LICENSE.txt files (bundled libraries): the spec must pick NumPy's own
+    assert '_dist_file("numpy", ".dist-info/licenses/LICENSE.txt")' in SPEC
+
+
+@pytest.mark.parametrize("workflow", sorted((ROOT / ".github" / "workflows").glob("*.yml")), ids=lambda p: p.name)
+def test_every_linux_job_installs_the_pulseaudio_client_qtmultimedia_links_to(workflow):
+    text = workflow.read_text(encoding="utf-8")
+    installs = [line for line in text.splitlines() if "apt-get install" in line]
+    assert installs and all("libpulse0" in line for line in installs)
