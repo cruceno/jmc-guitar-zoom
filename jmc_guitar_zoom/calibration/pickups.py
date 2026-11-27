@@ -17,6 +17,7 @@ MAX_PICKUP_MM = 10.0
 LEVEL_WINDOW_SECONDS = 0.3
 MIN_LEVEL_DB = -60.0
 STRING_TOLERANCE_CENTS = 60.0
+PITCH_CHECK_SECONDS = 0.12  # the first hops of a pluck can read a wild pitch: judge the string after them
 BALANCE_TOLERANCE_DB = 2.0
 BASS_STRINGS = (6, 5, 4)
 TREBLE_STRINGS = (3, 2, 1)
@@ -91,8 +92,10 @@ class _Note:
 class PluckLevels:
     """Records one level per open-string pluck: the peak ``level_db`` in the first 0.3 s of the note.
 
-    Feed it every ``PitchReading`` together with the string the user was asked to pluck. A note whose pitch is
-    not that string's open note (standard tuning, +-60 cents) is refused: ``add`` returns a ``PluckRefusal`` once.
+    Feed it every ``PitchReading`` together with the string the user was asked to pluck. The string is judged on
+    the first reading with a pitch that is stable or at least ``PITCH_CHECK_SECONDS`` into the note (the attack
+    can read a wild pitch), while the attack's level still counts. A note whose pitch is not that string's open
+    note (standard tuning, +-60 cents) is refused and records nothing: ``add`` returns a ``PluckRefusal`` once.
     """
 
     def __init__(self) -> None:
@@ -112,18 +115,20 @@ class PluckLevels:
             self._note_id = reading.note_id
             self._note = _Note(string, reading.time)
         note = self._note
-        if note.refused or reading.time - note.start > LEVEL_WINDOW_SECONDS:
+        if note.refused:
             return None
+        elapsed = reading.time - note.start
+        if elapsed <= LEVEL_WINDOW_SECONDS:
+            note.best = max(note.best, reading.level_db)
         refusal = None
-        if reading.frequency is None:
-            return None
         if not note.checked:
+            if reading.frequency is None or (elapsed < PITCH_CHECK_SECONDS and not reading.stable):
+                return None
             note.checked = True
             cents = 1200 * math.log2(reading.frequency / OPEN_STRING_HZ[note.string])
             if abs(cents) > STRING_TOLERANCE_CENTS:
                 note.refused = True
                 return PluckRefusal(reading.note_id, note.string, cents)
-        note.best = max(note.best, reading.level_db)
         if note.best >= MIN_LEVEL_DB:
             rounds = self.levels.setdefault(note.string, [])
             if note.recorded:

@@ -4,15 +4,16 @@ import pytest
 from audio_signals import SR, feed_in_blocks, pluck
 from jmc_guitar_zoom.audio.pitch import PitchReading, PitchTracker
 from jmc_guitar_zoom.calibration import (FENDER_STYLE, GIBSON_STYLE, MAGNETIC_PULL_WARN_CENTS, BalanceAdvice,
-                                         PickupMove, PluckLevels, balance, magnetic_pull, pickup_advice,
+                                         PickupMove, PluckLevels, PluckRefusal, balance, magnetic_pull, pickup_advice,
                                          position_balance)
 
 OPEN = {6: 82.407, 5: 110.0, 4: 146.832, 3: 195.998, 2: 246.942, 1: 329.628}
 
 
-def reading(freq, level_db, note_id, time):
-    return PitchReading(freq, "E" if freq else None, 2 if freq else None, 0.0 if freq else None, False, level_db,
-                        False, note_id, time)
+def reading(freq, level_db, note_id, time, stable=True):
+    """A settled reading by default: PluckLevels judges the string on a settled pitch (or after the attack)."""
+    return PitchReading(freq, "E" if freq else None, 2 if freq else None, 0.0 if freq else None,
+                        stable and freq is not None, level_db, False, note_id, time)
 
 
 # ---- pickup height ----
@@ -204,3 +205,21 @@ def test_a_single_odd_reading_is_removed_by_the_median_smoothing():
 def test_too_few_readings_give_no_verdict():
     result = magnetic_pull([reading(82.4, -20.0, 1, 0.0)])
     assert result.enough_data is False and result.warn is False and result.peak_to_peak_cents == 0.0
+
+
+def test_a_wild_pitch_in_the_attack_does_not_refuse_the_right_string_and_the_attack_peak_counts():
+    levels = PluckLevels()
+    # the first hops of a pluck often read a wild pitch (1.4 kHz on synthetic plucks) at the loudest level
+    assert levels.add(reading(1400.0, -6.0, 1, 0.00, stable=False), 6) is None
+    assert levels.add(reading(1390.0, -8.0, 1, 0.04, stable=False), 6) is None
+    assert levels.add(reading(82.5, -10.0, 1, 0.15, stable=False), 6) is None  # the settled pitch is string 6
+    assert levels.levels == {6: [-6.0]}  # the attack's peak is the level
+
+
+def test_a_wrong_string_is_still_refused_once_its_pitch_settles_and_records_nothing():
+    levels = PluckLevels()
+    assert levels.add(reading(1400.0, -6.0, 1, 0.00, stable=False), 6) is None
+    refusal = levels.add(reading(110.0, -9.0, 1, 0.15, stable=False), 6)  # string 5 played instead
+    assert isinstance(refusal, PluckRefusal) and refusal.string == 6
+    assert levels.add(reading(110.0, -9.5, 1, 0.20), 6) is None  # reported once
+    assert levels.levels == {}
