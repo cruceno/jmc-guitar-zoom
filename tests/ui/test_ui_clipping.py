@@ -21,7 +21,7 @@ from jmc_guitar_zoom.ui.painted import PaintedText
 
 from fixture_files import EFFECTS  # noqa: E402
 SIZES = [(1440, 900), (2000, 1056)]
-STATES = ["no-patch", "patch-selected", "effects-manager", "effects-repair", "not-installed", "patch-warnings", "unused-view", "usage-many", "usage-one", "usage-none", "usage-incomplete", "tuner", "offline", "bank", "bank-empty", "bank-drag", *UPDATE_STATES]
+STATES = ["no-patch", "patch-selected", "effects-manager", "effects-repair", "not-installed", "patch-warnings", "unused-view", "usage-many", "usage-one", "usage-none", "usage-incomplete", "tuner", "intonation", "offline", "bank", "bank-empty", "bank-drag", *UPDATE_STATES]
 SLACK = 2  # px of rounding the metrics may differ from the painted text by
 
 
@@ -111,6 +111,26 @@ def settle(qtbot, w: MainWindow, size) -> None:
 
 
 def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
+    if state == "intonation":  # no real sound card: two listed inputs and an input that never delivers
+        from PySide6.QtCore import QObject, Signal
+
+        from jmc_guitar_zoom.audio.capture import InputDevice
+        from jmc_guitar_zoom.ui import intonation as screen_module
+
+        class Silent(QObject):
+            samples = Signal(object)
+            failed = Signal(str)
+            running, sample_rate = False, 48000
+
+            def start(self, device_id, channel):
+                return True
+
+            def stop(self):
+                pass
+
+        devices = [InputDevice("a", "PreSonus AudioBox USB", 2, 48000, True), InputDevice("b", "Micrófono", 4, 44100)]
+        monkeypatch.setattr(screen_module, "list_input_devices", lambda: devices)
+        monkeypatch.setattr(screen_module, "AudioInput", lambda parent=None: Silent())
     if state.startswith("update-"):  # the effect-library update flow (a private library, a fake channel)
         return update_state(qtbot, tmp_path, catalog, state)
     if state == "offline":
@@ -175,6 +195,8 @@ def build(qtbot, monkeypatch, catalog, tmp_path, state: str) -> MainWindow:
     elif state == "tuner":
         w.tuner_button.click()
         qtbot.waitUntil(lambda: w.tuner_panel.isVisible() or not w.isVisible(), timeout=3000)
+    elif state == "intonation":  # the audio screen: two inputs (the second with four channels), a note playing
+        w.intonation_button.click()
     return w
 
 

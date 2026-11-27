@@ -650,6 +650,7 @@ EFFECTS_BUTTON = "Efectos"
 EFFECTS_TIP = "Instala o quita efectos de la pedalera. La edición de patches queda bloqueada mientras está abierta"
 CATALOG_MANAGE = "Administrar"
 LIBRARY_EFFECTS = "Instalar o quitar efectos…"
+LIBRARY_INTONATION = "Afinación y octavación…"
 EFFECTS_TITLE = "Efectos de la pedalera"
 EFFECTS_CLOSE = "Cerrar"
 EFFECTS_INSTALLED = "Instalados"
@@ -1193,3 +1194,88 @@ def update_reloaded(ok: int) -> str:
 
 def update_library_folder(path: object) -> str:
     return f"Se guardan en {path}"
+
+
+# ----------------------------------------------------------------- intonation (audio input)
+
+INTONATION = "Afinación y octavación"
+INTONATION_TIP = "Afinación y octavación con la placa de audio (O)"
+INTONATION_TITLE = "Afinación y octavación"
+INTONATION_EXIT = "Cerrar"
+INTONATION_KEY = "O"
+INTONATION_NO_INPUT = "No hay entradas de audio disponibles"
+INTONATION_INPUT_FAILED = "No se pudo abrir la entrada de audio"
+INTONATION_REFRESH = "Buscar entradas de audio de nuevo"
+INTONATION_DEVICE = "Entrada de audio"
+INTONATION_CHANNEL = "Canal de entrada"
+INTONATION_CLIPPING = "Saturación: baje la ganancia de la placa"
+INTONATION_LOW_LEVEL = "Señal baja: suba la ganancia"
+INTONATION_STABLE = "Estable"
+INTONATION_NO_NOTE = "—"
+INTONATION_REFERENCE_OPEN = "Cuerda al aire"
+INTONATION_REFERENCE_HARMONIC = "Armónico del traste 12"
+INTONATION_TOLERANCE = "Tolerancia"
+INTONATION_SCALE = "Escala"
+INTONATION_STEPS = ("1 Referencia", "2 Traste 12", "3 Resultado")
+INTONATION_REMEASURE = "Medir de nuevo"
+INTONATION_NEXT = "Siguiente cuerda"
+INTONATION_ALL_OK = "Las seis cuerdas están en tolerancia."
+INTONATION_HINT = "Use un sonido limpio (sin modulación ni pitch) y el afinador de la pedalera apagado."
+INTONATION_BRIDGE_NECK = "Hacia el mástil"
+INTONATION_BRIDGE_NAME = "Puente de la guitarra visto desde arriba"
+INTONATION_STRING_NAMES = {6: "Mi", 5: "La", 4: "Re", 3: "Sol", 2: "Si", 1: "Mi"}
+INTONATION_VERDICT_NAMES = {None: "sin medir", "ok": "en tolerancia", "sharp": "alta", "flat": "baja"}
+INTONATION_SCALES = (("628 mm (24,75\")", 628.0), ("635 mm (25\")", 635.0), ("648 mm (25,5\")", 648.0),
+                     ("650 mm (clásica)", 650.0))
+INTONATION_TOLERANCES = (("±0,5", 0.5), ("±1", 1.0), ("±2", 2.0))
+MINUS = "−"
+
+
+def decimal(value: float, digits: int = 1, signed: bool = False) -> str:
+    """A number the way the interface writes it: decimal comma and a true minus sign."""
+    text = f"{value:+.{digits}f}" if signed else f"{value:.{digits}f}"
+    return text.replace(".", ",").replace("-", MINUS)
+
+
+def string_chip(number: int) -> str:
+    return f"{number} {INTONATION_STRING_NAMES[number]}"
+
+
+def string_chip_name(number: int, verdict: str | None) -> str:
+    return f"Cuerda {string_chip(number)}: {INTONATION_VERDICT_NAMES[verdict]}"
+
+
+def intonation_cents(cents: float) -> str:
+    return f"{decimal(cents, 1, True)} cents"
+
+
+def intonation_hz(hz: float) -> str:
+    return f"{decimal(hz, 2)} Hz"
+
+
+def intonation_instruction(step: str, kind: str, number: int) -> str:
+    if step == "reference":
+        if kind == "harmonic":
+            return f"Toque el armónico del traste 12 de la cuerda {number} y déjelo sonar."
+        return f"Toque la cuerda {number} al aire y déjela sonar."
+    return f"Pise la cuerda {number} en el traste 12, sin apretar de más, y déjela sonar."
+
+
+def intonation_result(verdict: str, number: int, offset: float, shift_mm: float) -> str:
+    cents, mm = decimal(abs(offset)), decimal(abs(shift_mm))
+    if verdict == "ok":
+        return f"En tolerancia: la selleta {number} está bien."
+    if verdict == "sharp":
+        return (f"El traste 12 está {cents} cents alto: aleje la selleta del mástil unos {mm} mm, "
+                "afine la cuerda y mida de nuevo.")
+    return (f"El traste 12 está {cents} cents bajo: acerque la selleta al mástil unos {mm} mm, "
+            "afine la cuerda y mida de nuevo.")
+
+
+def intonation_not_octave(kind: str, number: int) -> str:
+    what = "la del armónico" if kind == "harmonic" else "la octava de la referencia"
+    return f"Esa nota no es {what}: pise la cuerda {number} en el traste 12."
+
+
+def intonation_detuned(cents: float) -> str:
+    return f"La cuerda está {decimal(abs(cents))} cents desafinada: conviene afinarla antes de medir."
